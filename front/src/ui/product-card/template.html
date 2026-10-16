@@ -1,0 +1,19 @@
+<!--
+  relative + lien étiré (after:absolute after:inset-0) : toute la carte est
+  cliquable, mais un seul lien est annoncé par les lecteurs d'écran. Le bouton
+  passe au-dessus du lien grâce à relative z-10.
+-->
+<article class="group relative flex flex-col overflow-hidden rounded-lg border border-line-subtle bg-page transition-shadow duration-200 hover:shadow-lg motion-reduce:transition-none">
+  <slot name="visual"></slot>
+
+  <div class="flex flex-1 flex-col gap-2 p-4">
+    <h2 class="min-h-[2.4em] text-lg leading-[1.2] font-semibold text-ink">
+      <a href="/produits/{{id}}" data-link class="transition-colors after:absolute after:inset-0 hover:text-accent">{{name}}</a>
+    </h2>
+
+    <p class="text-xl font-bold text-ink"><span class="sr-only">Prix : </span>{{price}}</p>
+
+    <!-- L'ajout au panier arrive avec CMD-b : le bouton est désactivé d'ici là. -->
+    <button type="button" disabled class="button relative z-10 mt-auto h-12 w-full px-6 text-base">Ajouter au panier</button>
+  </div>
+</article>

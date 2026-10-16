@@ -1,36 +1,87 @@
 @import "tailwindcss";
 
 /*
-  Le thème sombre s'active par la classe theme-dark posée sur <html> (voir
-  index.html et lib/theme.js), et non par le réglage du système : c'est ce que
-  déclare cette variante. Une classe préfixée par dark: s'applique donc dès que
-  la page est en thème sombre.
+  Le thème sombre du starter s'active par la classe theme-dark posée sur <html>
+  (voir index.html et lib/theme.js). La charte Honda n'a pas de thème sombre :
+  la variante est conservée, mais aucun composant Honda ne l'utilise.
 */
 @custom-variant dark (&:where(.theme-dark, .theme-dark *));
 
 /*
-  Bandeau des cartes de film : un dégradé dont la teinte est calculée à partir
-  du titre (voir ui/carte-film/index.js). La teinte arrive par la variable
-  --teinte, posée dans le template. Aucune image n'est chargée.
-*/
-@utility bandeau-clair {
-  background-image: linear-gradient(
-    160deg,
-    hsl(var(--teinte) 28% 96%),
-    hsl(calc(var(--teinte) + 25) 28% 91%)
-  );
-}
+  Tokens exposés à Tailwind. « inline » : la classe générée référence la
+  variable (bg-action → var(--clr-action)) au lieu de copier sa valeur, si bien
+  qu'un token sémantique modifié dans :root se répercute partout.
 
-@utility bandeau-sombre {
-  background-image: linear-gradient(
-    160deg,
-    hsl(var(--teinte) 18% 17%),
-    hsl(calc(var(--teinte) + 25) 18% 12%)
-  );
+  On n'expose que des tokens SÉMANTIQUES : un template écrit text-ink ou
+  bg-action, jamais « gris 800 » ou « rouge Honda ».
+*/
+@theme inline {
+  --font-sans: "Barlow", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Barlow Condensed", "Arial Narrow", ui-sans-serif, sans-serif;
+
+  /* Texte */
+  --color-ink: var(--clr-text);
+  --color-ink-muted: var(--clr-text-muted);
+  --color-ink-inverse: var(--clr-text-inverse);
+  --color-ink-disabled: var(--clr-text-disabled);
+  --color-accent: var(--clr-text-accent);
+
+  /* Fonds */
+  --color-page: var(--clr-bg-page);
+  --color-section: var(--clr-bg-section);
+  --color-dark: var(--clr-bg-dark);
+  --color-success-soft: var(--clr-bg-success);
+
+  /* Bordures */
+  --color-line: var(--clr-border);
+  --color-line-strong: var(--clr-border-strong);
+  --color-line-subtle: var(--clr-border-subtle);
+  --color-line-inverse: var(--clr-border-inverse);
+
+  /* Actions et statuts */
+  --color-action: var(--clr-action);
+  --color-on-action: var(--clr-on-action);
+  --color-success: var(--clr-success);
 }
 
 @layer base {
-  /* Menus déroulants et barres de défilement natifs, eux aussi en sombre. */
+  :root {
+    /* Tokens primitifs : les valeurs brutes des variables Figma. */
+    --clr-honda-red: #cc0000;
+    --clr-grey-900: #333333;
+    --clr-grey-700: #555555;
+    --clr-grey-500: #8c8d91;
+    --clr-grey-400: #979797;
+    --clr-grey-200: #dddddd;
+    --clr-grey-150: #efefef;
+    --clr-grey-100: #f2f2f2;
+    --clr-white: #ffffff;
+    --clr-black: #000000;
+    --clr-green-600: #279639;
+    --clr-green-50: #e7f4e9;
+
+    /* Tokens sémantiques : ils disent à quoi ils servent (noms Figma). */
+    --clr-text: var(--clr-grey-900); /* Texte/Principal */
+    --clr-text-muted: var(--clr-grey-700); /* Texte/Secondaire */
+    --clr-text-inverse: var(--clr-white); /* Texte/Inverse */
+    --clr-text-disabled: var(--clr-grey-400); /* Texte/Désactivé */
+    --clr-text-accent: var(--clr-honda-red); /* Texte/Accent */
+
+    --clr-bg-page: var(--clr-white); /* Fond/Page */
+    --clr-bg-section: var(--clr-grey-100); /* Fond/Section */
+    --clr-bg-dark: var(--clr-black); /* Fond/Sombre */
+    --clr-bg-success: var(--clr-green-50); /* Fond/Succès */
+
+    --clr-border: var(--clr-grey-200); /* Bordure/Défaut */
+    --clr-border-strong: var(--clr-grey-500); /* Bordure/Forte */
+    --clr-border-subtle: var(--clr-grey-150); /* Bordure/Séparateur */
+    --clr-border-inverse: var(--clr-white); /* Bordure/Inverse */
+
+    --clr-action: var(--clr-honda-red); /* Action/Principale */
+    --clr-on-action: var(--clr-white); /* Action/Sur principale */
+    --clr-success: var(--clr-green-600); /* Statut/Succès */
+  }
+
   .theme-dark {
     color-scheme: dark;
   }
@@ -38,11 +89,50 @@
   /* Un seul anneau de focus pour toute l'application, visible uniquement au
      clavier : :focus-visible ne se déclenche pas sur un clic de souris. */
   :where(a, button, select, input):focus-visible {
-    outline: 2px solid var(--color-zinc-400);
+    outline: 2px solid var(--clr-action);
     outline-offset: 2px;
   }
 
   button:not(:disabled) {
     cursor: pointer;
+  }
+}
+
+@layer components {
+  /*
+    Bouton de la charte. Ses couleurs passent par des variables privées
+    (--_bg, --_fg) : un modifier ne fait que les réassigner. Les dimensions et
+    marges restent en utilitaires Tailwind dans les templates.
+  */
+  .button {
+    --_bg: var(--clr-action);
+    --_fg: var(--clr-on-action);
+    --_border: var(--clr-action);
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    border: 1px solid var(--_border);
+    border-radius: 0.25rem;
+    background-color: var(--_bg);
+    color: var(--_fg);
+    font-weight: 600;
+    transition: opacity 150ms ease;
+
+    &:hover:not(:disabled) {
+      opacity: 0.9;
+    }
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+  }
+
+  .button--outline {
+    --_bg: var(--clr-bg-page);
+    --_fg: var(--clr-text);
+    --_border: var(--clr-border);
   }
 }

@@ -1,18 +1,19 @@
 # SAE301-Starter
 
-Catalogue de films : une API PHP en trois couches (routage / contrôleur /
-modèle) au-dessus de MySQL, et un front en JavaScript organisé en layouts,
-pages et composants, avec un routeur côté client.
+Click & collect Honda Moto Lyon Centre (SAÉ 3.01) : une API PHP en trois
+couches (routage / contrôleur / modèle) au-dessus de MySQL, et un front en
+JavaScript organisé en layouts, pages et composants, avec un routeur côté
+client. Charte Honda (tokens Figma) en Tailwind CSS 4.
 
-- préférences de tri et de pagination mémorisées dans des cookies ;
-- connexion par session, page Administration réservée au rôle `admin` ;
-- thème clair / sombre en `localStorage`.
+- catalogue paginé et trié (US DEC-b), tri mémorisé dans un cookie ;
+- produits déclinés en variantes, qui portent référence et stock ;
+- connexion par session (à brancher sur l'interface avec CMD-c).
 
 ## Arborescence
 
 ```
 .htaccess            /api/... vers le back, tout le reste vers front/dist/
-sql/import.sql       tables film et genre, à importer dans votre base
+sql/import.sql       tables category, product, variant et jeu de données
 back/                API PHP, ne renvoie que du JSON
 ├── index.php        point d'entrée : assemble les dépendances, délègue
 ├── config/          identifiants de la base, chemin du projet
@@ -35,8 +36,8 @@ front/               sources du front (Vite + Tailwind)
 ## Installation
 
 1. Importez `sql/import.sql` dans votre base depuis phpMyAdmin (il crée les
-   tables `film` et `genre` ; une table existante de même nom serait
-   remplacée).
+   tables `category`, `product` et `variant`, et supprime les anciennes
+   tables `film` et `genre` du starter).
 2. Dans `back/config/config.php`, renseignez les identifiants de la base et
    le chemin du projet (`/~votre_login/Base/`).
 3. Dans `front/vite.config.js`, donnez à `BASE` **exactement** le même chemin.
@@ -146,16 +147,17 @@ Une page dynamique suit le découpage Modèle / Contrôleur / Vue :
 
 | Route | Effet |
 |---|---|
-| `GET /api/films?page=2&tri=note&parPage=24` | une page du catalogue |
+| `GET /api/products?page=2&sort=price_asc` | une page du catalogue (12 produits) |
 | `POST /api/login` | connexion, corps JSON `{"login": …, "mdp": …}` |
 | `POST /api/logout` | déconnexion |
-| `GET /api/admin/stats` | statistiques, réservées au rôle `admin` |
 
-Tris acceptés : `titre`, `annee`, `note`. Valeurs de `parPage` : `12`, `24`,
-`48`. `tri` et `parPage` sont facultatifs : sans eux, le serveur applique les
-préférences mémorisées dans les cookies. La réponse rappelle les réglages
-appliqués (`tri`, `parPage`, `page`, `pagesTotal`, `total`) : le front n'a
-jamais besoin de lire les cookies, qui sont en `HttpOnly`.
+Tris acceptés : `price_asc` (défaut), `price_desc`, `name_asc`, `newest`.
+`sort` est facultatif : sans lui, le serveur applique le tri mémorisé dans le
+cookie `sort`. La réponse rappelle les réglages appliqués (`sort`, `page`,
+`pageCount`, `perPage`, `total`) avec la liste `products`
+(`id`, `name`, `price`, `image`) : le front n'a jamais besoin de lire le
+cookie, qui est en `HttpOnly`. Les photos sont dans
+`front/public/images/produits/`.
 
 ## Comptes
 
@@ -170,6 +172,6 @@ jamais besoin de lire les cookies, qui sont en `HttpOnly`.
 |---|---|
 | Un listing de dossiers, ou une erreur 404 sur la racine | le `.htaccess` n'a pas été déposé, ou `front/dist/` est absent (lancer `npm run build`) |
 | Page blanche, fichiers `assets/…` en 404 | `BASE` de `vite.config.js` ne correspond pas au dossier de dépôt |
-| « Impossible de charger le catalogue » | identifiants de `config.php`, ou tables non importées |
+| « Impossible de charger le catalogue » | identifiants de `config.php`, ou `sql/import.sql` non importé |
 | Les réglages ne sont jamais retenus, la connexion ne tient pas | `chemin` de `config.php` ne correspond pas au dossier de dépôt |
 | En développement, l'API répond 404 | le back n'est pas déployé sur le serveur, ou `BASE` est faux |

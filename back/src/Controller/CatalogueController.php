@@ -6,97 +6,113 @@ namespace App\Controller;
 
 use App\Core\Request;
 use App\Core\Response;
-use App\Model\FilmModel;
+use App\Model\ProductModel;
 
 /**
- * Liste paginée et triée du catalogue.
+ * Catalogue des produits (US DEC-b) : liste paginée et triée.
  *
- * Le tri et le nombre de films par page sont des préférences : elles sont
- * mémorisées dans des cookies et appliquées aux visites suivantes.
+ * Le tri choisi est une préférence : il est mémorisé dans un cookie et
+ * appliqué aux visites suivantes.
  */
 final class CatalogueController
 {
     /**
      * Liste blanche des tris autorisés.
      *
-     * La clé vient du client, la valeur est écrite par nous. Le client ne choisit
-     * donc jamais un nom de colonne : il choisit une entrée dans un tableau que
-     * nous contrôlons entièrement.
-     *
-     * Un paramètre lié ne conviendrait pas : il protège une VALEUR, jamais un
-     * IDENTIFIANT. « ORDER BY :colonne » lié à 'titre' produit « ORDER BY
-     * 'titre' », une chaîne constante : le tri ne trie plus rien, sans erreur.
+     * La clé vient du client, la valeur est écrite par nous. Le client ne
+     * choisit donc jamais un nom de colonne : il choisit une entrée dans un
+     * tableau que nous contrôlons entièrement. Un paramètre lié ne conviendrait
+     * pas : il protège une VALEUR, jamais un IDENTIFIANT comme une colonne.
      */
-    private const TRIS = [
-        'titre' => 'film.titre ASC',
-        'annee' => 'film.annee DESC',
-        'note'  => 'film.note_moyenne DESC',
+    private const SORTS = [
+        'price_asc'  => 'product.price ASC',
+        'price_desc' => 'product.price DESC',
+        'name_asc'   => 'product.name ASC',
+        'newest'     => 'product.created_at DESC',
     ];
 
-    private const PAR_PAGE_AUTORISES = [12, 24, 48];
+    /** Tri appliqué sans choix valide : celui de la maquette. */
+    private const DEFAULT_SORT = 'price_asc';
+
+    /** Nombre de produits par page : 4 rangées de 3, ou 3 rangées de 4. */
+    private const PER_PAGE = 12;
 
     /** Le modèle qui interroge la base, fourni à la construction. */
-    private FilmModel $films;
+    private ProductModel $products;
 
     /** Chemin du projet sur le serveur, celui des cookies (voir config.php). */
-    private string $chemin;
+    private string $cookiePath;
 
-    public function __construct(FilmModel $films, string $chemin)
+    /**
+     * @param ProductModel $products   Accès aux produits.
+     * @param string       $cookiePath Chemin des cookies, identique à BASE côté front.
+     */
+    public function __construct(ProductModel $products, string $cookiePath)
     {
-        $this->films  = $films;
-        $this->chemin = $chemin;
+        $this->products   = $products;
+        $this->cookiePath = $cookiePath;
     }
 
     /**
-     * Options partagées par les cookies de préférences.
+     * GET /api/products?page=2&sort=price_asc
+     *
+     * Répond { products, sort, page, pageCount, total, perPage }.
+     * Le front n'a jamais besoin de lire le cookie (HttpOnly) : l'API lui
+     * rappelle le tri effectivement appliqué.
+     *
+     * @param Request $request Requête entrante.
      */
-    private function optionsCookie(): array
+    public function index(Request $request): void
+    {
+        $requestedSort = $request->parametre('sort');
+
+        // Lecture : l'URL porte le choix du moment, le cookie le réglage retenu.
+        $sort = $requestedSort ?? $_COOKIE['sort'] ?? self::DEFAULT_SORT;
+        $sort = array_key_exists($sort, self::SORTS) ? $sort : self::DEFAULT_SORT;
+
+        // Enregistrement : uniquement pour un choix explicite ET valide, pour ne
+        // jamais mémoriser une valeur fabriquée par le client. Le cookie est
+        // posé avant Response::json(), qui termine le script.
+        if ($requestedSort !== null && $requestedSort === $sort) {
+            setcookie('sort', $sort, $this->cookieOptions());
+        }
+
+        $total     = $this->products->countVisible();
+        $pageCount = max(1, (int) ceil($total / self::PER_PAGE));
+
+        // filter_var refuse « 2abc » ou « -1 », que (int) aurait acceptés.
+        $page = filter_var($request->parametre('page', '1'), FILTER_VALIDATE_INT) ?: 1;
+        $page = max(1, min($page, $pageCount));
+
+        $products = $this->products->findVisiblePage(
+            self::SORTS[$sort],
+            self::PER_PAGE,
+            ($page - 1) * self::PER_PAGE,
+        );
+
+        Response::json([
+            'products'  => $products,
+            'sort'      => $sort,
+            'page'      => $page,
+            'pageCount' => $pageCount,
+            'perPage'   => self::PER_PAGE,
+            'total'     => $total,
+        ]);
+    }
+
+    /**
+     * Options du cookie de préférence.
+     *
+     * @return array{expires:int, path:string, httponly:bool, secure:bool, samesite:string}
+     */
+    private function cookieOptions(): array
     {
         return [
             'expires'  => time() + 30 * 24 * 3600,
-            'path'     => $this->chemin,
+            'path'     => $this->cookiePath,
             'httponly' => true,
             'secure'   => true,
             'samesite' => 'Lax',
         ];
-    }
-
-    public function index(Request $requete): void
-    {
-        // Enregistrement : uniquement quand l'utilisateur vient de choisir
-        // (le front l'a alors placé dans l'URL).
-        if ($requete->parametre('tri') !== null) {
-            setcookie('tri',      $requete->parametre('tri'),     $this->optionsCookie());
-            setcookie('par_page', $requete->parametre('parPage'), $this->optionsCookie());
-        }
-
-        // Lecture : l'URL porte le choix du moment, le cookie le réglage retenu.
-        // L'URL passe en premier : un cookie posé par setcookie() ne figure
-        // dans $_COOKIE qu'à la requête suivante.
-        $tri     = $requete->parametre('tri') ?? $_COOKIE['tri'] ?? 'titre';
-        $parPage = (int) ($requete->parametre('parPage') ?? $_COOKIE['par_page'] ?? 12);
-
-        // Validation : on n'accepte que ce qui figure dans nos listes.
-        $tri     = array_key_exists($tri, self::TRIS) ? $tri : 'titre';
-        $parPage = in_array($parPage, self::PAR_PAGE_AUTORISES, true) ? $parPage : 12;
-        $ordre   = self::TRIS[$tri];
-
-        $total       = $this->films->compter();
-        $pagesTotal  = max(1, (int) ceil($total / $parPage));
-        $page        = (int) ($requete->parametre('page', '1') ?? '1');
-        $page        = max(1, min($page, $pagesTotal));
-
-        $films = $this->films->lister($ordre, $parPage, ($page - 1) * $parPage);
-
-        Response::json([
-            'films' => $films,
-            // Le front n'a pas besoin de lire les cookies : l'API lui rappelle
-            // les réglages effectivement appliqués.
-            'tri'        => $tri,
-            'parPage'    => $parPage,
-            'page'       => $page,
-            'pagesTotal' => $pagesTotal,
-            'total'      => $total,
-        ]);
     }
 }
