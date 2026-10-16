@@ -1,18 +1,22 @@
 import { htmlToFragment } from "../../lib/utils.js";
-import { basculerTheme } from "../../lib/theme.js";
 import template from "./template.html?raw";
 
-// HeaderView est un composant sans données : il n'a que son template, et le
-// bouton de thème, dont il gère lui-même le clic.
+// En-tête de la charte Honda : logo, navigation, recherche, compte et panier.
+// Composant sans données pour l'instant : le nombre d'articles du panier
+// (data-cart-count) sera fourni par CMD-b.
 let HeaderView = {
+  /**
+   * @returns {string} Le HTML de l'en-tête.
+   */
   html: function () {
     return template;
   },
 
+  /**
+   * @returns {DocumentFragment} L'en-tête, prêt à être inséré.
+   */
   dom: function () {
-    let fragment = htmlToFragment(template);
-    fragment.querySelector('[data-action="theme"]').addEventListener("click", basculerTheme);
-    return fragment;
+    return htmlToFragment(template);
   },
 };
 

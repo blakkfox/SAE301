@@ -32,13 +32,19 @@ final class Router
 
     public function traiter(Request $requete): void
     {
-        foreach ($this->routes as $declaration => $cible) {
+        // Parcours par indice des clés de la table : le projet n'utilise pas foreach.
+        $declarations = array_keys($this->routes);
+
+        for ($i = 0; $i < count($declarations); $i++) {
+            $declaration = $declarations[$i];
+
             if (self::normaliser($declaration) !== $requete->signature()) {
                 continue;
             }
 
             // $cible est le tableau déclaré dans routes.php :
             // à l'indice 0 le nom de la classe, à l'indice 1 celui de la méthode.
+            $cible   = $this->routes[$declaration];
             $classe  = $cible[0];
             $methode = $cible[1];
 

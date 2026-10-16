@@ -46,7 +46,7 @@ let request = async function (uri, options) {
 };
 
 /**
- * Lecture d'une ressource. Par exemple : await getRequest("films?page=2")
+ * Lecture d'une ressource. Par exemple : await getRequest("products?page=2")
  */
 let getRequest = function (uri) {
   return request(uri, {

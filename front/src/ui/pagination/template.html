@@ -1,11 +1,11 @@
-<nav class="mt-10 flex items-center justify-center gap-4">
-  <button type="button" data-action="precedente" class="h-9 rounded-md border border-zinc-200 px-4 text-sm font-medium transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent dark:border-zinc-800 dark:hover:bg-zinc-800">
-    Précédent
-  </button>
-
-  <span class="text-sm text-zinc-500 dark:text-zinc-400">Page {{page}} sur {{pagesTotal}}</span>
-
-  <button type="button" data-action="suivante" class="h-9 rounded-md border border-zinc-200 px-4 text-sm font-medium transition-colors hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent dark:border-zinc-800 dark:hover:bg-zinc-800">
-    Suivant
-  </button>
+<nav aria-label="Pagination du catalogue" class="flex justify-center">
+  <ul class="flex flex-wrap items-center justify-center gap-2">
+    <li>
+      <button type="button" data-page="{{previous}}" aria-label="Page précédente" class="flex size-10 items-center justify-center rounded-lg border border-line bg-page text-[0.9375rem] font-semibold text-ink transition-colors hover:border-line-strong disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-line">‹</button>
+    </li>
+    <slot name="pages"></slot>
+    <li>
+      <button type="button" data-page="{{next}}" aria-label="Page suivante" class="flex size-10 items-center justify-center rounded-lg border border-line bg-page text-[0.9375rem] font-semibold text-ink transition-colors hover:border-line-strong disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-line">›</button>
+    </li>
+  </ul>
 </nav>

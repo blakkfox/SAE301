@@ -1,113 +1,315 @@
-import { FilmData } from "../../data/film.js";
-import { htmlToFragment } from "../../lib/utils.js";
-import { BarreOutilsView } from "../../ui/barre-outils/index.js";
-import { GrilleFilmsView } from "../../ui/grille-films/index.js";
+import { ProductData } from "../../data/product.js";
+import { genericRenderer, htmlToFragment } from "../../lib/utils.js";
 import { MessageView } from "../../ui/message/index.js";
 import { PaginationView } from "../../ui/pagination/index.js";
+import { ProductGridView } from "../../ui/product-grid/index.js";
+import { SortSelectView } from "../../ui/sort-select/index.js";
 import template from "./template.html?raw";
+import templateSummary from "./summary.html?raw";
 
 /**
- * Page « Catalogue ».
+ * Page « Catalogue » — US DEC-b (écran Figma n° 1).
  *
- * Au chargement, on ne précise aucun réglage : le serveur applique les
- * préférences qu'il a mémorisées. Ensuite, le tri et le nombre de films par
- * page accompagnent chaque requête, et le serveur les mémorise.
+ * Au premier affichage, aucun tri n'est précisé : le serveur applique le tri
+ * mémorisé dans son cookie, ou « Prix croissant ». Ensuite, le tri choisi
+ * accompagne chaque requête.
+ *
+ * Découpage MVC strict :
+ *   M — état de la page, appel à l'API, préparation des données affichables ;
+ *   V — construction du DOM à partir des données REÇUES en paramètre ;
+ *   C — réaction aux actions de l'utilisateur, seul lien entre M et V.
  */
 
+// Dossier des photos produit : front/public/images/produits/, copié tel quel
+// par Vite à la racine du site (BASE dans vite.config.js).
+const IMAGE_DIR = import.meta.env.BASE_URL + "images/produits/";
+
+// Tri affiché tant que le serveur n'a pas répondu ; identique au tri par
+// défaut du serveur (CatalogueController::DEFAULT_SORT).
+const DEFAULT_SORT = "price_asc";
+
+// ---------------------------------------------------------------------------
+// M — Modèle
+// ---------------------------------------------------------------------------
+
 let M = {
-  catalogue: null, // dernière réponse de l'API : films et réglages appliqués
-  message: null, // { type, texte }, ou null
+  catalogue: null, // dernière réponse de l'API, ou null
+  sort: null, // tri demandé ou appliqué, ou null avant la première réponse
+  error: null, // texte de l'erreur à afficher, ou null
+  isLoading: false, // une requête est en cours
+  lastRequest: 0, // numéro de la dernière requête lancée
 };
+
+/**
+ * Remet la page dans son état initial, avant un nouvel affichage.
+ * lastRequest n'est PAS remis à zéro : une réponse d'une visite précédente
+ * doit rester reconnaissable comme périmée.
+ */
+M.reset = function () {
+  M.catalogue = null;
+  M.sort = null;
+  M.error = null;
+  M.isLoading = false;
+};
+
+/**
+ * Charge une page du catalogue et range la réponse dans le modèle.
+ *
+ * Si l'utilisateur clique plusieurs fois rapidement, plusieurs requêtes se
+ * croisent : seule la réponse de la DERNIÈRE est retenue, sinon une réponse
+ * lente pourrait écraser une réponse plus récente.
+ *
+ * @param {number} page - Numéro de page demandé.
+ * @param {string} [sort] - Clé de tri ; absente, le serveur choisit.
+ * @returns {Promise<boolean>} true si la réponse a été retenue, false si elle
+ *   est périmée et doit être ignorée.
+ */
+M.loadPage = async function (page, sort) {
+  M.lastRequest += 1;
+  let request = M.lastRequest;
+
+  M.isLoading = true;
+  M.error = null;
+  if (sort !== undefined) {
+    M.sort = sort;
+  }
+
+  try {
+    let response = await ProductData.fetchPage(page, sort);
+    if (request !== M.lastRequest) return false;
+    M.catalogue = response;
+    M.sort = response.sort;
+  } catch (error) {
+    if (request !== M.lastRequest) return false;
+    M.catalogue = null;
+    M.error = `Impossible de charger le catalogue : ${error.message}`;
+  }
+
+  M.isLoading = false;
+  return true;
+};
+
+/**
+ * Prépare un produit de l'API pour la carte produit.
+ *
+ * @param {{id: number, name: string, price: number, image: ?string}} product
+ * @returns {{id: number, name: string, price: number, imageUrl: ?string}}
+ */
+M.toCardData = function (product) {
+  return {
+    id: product.id,
+    name: product.name,
+    price: product.price,
+    imageUrl: product.image === null ? null : IMAGE_DIR + encodeURIComponent(product.image),
+  };
+};
+
+/**
+ * Phrase d'accroche sous le titre, avec le nombre de produits accordé.
+ *
+ * @param {number} total - Nombre de produits du catalogue.
+ * @returns {string} Par exemple « 18 produits · retrait gratuit en concession sous 2 h ».
+ */
+M.formatSummary = function (total) {
+  let label = total > 1 ? "produits" : "produit";
+  return `${total} ${label} · retrait gratuit en concession sous 2 h`;
+};
+
+/**
+ * Numéros de page à afficher dans la pagination.
+ *
+ * @param {number} pageCount - Nombre total de pages.
+ * @returns {number[]} [1, 2, …, pageCount].
+ */
+M.getPageNumbers = function (pageCount) {
+  return Array.from({ length: pageCount }, (_, index) => index + 1);
+};
+
+/**
+ * Rassemble tout ce que la Vue doit afficher, déjà préparé.
+ *
+ * @returns {{isLoading: boolean, summary: ?string, sort: string,
+ *   message: ?{type: string, texte: string},
+ *   products: Array<{id: number, name: string, price: number, imageUrl: ?string}>,
+ *   pagination: ?{page: number, pagesTotal: number, pages: number[]}}}
+ */
+M.getViewData = function () {
+  let catalogue = M.catalogue;
+
+  return {
+    isLoading: M.isLoading,
+    summary: catalogue === null ? null : M.formatSummary(catalogue.total),
+    sort: M.sort ?? DEFAULT_SORT,
+    message: M.error === null ? null : { type: "erreur", texte: M.error },
+    products: catalogue === null ? [] : catalogue.products.map(M.toCardData),
+    pagination:
+      catalogue === null
+        ? null
+        : {
+            page: catalogue.page,
+            pagesTotal: catalogue.pageCount,
+            pages: M.getPageNumbers(catalogue.pageCount),
+          },
+  };
+};
+
+// ---------------------------------------------------------------------------
+// C — Contrôleur
+// ---------------------------------------------------------------------------
 
 let C = {};
 
 /**
- * Demande une page du catalogue et range la réponse dans le modèle.
- * reglages ({ tri, parPage }) est facultatif, voir data/film.js.
+ * Point d'entrée de la page, appelé par le routeur.
+ *
+ * La page s'affiche tout de suite en état « chargement » ; la grille la
+ * remplace dès que l'API a répondu.
+ *
+ * @returns {DocumentFragment} La page, à insérer par le routeur.
  */
-C.charger = async function (page, reglages) {
-  try {
-    M.catalogue = await FilmData.fetchPage(page, reglages);
-    M.message = null;
-  } catch (erreur) {
-    M.catalogue = null;
-    M.message = { type: "erreur", texte: `Impossible de charger le catalogue : ${erreur.message}` };
-  }
-};
-
-// Changer un réglage rend la page courante sans objet : on repart de la première.
-C.handler_changerTri = async function (tri) {
-  await C.charger(1, { tri, parPage: M.catalogue.parPage });
-  V.rafraichir();
-};
-
-C.handler_changerParPage = async function (parPage) {
-  await C.charger(1, { tri: M.catalogue.tri, parPage });
-  V.rafraichir();
-};
-
-C.handler_changerPage = async function (page) {
-  await C.charger(page, { tri: M.catalogue.tri, parPage: M.catalogue.parPage });
-  V.rafraichir();
-  window.scrollTo({ top: 0, behavior: "smooth" });
-};
-
-C.init = async function () {
-  await C.charger(1);
-  return V.init();
-};
-
-let V = {};
-
-V.racine = null; // élément racine de la page affichée
-
-V.init = function () {
-  let fragment = V.createPageFragment();
-  V.racine = fragment.firstElementChild;
+C.init = function () {
+  M.reset();
+  let loading = M.loadPage(1);
+  let fragment = V.init(M.getViewData());
+  C.renderWhenLoaded(loading);
   return fragment;
 };
 
 /**
- * Reconstruit toute la page à partir du modèle, et remplace l'ancienne.
- * C'est le principe des frameworks : l'affichage se déduit de l'état, on ne le
- * retouche pas morceau par morceau.
+ * Lance un chargement : affiche l'état « chargement », puis le résultat.
+ *
+ * @param {number} page - Numéro de page demandé.
+ * @param {string} sort - Clé de tri.
+ * @returns {Promise<void>}
  */
-V.rafraichir = function () {
-  let fragment = V.createPageFragment();
-  let nouvelleRacine = fragment.firstElementChild;
-  V.racine.replaceWith(fragment);
-  V.racine = nouvelleRacine;
+C.load = function (page, sort) {
+  let loading = M.loadPage(page, sort);
+  V.render(M.getViewData());
+  return C.renderWhenLoaded(loading);
 };
 
-V.createPageFragment = function () {
-  let pageFragment = htmlToFragment(template);
+/**
+ * Réaffiche la page quand le chargement est terminé, sauf si sa réponse a été
+ * dépassée par une requête plus récente.
+ *
+ * @param {Promise<boolean>} loading - Résultat de M.loadPage.
+ * @returns {Promise<void>}
+ */
+C.renderWhenLoaded = async function (loading) {
+  if (await loading) {
+    V.render(M.getViewData());
+  }
+};
 
-  pageFragment.querySelector('slot[name="message"]').replaceWith(MessageView.dom(M.message));
+/**
+ * Changer de tri rend la page courante sans objet : on repart de la première.
+ *
+ * @param {string} sort - Clé de tri choisie dans la liste.
+ */
+C.handler_changeSort = function (sort) {
+  C.load(1, sort);
+};
 
-  if (M.catalogue === null) {
-    // Rien à afficher : on retire les emplacements restants.
-    for (let slot of pageFragment.querySelectorAll("slot")) {
-      slot.remove();
-    }
-    return pageFragment;
+/**
+ * Affiche une autre page, avec le tri en cours, et remonte en haut de liste.
+ *
+ * @param {number} page - Numéro de page cliqué.
+ */
+C.handler_changePage = function (page) {
+  C.load(page, M.sort ?? DEFAULT_SORT);
+  V.scrollToTop();
+};
+
+// ---------------------------------------------------------------------------
+// V — Vue
+// ---------------------------------------------------------------------------
+
+let V = {
+  root: null, // élément racine de la page affichée
+};
+
+/**
+ * Premier affichage.
+ *
+ * @param {ReturnType<typeof M.getViewData>} data - Données préparées par le modèle.
+ * @returns {DocumentFragment}
+ */
+V.init = function (data) {
+  let fragment = V.createPageFragment(data);
+  V.root = fragment.firstElementChild;
+  return fragment;
+};
+
+/**
+ * Reconstruit toute la page à partir des données reçues, et remplace
+ * l'ancienne : l'affichage se déduit de l'état, on ne le retouche pas
+ * morceau par morceau.
+ *
+ * @param {ReturnType<typeof M.getViewData>} data - Données préparées par le modèle.
+ */
+V.render = function (data) {
+  let fragment = V.createPageFragment(data);
+  let newRoot = fragment.firstElementChild;
+  V.root.replaceWith(fragment);
+  V.root = newRoot;
+};
+
+/**
+ * Remonte en haut de la page, sans animation si l'utilisateur a demandé à
+ * réduire les mouvements.
+ */
+V.scrollToTop = function () {
+  let reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
+};
+
+/**
+ * Construit le fragment de la page : chaque slot reçoit son composant, ou
+ * disparaît s'il n'a rien à afficher.
+ *
+ * @param {ReturnType<typeof M.getViewData>} data - Données préparées par le modèle.
+ * @returns {DocumentFragment}
+ */
+V.createPageFragment = function (data) {
+  let page = htmlToFragment(template);
+
+  let summarySlot = page.querySelector('slot[name="summary"]');
+  if (data.summary === null) {
+    summarySlot.remove();
+  } else {
+    summarySlot.replaceWith(htmlToFragment(genericRenderer(templateSummary, { summary: data.summary })));
   }
 
-  pageFragment.querySelector('slot[name="barre-outils"]').replaceWith(
-    BarreOutilsView.dom(M.catalogue, {
-      surTri: C.handler_changerTri,
-      surParPage: C.handler_changerParPage,
-    })
-  );
+  page
+    .querySelector('slot[name="sort"]')
+    .replaceWith(SortSelectView.dom({ sort: data.sort, disabled: data.isLoading }, { onSort: C.handler_changeSort }));
 
-  pageFragment.querySelector('slot[name="grille"]').replaceWith(GrilleFilmsView.dom(M.catalogue.films));
+  page.querySelector('slot[name="message"]').replaceWith(MessageView.dom(data.message));
 
-  pageFragment.querySelector('slot[name="pagination"]').replaceWith(
-    PaginationView.dom(M.catalogue, { surPage: C.handler_changerPage })
-  );
+  let gridSlot = page.querySelector('slot[name="grid"]');
+  if (data.isLoading) {
+    gridSlot.replaceWith(ProductGridView.loading());
+  } else if (data.message !== null) {
+    gridSlot.remove();
+  } else {
+    gridSlot.replaceWith(ProductGridView.dom(data.products));
+  }
 
-  return pageFragment;
+  let paginationSlot = page.querySelector('slot[name="pagination"]');
+  if (data.isLoading || data.pagination === null) {
+    paginationSlot.remove();
+  } else {
+    paginationSlot.replaceWith(PaginationView.dom(data.pagination, { surPage: C.handler_changePage }));
+  }
+
+  return page;
 };
 
+/**
+ * Page exportée vers le routeur (voir main.js).
+ *
+ * @returns {DocumentFragment}
+ */
 export function CataloguePage() {
   return C.init();
 }

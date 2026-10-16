@@ -1,0 +1,5 @@
+<!-- La page courante reçoit aria-current="page" (voir index.js), que Tailwind
+     cible pour la passer en rouge. -->
+<li>
+  <button type="button" data-page="{{number}}" aria-label="Page {{number}}" class="flex size-10 items-center justify-center rounded-lg border border-line bg-page text-[0.9375rem] font-semibold text-ink transition-colors hover:border-line-strong aria-[current=page]:border-action aria-[current=page]:bg-action aria-[current=page]:text-on-action">{{number}}</button>
+</li>
