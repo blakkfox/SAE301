@@ -1,3 +1,4 @@
+import { CartData } from "../../data/cart.js";
 import { CategoryData } from "../../data/category.js";
 import { htmlToFragment } from "../../lib/utils.js";
 import { HeaderView } from "../../ui/header/index.js";
@@ -16,8 +17,12 @@ import template from "./template.html?raw";
  * tout premier affichage montre « Chargement des catégories… », puis le menu
  * est complété dès que l'API répond.
  *
+ * Le compteur « Panier (n) » (CMD-b) est mis à jour à chaque modification du
+ * panier, dans cet onglet (CartData.subscribe) comme dans un autre (événement
+ * « storage » du navigateur), sans attendre une navigation.
+ *
  * Découpage MVC strict, comme une page :
- *   M — catégories du menu et état ouvert / fermé ;
+ *   M — catégories du menu, état ouvert / fermé, nombre d'articles du panier ;
  *   V — construction du DOM, ouverture du panneau, écouteurs ;
  *   C — réaction aux actions de l'utilisateur, seul lien entre M et V.
  */
@@ -31,6 +36,27 @@ let M = {
   hasFailed: false, // le dernier chargement a échoué
   isLoading: false, // un chargement est en cours
   isMenuOpen: false, // le menu des catégories est ouvert
+  cartCount: 0, // nombre d'articles du panier
+  isWatchingCart: false, // le modèle est abonné aux modifications du panier
+};
+
+/**
+ * Relit le nombre d'articles du panier.
+ */
+M.loadCartCount = function () {
+  M.cartCount = CartData.count();
+};
+
+/**
+ * Demande à être prévenu de chaque modification du panier. L'abonnement
+ * n'est pris qu'une fois : le layout est reconstruit à chaque navigation.
+ *
+ * @param {() => void} listener - Fonction à appeler (un handler de C).
+ */
+M.watchCart = function (listener) {
+  if (M.isWatchingCart) return;
+  CartData.subscribe(listener);
+  M.isWatchingCart = true;
 };
 
 /**
@@ -112,7 +138,9 @@ let C = {};
  */
 C.init = function () {
   M.isMenuOpen = false;
-  let fragment = V.init(M.getMenuData());
+  M.loadCartCount();
+  M.watchCart(C.handler_cartChange);
+  let fragment = V.init(M.getMenuData(), M.cartCount);
 
   if (M.needsCategories()) {
     C.loadMenu();
@@ -130,6 +158,15 @@ C.loadMenu = async function () {
   await M.loadCategories();
   V.renderMenu(M.getMenuData());
   V.renderMenuState(M.isMenuOpen);
+};
+
+/**
+ * Le panier a changé (dans cet onglet, ou dans un autre : événement
+ * « storage ») : le compteur de l'en-tête est mis à jour.
+ */
+C.handler_cartChange = function () {
+  M.loadCartCount();
+  V.renderCartCount(M.cartCount);
 };
 
 /**
@@ -174,6 +211,7 @@ C.handler_keydown = function (ev) {
 let V = {
   menuButton: null, // bouton « Catégories » de l'en-tête affiché
   menuPanel: null, // panneau du menu de l'en-tête affiché
+  cartCount: null, // compteur « Panier (n) » de l'en-tête affiché
   hasDocumentListeners: false, // les écouteurs du document sont posés
 };
 
@@ -183,14 +221,16 @@ let V = {
  * à chaque navigation, ils s'accumuleraient.
  *
  * @param {ReturnType<typeof M.getMenuData>} menu - Données du menu.
+ * @param {number} cartCount - Nombre d'articles du panier.
  * @returns {DocumentFragment}
  */
-V.init = function (menu) {
+V.init = function (menu, cartCount) {
   let layout = htmlToFragment(template);
 
-  let header = HeaderView.dom(menu, { onToggleMenu: C.handler_toggleMenu });
+  let header = HeaderView.dom(menu, cartCount, { onToggleMenu: C.handler_toggleMenu });
   V.menuButton = header.querySelector("[data-category-menu-button]");
   V.menuPanel = header.querySelector("[data-category-menu]");
+  V.cartCount = header.querySelector("[data-cart-count]");
   layout.querySelector('slot[name="header"]').replaceWith(header);
 
   layout.querySelector('slot[name="footer"]').replaceWith(FooterView.dom());
@@ -198,6 +238,8 @@ V.init = function (menu) {
   if (!V.hasDocumentListeners) {
     document.addEventListener("click", C.handler_clickDocument);
     document.addEventListener("keydown", C.handler_keydown);
+    // Panier modifié dans un autre onglet.
+    window.addEventListener("storage", C.handler_cartChange);
     V.hasDocumentListeners = true;
   }
 
@@ -224,6 +266,15 @@ V.renderMenu = function (menu) {
 V.renderMenuState = function (isOpen) {
   V.menuButton.setAttribute("aria-expanded", String(isOpen));
   V.menuPanel.hidden = !isOpen;
+};
+
+/**
+ * Affiche le nombre d'articles du panier dans l'en-tête.
+ *
+ * @param {number} count
+ */
+V.renderCartCount = function (count) {
+  V.cartCount.textContent = String(count);
 };
 
 /**

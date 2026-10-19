@@ -1,0 +1,28 @@
+<!--
+  Ligne du panier (écran 4). Desktop (dès 640 px) : une seule rangée photo
+  104 px, informations, quantité, prix (110 px, aligné à droite), « Retirer ».
+  Mobile : photo 80 px et informations, puis une seconde rangée quantité,
+  prix et « Retirer » (sm:contents rend ses enfants à la rangée unique).
+
+  tabindex="-1" : la ligne peut recevoir le focus quand elle est reconstruite
+  et que le bouton qui l'avait ne peut plus le prendre (voir
+  replaceKeepingFocus dans lib/utils.js).
+-->
+<li data-variant-id="{{variantId}}" tabindex="-1" class="grid grid-cols-(--grid-cart-line) items-center gap-x-4 gap-y-3 border-b border-line-subtle py-5 outline-none last:border-b-0 sm:flex sm:gap-5">
+  <slot name="visual"></slot>
+
+  <div class="flex min-w-0 flex-col gap-1.5 sm:flex-1">
+    <h2 class="text-lg leading-tight font-semibold text-ink">
+      <a href="/produits/{{productId}}" data-link class="transition-colors hover:text-accent">{{name}}</a>
+    </h2>
+    <p class="text-sm text-ink-muted">{{details}}</p>
+  </div>
+
+  <div class="col-span-2 flex items-center justify-between gap-4 sm:contents">
+    <slot name="quantity"></slot>
+
+    <p class="ml-auto text-right text-lg font-bold text-ink sm:ml-0 sm:w-27.5 sm:shrink-0"><span class="sr-only">Total de la ligne : </span>{{total}}</p>
+
+    <button type="button" data-remove data-focus-key="remove" aria-label="Retirer {{name}} ({{label}}) du panier" class="shrink-0 py-2 text-sm text-ink-muted underline-offset-4 transition-colors hover:text-accent hover:underline">Retirer</button>
+  </div>
+</li>

@@ -12,28 +12,31 @@
 
   <!-- Mobile et tablette : galerie puis informations. Dès 1024 px : deux
        colonnes dans les proportions de la maquette (620 / 524, écart 56 px). -->
-  <div class="grid grid-cols-1 items-start gap-8 lg:grid-cols-[minmax(0,620fr)_minmax(0,524fr)] lg:gap-14">
+  <div class="grid grid-cols-1 items-start gap-8 lg:grid-cols-(--grid-product) lg:gap-14">
     <slot name="gallery"></slot>
 
     <div class="flex flex-col gap-5">
       <a href="{{categoryUrl}}" data-link class="self-start text-sm text-ink-muted transition-colors hover:text-accent"><span aria-hidden="true">←</span> Retour à {{categoryName}}</a>
 
       <div class="flex flex-col gap-1.5">
-        <h1 class="font-display text-[2.25rem] leading-[1.1] text-ink sm:text-[2.75rem] sm:leading-12">{{name}}</h1>
+        <h1 class="font-display text-product-mobile leading-title text-ink sm:text-h1-mobile sm:leading-12">{{name}}</h1>
         <p class="text-sm text-ink-muted">{{subtitle}}</p>
       </div>
 
-      <p class="text-[2rem] leading-none font-bold text-ink"><span class="sr-only">Prix : </span>{{price}}</p>
+      <p class="text-price-xl leading-none font-bold text-ink"><span class="sr-only">Prix : </span>{{price}}</p>
 
       <slot name="description"></slot>
 
       <hr class="border-line-subtle" />
 
-      <!-- L'ajout au panier (et le choix de la quantité) arrive avec CMD-b. -->
-      <button type="button" disabled class="button h-13 w-full px-6 text-base">Ajouter au panier</button>
+      <!-- Ajout au panier (CMD-b) : choix de la variante, quantité, bouton.
+           Le message de confirmation est hors du bloc reconstruit : une zone
+           aria-live doit exister AVANT son contenu pour être annoncée. -->
+      <slot name="purchase"></slot>
+      <div data-purchase-feedback aria-live="polite" class="empty:hidden"></div>
 
       <div class="flex flex-col gap-0.5 rounded-xl bg-section p-4">
-        <p class="text-[0.9375rem] font-semibold text-ink">Retrait gratuit en concession</p>
+        <p class="text-small font-semibold text-ink">Retrait gratuit en concession</p>
         <p class="text-sm text-ink-muted">Honda Moto Lyon Centre · prêt sous 2 h · paiement sur place</p>
       </div>
 

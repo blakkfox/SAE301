@@ -17,6 +17,7 @@ use App\Core\Request;
 use App\Core\Response;
 use App\Core\Router;
 use App\Controller\AuthController;
+use App\Controller\CartController;
 use App\Controller\CatalogueController;
 use App\Controller\CategoryController;
 use App\Controller\ProductController;
@@ -65,6 +66,7 @@ try {
         CatalogueController::class => new CatalogueController(new ProductModel($pdo), new CategoryModel($pdo), $config['chemin']),
         ProductController::class   => new ProductController(new ProductModel($pdo)),
         CategoryController::class  => new CategoryController(new CategoryModel($pdo), new ProductModel($pdo)),
+        CartController::class      => new CartController(new ProductModel($pdo)),
         AuthController::class      => new AuthController(),
     ];
 

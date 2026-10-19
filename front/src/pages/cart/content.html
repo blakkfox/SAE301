@@ -1,0 +1,15 @@
+<!--
+  Mobile et tablette : articles puis récapitulatif. Dès 1024 px : deux
+  colonnes comme la maquette (articles, écart 32 px, récapitulatif 400 px).
+  tabindex="-1" : le bloc reçoit le focus quand une ligne est retirée.
+-->
+<div tabindex="-1" class="grid grid-cols-1 items-start gap-6 outline-none lg:grid-cols-(--grid-cart) lg:gap-8">
+  <div class="flex flex-col rounded-xl bg-page px-4 py-2 sm:px-6">
+    <ul aria-label="Articles du panier">
+      <slot name="lines"></slot>
+    </ul>
+    <a href="/" data-link class="self-start py-4 text-small font-medium text-link underline-offset-4 hover:underline"><span aria-hidden="true">←</span> Continuer mes achats</a>
+  </div>
+
+  <slot name="summary"></slot>
+</div>

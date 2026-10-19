@@ -1,0 +1,6 @@
+<!-- Le radio est masqué visuellement (sr-only) mais reste focalisable : le
+     libellé porte le cadre, épaissi en gris anthracite quand il est coché. -->
+<label class="flex h-13 min-w-18 cursor-pointer items-center justify-center rounded-lg border border-line bg-page px-4 text-base font-semibold text-ink transition-colors hover:border-line-strong has-checked:border-2 has-checked:border-ink has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-action">
+  <input type="radio" name="variant" value="{{id}}" data-focus-key="variant-{{id}}" class="sr-only" />
+  {{label}}
+</label>
