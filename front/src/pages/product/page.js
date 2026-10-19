@@ -5,6 +5,7 @@ import { ProductFeaturesView } from "../../ui/product-features/index.js";
 import { ProductGalleryView } from "../../ui/product-gallery/index.js";
 import { ProductGridView } from "../../ui/product-grid/index.js";
 import template from "./template.html?raw";
+import templateBreadcrumbParent from "./breadcrumb-parent.html?raw";
 import templateDescription from "./description.html?raw";
 import templateRelated from "./related.html?raw";
 import templateError from "./error.html?raw";
@@ -141,14 +142,16 @@ M.getGalleryData = function () {
  *
  * @returns {{error: ?{title: string, text: string}, page: ?{name: string,
  *   subtitle: string, price: string, categoryName: string, categoryUrl: string},
- *   description: ?string, gallery: ?Object,
+ *   parent: ?{name: string, url: string}, description: ?string, gallery: ?Object,
  *   features: Array<{label: string, value: string}>,
  *   related: Array<{id: number, name: string, price: number, imageUrl: ?string}>}}
  */
 M.getViewData = function () {
   if (M.product === null) {
-    return { error: M.error, page: null, description: null, gallery: null, features: [], related: [] };
+    return { error: M.error, page: null, parent: null, description: null, gallery: null, features: [], related: [] };
   }
+
+  let parent = M.product.category.parent;
 
   return {
     error: null,
@@ -157,9 +160,9 @@ M.getViewData = function () {
       subtitle: M.getSubtitle(),
       price: formatPrice(M.product.price),
       categoryName: M.product.category.name,
-      // Page de la catégorie : arrive avec DEC-a.
       categoryUrl: `/categories/${M.product.category.slug}`,
     },
+    parent: parent === null ? null : { name: parent.name, url: `/categories/${parent.slug}` },
     description: M.product.description,
     gallery: M.getGalleryData(),
     features: M.product.features,
@@ -251,6 +254,13 @@ V.createGalleryFragment = function (galleryData) {
  */
 V.createPageFragment = function (data) {
   let page = htmlToFragment(genericRenderer(template, data.page));
+
+  let parentSlot = page.querySelector('slot[name="breadcrumb-parent"]');
+  if (data.parent === null) {
+    parentSlot.remove();
+  } else {
+    parentSlot.replaceWith(htmlToFragment(genericRenderer(templateBreadcrumbParent, data.parent)));
+  }
 
   let gallery = V.createGalleryFragment(data.gallery);
   V.gallery = gallery.firstElementChild;

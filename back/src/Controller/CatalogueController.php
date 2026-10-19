@@ -6,10 +6,12 @@ namespace App\Controller;
 
 use App\Core\Request;
 use App\Core\Response;
+use App\Model\CategoryModel;
 use App\Model\ProductModel;
 
 /**
- * Catalogue des produits (US DEC-b) : liste paginée et triée.
+ * Catalogue des produits (US DEC-b) : liste paginée et triée, éventuellement
+ * limitée à une catégorie (US DEC-a).
  *
  * Le tri choisi est une préférence : il est mémorisé dans un cookie et
  * appliqué aux visites suivantes.
@@ -40,30 +42,51 @@ final class CatalogueController
     /** Le modèle qui interroge la base, fourni à la construction. */
     private ProductModel $products;
 
+    /** Accès aux catégories, pour traduire le slug demandé en identifiant. */
+    private CategoryModel $categories;
+
     /** Chemin du projet sur le serveur, celui des cookies (voir config.php). */
     private string $cookiePath;
 
     /**
-     * @param ProductModel $products   Accès aux produits.
-     * @param string       $cookiePath Chemin des cookies, identique à BASE côté front.
+     * @param ProductModel  $products   Accès aux produits.
+     * @param CategoryModel $categories Accès aux catégories.
+     * @param string        $cookiePath Chemin des cookies, identique à BASE côté front.
      */
-    public function __construct(ProductModel $products, string $cookiePath)
+    public function __construct(ProductModel $products, CategoryModel $categories, string $cookiePath)
     {
         $this->products   = $products;
+        $this->categories = $categories;
         $this->cookiePath = $cookiePath;
     }
 
     /**
-     * GET /api/products?page=2&sort=price_asc
+     * GET /api/products?page=2&sort=price_asc&category=collection-honda
      *
      * Répond { products, sort, page, pageCount, total, perPage }.
      * Le front n'a jamais besoin de lire le cookie (HttpOnly) : l'API lui
      * rappelle le tri effectivement appliqué.
+     * category est facultatif : sans lui, tout le catalogue. Une catégorie
+     * parente renvoie aussi les produits de ses sous-catégories.
+     * 404 si la catégorie demandée n'existe pas.
      *
      * @param Request $request Requête entrante.
      */
     public function index(Request $request): void
     {
+        // Vérifiée avant le cookie de tri : une requête refusée ne doit rien
+        // enregistrer.
+        $categorySlug = $request->parametre('category');
+        $categoryId   = null;
+
+        if ($categorySlug !== null) {
+            $categoryId = $this->categories->findIdBySlug($categorySlug);
+
+            if ($categoryId === null) {
+                Response::erreur('Catégorie introuvable', 404);
+            }
+        }
+
         $requestedSort = $request->parametre('sort');
 
         // Lecture : l'URL porte le choix du moment, le cookie le réglage retenu.
@@ -77,7 +100,7 @@ final class CatalogueController
             setcookie('sort', $sort, $this->cookieOptions());
         }
 
-        $total     = $this->products->countVisible();
+        $total     = $this->products->countVisible($categoryId);
         $pageCount = max(1, (int) ceil($total / self::PER_PAGE));
 
         // filter_var refuse « 2abc » ou « -1 », que (int) aurait acceptés.
@@ -88,6 +111,7 @@ final class CatalogueController
             self::SORTS[$sort],
             self::PER_PAGE,
             ($page - 1) * self::PER_PAGE,
+            $categoryId,
         );
 
         Response::json([

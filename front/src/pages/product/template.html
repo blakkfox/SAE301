@@ -3,6 +3,7 @@
     <ol class="flex flex-wrap gap-2">
       <li><a href="/" data-link class="transition-colors hover:text-accent">Accueil</a></li>
       <li aria-hidden="true">/</li>
+      <slot name="breadcrumb-parent"></slot>
       <li><a href="{{categoryUrl}}" data-link class="transition-colors hover:text-accent">{{categoryName}}</a></li>
       <li aria-hidden="true">/</li>
       <li class="text-ink">{{name}}</li>

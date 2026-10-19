@@ -1,0 +1,31 @@
+<section class="mx-auto flex max-w-312 flex-col gap-6 px-4 pt-6 pb-16 sm:px-6 lg:gap-8 lg:pt-8 lg:pb-24">
+  <nav aria-label="Fil d'Ariane" class="text-sm text-ink-muted">
+    <ol class="flex flex-wrap gap-2">
+      <li><a href="/" data-link class="transition-colors hover:text-accent">Accueil</a></li>
+      <li aria-hidden="true">/</li>
+      <li><a href="/" data-link class="transition-colors hover:text-accent">Catalogue</a></li>
+      <li aria-hidden="true">/</li>
+      <slot name="breadcrumb-parent"></slot>
+      <li class="text-ink">{{name}}</li>
+    </ol>
+  </nav>
+
+  <!-- Mobile et tablette : catégories puis produits. Dès 1024 px : deux
+       colonnes comme la maquette (260 px, écart 40 px, puis les produits). -->
+  <div class="grid grid-cols-1 items-start gap-6 lg:grid-cols-[16.25rem_minmax(0,1fr)] lg:gap-10">
+    <slot name="sidebar"></slot>
+
+    <div class="flex flex-col gap-6">
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
+        <div class="flex flex-col gap-1">
+          <h1 class="font-display text-[2.75rem] leading-none text-ink sm:text-[3.5rem] sm:leading-[3.75rem]">{{name}}</h1>
+          <slot name="description"></slot>
+        </div>
+        <p class="shrink-0 text-base text-ink-muted">{{countLabel}}</p>
+      </div>
+
+      <slot name="chips"></slot>
+      <slot name="results"></slot>
+    </div>
+  </div>
+</section>

@@ -1,0 +1,8 @@
+<!-- Une catégorie de premier niveau, puis ses sous-catégories (slot retiré
+     s'il n'y en a pas, voir index.js). -->
+<li class="flex flex-col gap-2">
+  <a href="{{url}}" data-link class="self-start font-display text-2xl leading-none text-ink transition-colors hover:text-accent">
+    {{name}} <span aria-hidden="true" class="font-sans text-sm font-normal text-ink-muted">{{count}}</span><span class="sr-only">, {{countLabel}}</span>
+  </a>
+  <slot name="children"></slot>
+</li>

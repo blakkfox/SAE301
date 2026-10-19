@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Model;
 
 use PDO;
+use PDOStatement;
 
 /**
  * Accès aux produits du catalogue.
@@ -17,11 +18,21 @@ final class ProductModel
     /**
      * Condition SQL d'un produit visible : actif, et doté d'au moins une
      * variante (sans variante, il n'aurait ni référence ni stock).
-     * Écrite une seule fois pour que la liste, la fiche et les suggestions
-     * montrent toujours les mêmes produits.
+     * Écrite une seule fois pour que la liste, la fiche, les suggestions et
+     * les compteurs de catégories (CategoryModel) montrent toujours les mêmes
+     * produits.
      */
-    private const VISIBLE = 'product.is_active = 1
+    public const VISIBLE = 'product.is_active = 1
         AND EXISTS (SELECT 1 FROM variant WHERE variant.product_id = product.id)';
+
+    /**
+     * Condition SQL « le produit est dans la catégorie :category, ou dans
+     * l'une de ses sous-catégories ».
+     * Un seul marqueur :category : PDO, sans émulation des requêtes préparées,
+     * refuse qu'un même marqueur apparaisse deux fois.
+     */
+    private const IN_CATEGORY = 'product.category_id IN (
+        SELECT category.id FROM category WHERE :category IN (category.id, category.parent_id))';
 
     /** Connexion à la base, fournie à la construction. */
     private PDO $pdo;
@@ -35,41 +46,51 @@ final class ProductModel
     }
 
     /**
-     * Nombre de produits visibles dans le catalogue.
+     * Nombre de produits visibles, dans tout le catalogue ou dans une catégorie.
+     *
+     * @param int|null $categoryId Catégorie (sous-catégories comprises), ou
+     *                             null pour tout le catalogue.
      *
      * @return int Nombre de produits visibles.
      */
-    public function countVisible(): int
+    public function countVisible(?int $categoryId = null): int
     {
-        $sql = 'SELECT COUNT(*) FROM product WHERE ' . self::VISIBLE;
+        $sql = 'SELECT COUNT(*) FROM product WHERE ' . self::VISIBLE . self::categoryFilter($categoryId);
 
-        return (int) $this->pdo->query($sql)->fetchColumn();
+        $statement = $this->pdo->prepare($sql);
+        self::bindCategory($statement, $categoryId);
+        $statement->execute();
+
+        return (int) $statement->fetchColumn();
     }
 
     /**
-     * Une page de produits visibles.
+     * Une page de produits visibles, dans tout le catalogue ou dans une catégorie.
      *
-     * @param string $orderBy Fragment SQL de tri, par exemple « product.price ASC ».
-     *                        ATTENTION : ce fragment est inséré tel quel dans la
-     *                        requête. Il ne doit JAMAIS provenir directement de
-     *                        l'utilisateur — voir la liste blanche du contrôleur.
-     * @param int    $limit   Nombre de produits à renvoyer.
-     * @param int    $offset  Nombre de produits à sauter (pagination).
+     * @param string   $orderBy    Fragment SQL de tri, par exemple « product.price ASC ».
+     *                             ATTENTION : ce fragment est inséré tel quel dans la
+     *                             requête. Il ne doit JAMAIS provenir directement de
+     *                             l'utilisateur — voir la liste blanche du contrôleur.
+     * @param int      $limit      Nombre de produits à renvoyer.
+     * @param int      $offset     Nombre de produits à sauter (pagination).
+     * @param int|null $categoryId Catégorie (sous-catégories comprises), ou
+     *                             null pour tout le catalogue.
      *
      * @return array<int, array{id:int, name:string, price:float, image:?string}>
      */
-    public function findVisiblePage(string $orderBy, int $limit, int $offset): array
+    public function findVisiblePage(string $orderBy, int $limit, int $offset, ?int $categoryId = null): array
     {
         // product.id en dernier critère : deux produits au même prix gardent
         // toujours le même ordre, sinon un produit pourrait apparaître sur
         // deux pages successives.
         $sql = 'SELECT product.id, product.name, product.price, product.image
                   FROM product
-                 WHERE ' . self::VISIBLE . "
+                 WHERE ' . self::VISIBLE . self::categoryFilter($categoryId) . "
               ORDER BY {$orderBy}, product.id
                  LIMIT :limit OFFSET :offset";
 
         $statement = $this->pdo->prepare($sql);
+        self::bindCategory($statement, $categoryId);
         $statement->bindValue(':limit', $limit, PDO::PARAM_INT);
         $statement->bindValue(':offset', $offset, PDO::PARAM_INT);
         $statement->execute();
@@ -78,22 +99,30 @@ final class ProductModel
     }
 
     /**
-     * Un produit visible, avec sa catégorie.
+     * Un produit visible, avec sa catégorie et la catégorie parente de
+     * celle-ci (null pour une catégorie de premier niveau).
      *
      * @param int $id Identifiant du produit.
      *
      * @return array{id:int, name:string, description:?string, price:float, image:?string,
-     *               category:array{id:int, name:string, slug:string}}|null
+     *               category:array{id:int, name:string, slug:string,
+     *                              parent:?array{id:int, name:string, slug:string}}}|null
      *         null si le produit n'existe pas ou n'est pas visible.
      */
     public function findVisibleById(int $id): ?array
     {
+        // LEFT JOIN : une catégorie de premier niveau n'a pas de parent, et le
+        // produit doit tout de même être trouvé.
         $sql = 'SELECT product.id, product.name, product.description, product.price, product.image,
                        category.id   AS category_id,
                        category.name AS category_name,
-                       category.slug AS category_slug
+                       category.slug AS category_slug,
+                       parent.id     AS parent_id,
+                       parent.name   AS parent_name,
+                       parent.slug   AS parent_slug
                   FROM product
             INNER JOIN category ON category.id = product.category_id
+             LEFT JOIN category AS parent ON parent.id = category.parent_id
                  WHERE product.id = :id
                    AND ' . self::VISIBLE;
 
@@ -114,9 +143,14 @@ final class ProductModel
             'price'       => (float) $row['price'],
             'image'       => $row['image'],
             'category'    => [
-                'id'   => (int) $row['category_id'],
-                'name' => $row['category_name'],
-                'slug' => $row['category_slug'],
+                'id'     => (int) $row['category_id'],
+                'name'   => $row['category_name'],
+                'slug'   => $row['category_slug'],
+                'parent' => $row['parent_id'] === null ? null : [
+                    'id'   => (int) $row['parent_id'],
+                    'name' => $row['parent_name'],
+                    'slug' => $row['parent_slug'],
+                ],
             ],
         ];
     }
@@ -200,6 +234,31 @@ final class ProductModel
         $statement->execute();
 
         return array_map([self::class, 'toCard'], $statement->fetchAll());
+    }
+
+    /**
+     * Fragment SQL à ajouter après self::VISIBLE pour filtrer par catégorie.
+     *
+     * @param int|null $categoryId Catégorie, ou null pour ne pas filtrer.
+     *
+     * @return string Le fragment « AND … », ou une chaîne vide.
+     */
+    private static function categoryFilter(?int $categoryId): string
+    {
+        return $categoryId === null ? '' : ' AND ' . self::IN_CATEGORY;
+    }
+
+    /**
+     * Lie la catégorie au marqueur :category, si un filtre est demandé.
+     *
+     * @param PDOStatement $statement  Requête préparée avec self::categoryFilter().
+     * @param int|null     $categoryId Catégorie, ou null pour ne pas filtrer.
+     */
+    private static function bindCategory(PDOStatement $statement, ?int $categoryId): void
+    {
+        if ($categoryId !== null) {
+            $statement->bindValue(':category', $categoryId, PDO::PARAM_INT);
+        }
     }
 
     /**
