@@ -1,6 +1,7 @@
 import { Router } from "./lib/router.js";
 import { RootLayout } from "./layouts/root/layout.js";
 import { CataloguePage } from "./pages/catalogue/page.js";
+import { ProductPage } from "./pages/product/page.js";
 import { The404Page } from "./pages/404/page.js";
 
 // base : chemin du projet sur le serveur (BASE dans vite.config.js).
@@ -10,6 +11,9 @@ router.addLayout("/", RootLayout);
 
 // DEC-b — Catalogue (écran Figma n° 1).
 router.addRoute("/", CataloguePage);
+
+// DEC-c — Détail produit (écran Figma n° 2). params.id dans la page.
+router.addRoute("/produits/:id", ProductPage);
 
 // En dernier : toute adresse qui ne correspond à aucune route.
 router.addRoute("*", The404Page);

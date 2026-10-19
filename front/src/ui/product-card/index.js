@@ -9,23 +9,26 @@ import templatePlaceholder from "./placeholder.html?raw";
 let ProductCardView = {
   /**
    * @param {{id: number, name: string, price: number, imageUrl: ?string}} product
+   * @param {2|3} [headingLevel=2] - Niveau du titre de la carte (h2 ou h3).
    * @returns {string} Le HTML de la carte, sans son visuel (slot « visual »).
    */
-  html: function (product) {
+  html: function (product, headingLevel = 2) {
     // Les valeurs sont mises en forme avant d'être passées au template.
     return genericRenderer(template, {
       id: product.id,
       name: product.name,
       price: formatPrice(product.price),
+      headingLevel: headingLevel,
     });
   },
 
   /**
    * @param {{id: number, name: string, price: number, imageUrl: ?string}} product
+   * @param {2|3} [headingLevel=2] - Niveau du titre de la carte (h2 ou h3).
    * @returns {DocumentFragment} La carte, visuel compris.
    */
-  dom: function (product) {
-    let fragment = htmlToFragment(ProductCardView.html(product));
+  dom: function (product, headingLevel = 2) {
+    let fragment = htmlToFragment(ProductCardView.html(product, headingLevel));
     let slot = fragment.querySelector('slot[name="visual"]');
 
     if (product.imageUrl === null) {

@@ -8,6 +8,7 @@
 -- Modèle (lot 0, voir analyse-user-stories.md) :
 --
 --     category 1 ── n product 1 ── n variant
+--                           └── n product_feature
 --
 -- Chaque produit a AU MOINS une variante (taille, coloris, garniture… ou
 -- « Unique »). C'est la variante qui porte la référence et le stock : le
@@ -28,6 +29,7 @@ SET NAMES utf8mb4;
 -- Ordre de suppression : d'abord les tables qui dépendent des autres.
 DROP TABLE IF EXISTS film;
 DROP TABLE IF EXISTS genre;
+DROP TABLE IF EXISTS product_feature;
 DROP TABLE IF EXISTS variant;
 DROP TABLE IF EXISTS product;
 DROP TABLE IF EXISTS category;
@@ -110,6 +112,30 @@ CREATE TABLE variant (
     UNIQUE KEY uq_variant_product_label (product_id, label),
 
     CONSTRAINT fk_variant_product
+        FOREIGN KEY (product_id) REFERENCES product (id)
+        ON DELETE CASCADE
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- Caractéristiques (US DEC-c)
+--
+-- Lignes « libellé : valeur » propres à un produit (Matière, Contenance…).
+-- Un produit peut n'en avoir aucune : la fiche masque alors le bloc.
+-- position fixe l'ordre d'affichage.
+-- ---------------------------------------------------------------------------
+CREATE TABLE product_feature (
+    id         SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    product_id SMALLINT UNSIGNED NOT NULL,
+    label      VARCHAR(40)       NOT NULL,
+    value      VARCHAR(160)      NOT NULL,
+    position   TINYINT UNSIGNED  NOT NULL DEFAULT 0,
+
+    PRIMARY KEY (id),
+    KEY idx_feature_product (product_id, position),
+
+    CONSTRAINT fk_feature_product
         FOREIGN KEY (product_id) REFERENCES product (id)
         ON DELETE CASCADE
 ) ENGINE = InnoDB
@@ -224,3 +250,28 @@ INSERT INTO variant (product_id, reference, label, stock, position) VALUES
     (16, 'HM-POI-CHA-XADV', 'Unique',      5, 1),
     (17, 'HM-SEL-CNF',      'Unique',      2, 1),
     (18, 'HM-SAC-SEL-10',   'Unique',      7, 1);
+
+-- Caractéristiques : celles du blouson reprennent la maquette (écran 2).
+INSERT INTO product_feature (product_id, label, value, position) VALUES
+    ( 4, 'Viscosité',     '10W-30',                                       1),
+    ( 4, 'Norme',         'JASO MA, API SL',                              2),
+    ( 4, 'Type',          'Semi-synthèse, moteurs 4 temps',               3),
+    ( 5, 'Compatibilité', 'CB500, NC750X, X-ADV, Africa Twin',            1),
+    ( 5, 'Entretien',     'À remplacer à chaque vidange',                 2),
+    ( 7, 'Matière',       '100 % coton, 200 g/m²',                        1),
+    ( 7, 'Coupe',         'Droite, col rond',                             2),
+    ( 7, 'Entretien',     'Lavage à 30 °C, sur l''envers',                3),
+    (10, 'Matière',       '80 % coton, 20 % polyester',                   1),
+    (10, 'Coupe',         'Capuche doublée, poche kangourou',             2),
+    (12, 'Contenance',    '4,5 L',                                        1),
+    (12, 'Fixation',      'Anneau de réservoir à verrouillage rapide',    2),
+    (12, 'Étanchéité',    'Housse de pluie fournie',                      3),
+    (13, 'Matière',       'Cuir véritable, doublure thermique amovible',  1),
+    (13, 'Protections',   'Coques CE épaules et coudes, poche dorsale',   2),
+    (13, 'Homologation',  'CE EN 1621-1 niveau 1',                        3),
+    (13, 'Tailles',       'S à XL',                                       4),
+    (14, 'Contenance',    '50 L, deux casques jet',                       1),
+    (14, 'Ouverture',     'Sans clé, avec la Smart Key du X-ADV',         2),
+    (14, 'Fourni avec',   'Dosseret passager',                            3),
+    (16, 'Compatibilité', 'X-ADV 750 (2017-2020)',                        1),
+    (16, 'Réglage',       '5 niveaux de chauffe',                         2);

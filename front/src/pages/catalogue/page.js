@@ -20,10 +20,6 @@ import templateSummary from "./summary.html?raw";
  *   C — réaction aux actions de l'utilisateur, seul lien entre M et V.
  */
 
-// Dossier des photos produit : front/public/images/produits/, copié tel quel
-// par Vite à la racine du site (BASE dans vite.config.js).
-const IMAGE_DIR = import.meta.env.BASE_URL + "images/produits/";
-
 // Tri affiché tant que le serveur n'a pas répondu ; identique au tri par
 // défaut du serveur (CatalogueController::DEFAULT_SORT).
 const DEFAULT_SORT = "price_asc";
@@ -100,7 +96,7 @@ M.toCardData = function (product) {
     id: product.id,
     name: product.name,
     price: product.price,
-    imageUrl: product.image === null ? null : IMAGE_DIR + encodeURIComponent(product.image),
+    imageUrl: ProductData.imageUrl(product.image),
   };
 };
 
