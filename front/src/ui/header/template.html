@@ -5,14 +5,21 @@
     ligne de 80 px comme sur la maquette. L'ordre visuel est réglé par order-*,
     l'ordre du HTML reste celui de la lecture au clavier sur grand écran.
   -->
-  <div class="mx-auto flex max-w-360 flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3 sm:px-6 lg:px-10 xl:h-20 xl:flex-nowrap xl:gap-10 xl:px-20 xl:py-0">
+  <!-- relative : le menu des catégories se place sous cette ligne. -->
+  <div class="relative mx-auto flex max-w-360 flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3 sm:px-6 lg:px-10 xl:h-20 xl:flex-nowrap xl:gap-10 xl:px-20 xl:py-0">
     <a href="/" data-link class="order-1 font-display text-[1.75rem] leading-none tracking-[0.04em] text-accent sm:text-[2.125rem]" aria-label="Honda Moto, retour au catalogue">HONDA</a>
 
     <!-- Le routeur pose aria-current="page" sur le lien de la page affichée. -->
     <nav aria-label="Navigation principale" class="order-4 -mx-4 w-[calc(100%+2rem)] overflow-x-auto px-4 sm:mx-0 sm:w-full sm:px-0 xl:order-2 xl:w-auto">
       <ul class="flex gap-6 text-base font-medium whitespace-nowrap sm:gap-8">
         <li><a href="/" data-link class="inline-block py-2 text-ink underline-offset-8 transition-colors hover:text-accent aria-[current=page]:text-accent aria-[current=page]:underline">Catalogue</a></li>
-        <li><a href="/categories" data-link class="inline-block py-2 text-ink underline-offset-8 transition-colors hover:text-accent aria-[current=page]:text-accent aria-[current=page]:underline">Catégories <span aria-hidden="true">▾</span></a></li>
+        <!-- Bouton et non lien : il ouvre le menu des catégories (DEC-a).
+             aria-expanded est tenu à jour par le layout. -->
+        <li>
+          <button type="button" data-category-menu-button aria-expanded="false" aria-controls="category-menu" class="group inline-flex items-center gap-1 py-2 font-medium text-ink transition-colors hover:text-accent aria-expanded:text-accent">
+            Catégories <span aria-hidden="true" class="inline-block transition-transform duration-200 group-aria-expanded:rotate-180 motion-reduce:transition-none">▾</span>
+          </button>
+        </li>
         <li><a href="/promotions" data-link class="inline-block py-2 text-ink underline-offset-8 transition-colors hover:text-accent aria-[current=page]:text-accent aria-[current=page]:underline">Promotions</a></li>
       </ul>
     </nav>
@@ -33,5 +40,7 @@
         Panier (<span data-cart-count>0</span>)
       </a>
     </div>
+
+    <slot name="category-menu"></slot>
   </div>
 </header>

@@ -1,0 +1,9 @@
+<!-- Colonne « Catégories » (260 px sur la maquette). Mobile et tablette : la
+     liste défile horizontalement au-dessus des produits. Dès 1024 px :
+     colonne verticale à gauche. -->
+<nav aria-labelledby="category-nav-title" class="rounded-xl bg-section p-4 lg:p-5">
+  <h2 id="category-nav-title" class="font-display text-2xl leading-none text-ink lg:text-[1.75rem]">Catégories</h2>
+  <ul class="-mx-1 mt-3 flex gap-1 overflow-x-auto px-1 pb-1 lg:mt-4 lg:flex-col lg:overflow-visible lg:pb-0">
+    <slot name="items"></slot>
+  </ul>
+</nav>

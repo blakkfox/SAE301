@@ -7,22 +7,28 @@ const IMAGE_DIR = import.meta.env.BASE_URL + "images/produits/";
 let ProductData = {};
 
 /**
- * Une page du catalogue : GET /api/products?page=…&sort=…
+ * Une page du catalogue : GET /api/products?page=…&sort=…&category=…
  *
  * sort n'est fourni qu'après un choix de l'utilisateur. Sans lui, le serveur
  * applique le tri qu'il a mémorisé (cookie), ou le tri par défaut.
+ * category limite la liste à une catégorie et à ses sous-catégories (DEC-a).
  *
  * @param {number} page - Numéro de page demandé (le serveur le borne).
  * @param {string} [sort] - Clé de tri : price_asc, price_desc, name_asc, newest.
+ * @param {string} [category] - Slug de la catégorie, par exemple « collection-honda ».
  * @returns {Promise<{products: Array<{id: number, name: string, price: number, image: ?string}>,
  *   sort: string, page: number, pageCount: number, perPage: number, total: number}>}
- * @throws {ErreurApi} Si le serveur répond par une erreur.
+ * @throws {ErreurApi} Si le serveur répond par une erreur (404 : catégorie inconnue).
  */
-ProductData.fetchPage = async function (page, sort) {
+ProductData.fetchPage = async function (page, sort, category) {
   let uri = `products?page=${encodeURIComponent(page)}`;
 
   if (sort !== undefined) {
     uri += `&sort=${encodeURIComponent(sort)}`;
+  }
+
+  if (category !== undefined) {
+    uri += `&category=${encodeURIComponent(category)}`;
   }
 
   return getRequest(uri);
@@ -33,7 +39,8 @@ ProductData.fetchPage = async function (page, sort) {
  *
  * @param {string|number} id - Identifiant du produit (paramètre de l'URL).
  * @returns {Promise<{product: {id: number, name: string, description: ?string, price: number,
- *   image: ?string, category: {id: number, name: string, slug: string},
+ *   image: ?string, category: {id: number, name: string, slug: string,
+ *     parent: ?{id: number, name: string, slug: string}},
  *   variants: Array<{id: number, label: string, reference: string}>,
  *   features: Array<{label: string, value: string}>},
  *   related: Array<{id: number, name: string, price: number, image: ?string}>}>}

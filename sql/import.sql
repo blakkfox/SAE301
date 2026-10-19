@@ -16,7 +16,9 @@
 -- des variantes (OPT-b) ne demandera pas de réécrire ces tables.
 --
 -- 18 produits répartis sur 4 catégories : de quoi remplir 2 pages de 12, comme
--- sur la maquette du catalogue (écran 1, DEC-b).
+-- sur la maquette du catalogue (écran 1, DEC-b). Chaque catégorie est découpée
+-- en sous-catégories : les 4 de Collection Honda reprennent la maquette des
+-- catégories (écran 3, DEC-a), les autres suivent le même principe.
 --
 -- L'import est rejouable : les tables sont supprimées avant d'être recréées.
 -- ATTENTION : les anciennes tables du starter (film, genre) sont supprimées.
@@ -37,15 +39,20 @@ DROP TABLE IF EXISTS category;
 -- ---------------------------------------------------------------------------
 -- Catégories
 --
--- parent_id prépare les sous-catégories de DEC-a (T-shirts, Sweats… dans
+-- parent_id porte les sous-catégories de DEC-a (T-shirts, Sweats… dans
 -- Collection Honda). Une catégorie de premier niveau a parent_id NULL.
+-- Un seul niveau de sous-catégorie : une sous-catégorie n'a pas d'enfant.
+-- Un produit est rangé dans la catégorie la plus précise ; une catégorie
+-- parente affiche aussi les produits de ses sous-catégories.
+-- description est la phrase affichée sous le titre de la page catégorie.
 -- ---------------------------------------------------------------------------
 CREATE TABLE category (
-    id        TINYINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    parent_id TINYINT UNSIGNED     NULL,
-    name      VARCHAR(60)      NOT NULL,
-    slug      VARCHAR(60)      NOT NULL,
-    position  TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    id          TINYINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    parent_id   TINYINT UNSIGNED     NULL,
+    name        VARCHAR(60)      NOT NULL,
+    slug        VARCHAR(60)      NOT NULL,
+    description VARCHAR(160)         NULL,
+    position    TINYINT UNSIGNED NOT NULL DEFAULT 0,
 
     PRIMARY KEY (id),
     UNIQUE KEY uq_category_slug (slug),
@@ -145,67 +152,94 @@ CREATE TABLE product_feature (
 -- ---------------------------------------------------------------------------
 -- Jeu de données
 -- ---------------------------------------------------------------------------
-INSERT INTO category (id, parent_id, name, slug, position) VALUES
-    (1, NULL, 'Bagagerie',             'bagagerie',          1),
-    (2, NULL, 'Équipement et confort', 'equipement-confort', 2),
-    (3, NULL, 'Entretien',             'entretien',          3),
-    (4, NULL, 'Collection Honda',      'collection-honda',   4);
+-- Les catégories parentes sont insérées avant leurs sous-catégories, sinon la
+-- clé étrangère parent_id serait refusée.
+INSERT INTO category (id, parent_id, name, slug, description, position) VALUES
+    (1, NULL, 'Bagagerie',             'bagagerie',
+      'Top box et sacoches d''origine pour partir équipé.',                          1),
+    (2, NULL, 'Équipement et confort', 'equipement-confort',
+      'Équipement du motard et accessoires de confort pour rouler en toute saison.', 2),
+    (3, NULL, 'Entretien',             'entretien',
+      'Huiles, filtres et produits d''entretien d''origine Honda.',                  3),
+    (4, NULL, 'Collection Honda',      'collection-honda',
+      'Vêtements et objets de la collection officielle Honda.',                     4),
+    (5,    4, 'T-shirts',              't-shirts',
+      'T-shirts officiels de la collection Honda.',                                  1),
+    (6,    4, 'Sweats',                'sweats',
+      'Sweats à capuche de la collection Honda.',                                    2),
+    (7,    4, 'Casquettes',            'casquettes',
+      'Casquettes brodées aux couleurs de Honda.',                                   3),
+    (8,    4, 'Accessoires',           'accessoires',
+      'Petits objets et cadeaux de la collection Honda.',                            4),
+    (9,    1, 'Top box',               'top-box',
+      'Top box rigides à fixer sur le porte-bagages.',                               1),
+    (10,   1, 'Sacoches',              'sacoches',
+      'Sacoches de réservoir et de selle, souples et étanches.',                     2),
+    (11,   2, 'Blousons et pantalons', 'blousons-pantalons',
+      'Vêtements de protection homologués pour la route et le tout-terrain.',        1),
+    (12,   2, 'Confort de conduite',   'confort-conduite',
+      'Selles et poignées chauffantes pour rouler plus longtemps.',                  2),
+    (13,   3, 'Huiles et filtres',     'huiles-filtres',
+      'Huiles moteur et filtres d''origine pour la vidange.',                        1),
+    (14,   3, 'Liquides et lubrifiants', 'liquides-lubrifiants',
+      'Liquide de refroidissement et entretien de la chaîne.',                       2);
 
 -- Les dates de création sont échelonnées pour que le tri « Nouveautés » soit
 -- visible. Les produits 15, 17 et 18 n'ont pas encore de photo (image NULL).
+-- Chaque produit est rangé dans sa sous-catégorie (5 à 14).
 INSERT INTO product (id, category_id, name, slug, description, price, image, created_at) VALUES
-    ( 1, 4, 'Porte-clés Rubber Wing',            'porte-cles-rubber-wing',
+    ( 1,  8, 'Porte-clés Rubber Wing',            'porte-cles-rubber-wing',
       'Porte-clés souple en caoutchouc aux couleurs de l''aile Honda.',
         6.90, 'porte-cles-rubber-wing.jpg',         '2026-09-01 10:00:00'),
-    ( 2, 3, 'Liquide de refroidissement Type 2', 'liquide-refroidissement-type-2',
+    ( 2, 14, 'Liquide de refroidissement Type 2', 'liquide-refroidissement-type-2',
       'Liquide de refroidissement prêt à l''emploi, compatible avec tous les moteurs Honda.',
        10.50, 'liquide-refroidissement-type-2.png', '2026-09-02 10:00:00'),
-    ( 3, 3, 'Lubrifiant chaîne Pro Honda',       'lubrifiant-chaine-pro-honda',
+    ( 3, 14, 'Lubrifiant chaîne Pro Honda',       'lubrifiant-chaine-pro-honda',
       'Aérosol de graisse pour chaîne à joints toriques, anti-projections.',
        11.90, 'lubrifiant-chaine-pro-honda.png',    '2026-09-03 10:00:00'),
-    ( 4, 3, 'Huile moteur Pro Honda 10W-30 MA',  'huile-pro-honda-10w30',
+    ( 4, 13, 'Huile moteur Pro Honda 10W-30 MA',  'huile-pro-honda-10w30',
       'Huile moteur 4 temps semi-synthèse, norme JASO MA pour embrayage à bain d''huile.',
        16.90, 'huile-pro-honda-10w30.png',          '2026-09-04 10:00:00'),
-    ( 5, 3, 'Cartouche filtre à huile',          'cartouche-filtre-huile',
+    ( 5, 13, 'Cartouche filtre à huile',          'cartouche-filtre-huile',
       'Filtre à huile d''origine Honda, à remplacer à chaque vidange.',
        19.50, 'cartouche-filtre-huile.png',         '2026-09-05 10:00:00'),
-    ( 6, 4, 'Casquette Factory',                 'casquette-factory',
+    ( 6,  7, 'Casquette Factory',                 'casquette-factory',
       'Casquette réglable brodée de l''aile Honda.',
        24.90, 'casquette-factory.jpg',              '2026-09-06 10:00:00'),
-    ( 7, 4, 'T-shirt CBR Fireblade',             'tshirt-cbr-fireblade',
+    ( 7,  5, 'T-shirt CBR Fireblade',             'tshirt-cbr-fireblade',
       'T-shirt officiel blanc 100 % coton (200 g/m²), grand logo CBR Fireblade sur la poitrine en hommage à la sportive née en 1992.',
        29.90, 'tshirt-cbr-fireblade.png',           '2026-09-07 10:00:00'),
-    ( 8, 4, 'T-shirt Tribute CB1000F',           'tshirt-tribute-cb1000f',
+    ( 8,  5, 'T-shirt Tribute CB1000F',           'tshirt-tribute-cb1000f',
       'T-shirt gris chiné aux bandes tricolores de la CB1000F.',
        39.90, 'tshirt-tribute-cb1000f.jpg',         '2026-09-08 10:00:00'),
-    ( 9, 4, 'T-shirt Capsule',                   'tshirt-capsule',
+    ( 9,  5, 'T-shirt Capsule',                   'tshirt-capsule',
       'T-shirt camouflage gris de la collection Capsule.',
        39.90, 'tshirt-capsule.jpg',                 '2026-09-09 10:00:00'),
-    (10, 4, 'Sweat à capuche Monkey',            'sweat-capuche-monkey',
+    (10,  6, 'Sweat à capuche Monkey',            'sweat-capuche-monkey',
       'Sweat à capuche moutarde illustré de la Honda Monkey.',
        58.90, 'sweat-capuche-monkey.jpg',           '2026-09-10 10:00:00'),
-    (11, 2, 'Pantalon MX',                       'pantalon-mx',
+    (11, 11, 'Pantalon MX',                       'pantalon-mx',
       'Pantalon de motocross renforcé aux genoux, coupe ajustée.',
       129.90, 'pantalon-mx.jpg',                    '2026-09-11 10:00:00'),
-    (12, 1, 'Sacoche de réservoir 4,5 L',        'sacoche-reservoir-4-5l',
+    (12, 10, 'Sacoche de réservoir 4,5 L',        'sacoche-reservoir-4-5l',
       'Sacoche de réservoir étanche 4,5 L à fixation rapide.',
       146.90, 'sacoche-reservoir-4-5l.jpg',         '2026-09-12 10:00:00'),
-    (13, 2, 'Blouson cuir Maine',                'blouson-cuir-maine',
+    (13, 11, 'Blouson cuir Maine',                'blouson-cuir-maine',
       'Blouson en cuir véritable au look vintage, coupe motard et bandes contrastées. Coques de protection CE amovibles aux épaules et aux coudes, poche pour dorsale, doublure thermique amovible.',
       379.90, 'blouson-cuir-maine.jpg',             '2026-09-13 10:00:00'),
-    (14, 1, 'Smart Top Box 50 L',                'smart-top-box-50l',
+    (14,  9, 'Smart Top Box 50 L',                'smart-top-box-50l',
       'Top box 50 L à ouverture sans clé, verrouillée avec la Smart Key du X-ADV. Livrée avec dosseret pour le confort du passager.',
       490.00, 'smart-top-box-50l.png',              '2026-09-14 10:00:00'),
-    (15, 1, 'Kit top box aluminium 42 L',        'kit-top-box-aluminium-42l',
+    (15,  9, 'Kit top box aluminium 42 L',        'kit-top-box-aluminium-42l',
       'Top box en aluminium brossé 42 L avec platine de fixation.',
       399.00, NULL,                                 '2026-09-15 10:00:00'),
-    (16, 2, 'Poignées chauffantes',              'poignees-chauffantes',
+    (16, 12, 'Poignées chauffantes',              'poignees-chauffantes',
       'Poignées chauffantes d''origine, 5 niveaux de chauffe. X-ADV 750 (2017-2020).',
       311.90, 'poignees-chauffantes.jpg',           '2026-09-16 10:00:00'),
-    (17, 2, 'Selle confort',                     'selle-confort',
+    (17, 12, 'Selle confort',                     'selle-confort',
       'Selle à mousse haute densité pour les longs trajets.',
       249.00, NULL,                                 '2026-09-17 10:00:00'),
-    (18, 1, 'Sacoche de selle 10 L',             'sacoche-selle-10l',
+    (18, 10, 'Sacoche de selle 10 L',             'sacoche-selle-10l',
       'Sacoche de selle extensible 10 L, sangles de fixation incluses.',
       159.90, NULL,                                 '2026-09-18 10:00:00');
 
