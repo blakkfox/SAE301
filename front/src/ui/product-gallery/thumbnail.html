@@ -1,0 +1,7 @@
+<!-- Miniature cliquable. La photo affichée en grand reçoit aria-pressed="true"
+     (voir index.js), que Tailwind cible pour l'encadrer en gris anthracite. -->
+<li>
+  <button type="button" data-index="{{index}}" aria-label="Afficher la photo {{number}}" aria-pressed="false" class="block aspect-square w-full overflow-hidden rounded-lg border-2 border-transparent bg-section transition-colors hover:border-line-strong aria-pressed:border-ink">
+    <img src="{{url}}" alt="" width="1000" height="1000" loading="lazy" decoding="async" class="size-full object-cover" />
+  </button>
+</li>

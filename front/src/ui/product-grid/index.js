@@ -9,15 +9,16 @@ import templateLoading from "./loading.html?raw";
 let ProductGridView = {
   /**
    * @param {Array<{id: number, name: string, price: number, imageUrl: ?string}>} products
+   * @param {2|3} [headingLevel=2] - Niveau du titre des cartes (h2 ou h3).
    * @returns {DocumentFragment} La grille, ou le message « catalogue vide ».
    */
-  dom: function (products) {
+  dom: function (products, headingLevel = 2) {
     if (products.length === 0) {
       return htmlToFragment(templateEmpty);
     }
 
     let fragment = htmlToFragment(template);
-    let cards = products.map((product) => ProductCardView.dom(product));
+    let cards = products.map((product) => ProductCardView.dom(product, headingLevel));
     fragment.querySelector('slot[name="cards"]').replaceWith(...cards);
     return fragment;
   },

@@ -18,6 +18,7 @@ use App\Core\Response;
 use App\Core\Router;
 use App\Controller\AuthController;
 use App\Controller\CatalogueController;
+use App\Controller\ProductController;
 use App\Model\ProductModel;
 
 // --- Chargement automatique des classes ------------------------------------
@@ -60,6 +61,7 @@ try {
     // le contrôleur reçoit le modèle. Aucune magie, tout est lisible ici.
     $controleurs = [
         CatalogueController::class => new CatalogueController(new ProductModel($pdo), $config['chemin']),
+        ProductController::class   => new ProductController(new ProductModel($pdo)),
         AuthController::class      => new AuthController(),
     ];
 

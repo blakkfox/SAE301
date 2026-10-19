@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Controller\AuthController;
 use App\Controller\CatalogueController;
+use App\Controller\ProductController;
 
 /**
  * Table des routes de l'API.
@@ -17,6 +18,7 @@ use App\Controller\CatalogueController;
 
 return [
     'GET  /api/products' => [CatalogueController::class, 'index'],
+    'GET  /api/product'  => [ProductController::class,   'show'],
     'POST /api/login'    => [AuthController::class,      'login'],
     'POST /api/logout'   => [AuthController::class,      'logout'],
 ];

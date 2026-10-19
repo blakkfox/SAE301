@@ -1,0 +1,8 @@
+<!-- Galerie de la fiche produit : grande photo carrée (620 px sur la maquette),
+     puis une rangée de 4 miniatures. -->
+<div class="flex flex-col gap-3 sm:gap-4">
+  <slot name="main"></slot>
+  <ul aria-label="Photos du produit" class="grid grid-cols-4 gap-3 sm:gap-4">
+    <slot name="thumbnails"></slot>
+  </ul>
+</div>

@@ -148,6 +148,7 @@ Une page dynamique suit le découpage Modèle / Contrôleur / Vue :
 | Route | Effet |
 |---|---|
 | `GET /api/products?page=2&sort=price_asc` | une page du catalogue (12 produits) |
+| `GET /api/product?id=13` | fiche d'un produit : catégorie, variantes, caractéristiques, et 4 suggestions (`related`). 400 si `id` invalide, 404 si produit introuvable |
 | `POST /api/login` | connexion, corps JSON `{"login": …, "mdp": …}` |
 | `POST /api/logout` | déconnexion |
 
