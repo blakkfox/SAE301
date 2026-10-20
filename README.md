@@ -7,13 +7,14 @@ client. Charte Honda (tokens Figma) en Tailwind CSS 4.
 
 - catalogue paginé et trié (US DEC-b), tri mémorisé dans un cookie ;
 - produits déclinés en variantes, qui portent référence et stock ;
-- connexion par session (à brancher sur l'interface avec CMD-c).
+- connexion, création de compte et mot de passe oublié (US CMD-c), par
+  session serveur ; comptes en base, mots de passe hachés.
 
 ## Arborescence
 
 ```
 .htaccess            /api/... vers le back, tout le reste vers front/dist/
-sql/import.sql       tables category, product, variant et jeu de données
+sql/import.sql       tables category, product, variant, customer et jeu de données
 back/                API PHP, ne renvoie que du JSON
 ├── index.php        point d'entrée : assemble les dépendances, délègue
 ├── config/          identifiants de la base, chemin du projet
@@ -36,7 +37,7 @@ front/               sources du front (Vite + Tailwind)
 ## Installation
 
 1. Importez `sql/import.sql` dans votre base depuis phpMyAdmin (il crée les
-   tables `category`, `product` et `variant`, et supprime les anciennes
+   tables `category`, `product`, `variant` et `customer`, et supprime les anciennes
    tables `film` et `genre` du starter).
 2. Dans `back/config/config.php`, renseignez les identifiants de la base et
    le chemin du projet (`/~votre_login/Base/`).
@@ -151,7 +152,10 @@ Une page dynamique suit le découpage Modèle / Contrôleur / Vue :
 | `GET /api/products?category=collection-honda` | une page des produits d'une catégorie, sous-catégories comprises. 404 si la catégorie n'existe pas |
 | `GET /api/categories` | arbre des catégories (`children` : sous-catégories) avec leur nombre de produits (`productCount`), et `total` du catalogue |
 | `GET /api/product?id=13` | fiche d'un produit : catégorie, variantes, caractéristiques, et 4 suggestions (`related`). 400 si `id` invalide, 404 si produit introuvable |
-| `POST /api/login` | connexion, corps JSON `{"login": …, "mdp": …}` |
+| `GET /api/me` | compte connecté (`customer`), ou `null` |
+| `POST /api/login` | connexion, corps JSON `{"email": …, "password": …}`. 401 si identifiants incorrects |
+| `POST /api/register` | création de compte puis connexion, corps JSON `{firstName, lastName, email, phone, password, passwordConfirm}`. 422 si saisie invalide, 409 si e-mail déjà pris (erreurs par champ dans `champs`) |
+| `POST /api/password-reset` | nouveau mot de passe d'un compte client, corps JSON `{email, password, passwordConfirm}`. **Sans vérification d'identité** (version simplifiée du projet) ; les comptes admin sont exclus |
 | `POST /api/logout` | déconnexion |
 
 Tris acceptés : `price_asc` (défaut), `price_desc`, `name_asc`, `newest`.
@@ -164,10 +168,10 @@ cookie, qui est en `HttpOnly`. Les photos sont dans
 
 ## Comptes
 
-| Login | Mot de passe | Rôle |
+| E-mail | Mot de passe | Rôle |
 |---|---|---|
-| `alice` | `azerty` | `user` |
-| `admin` | `motdepasse` | `admin` |
+| `alice@exemple.fr` | `azerty` | `customer` |
+| `admin@honda-lyon.fr` | `motdepasse` | `admin` |
 
 ## Si ça ne marche pas
 

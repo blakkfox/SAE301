@@ -23,6 +23,9 @@ return [
     'GET  /api/product'    => [ProductController::class,   'show'],
     'GET  /api/categories' => [CategoryController::class,  'index'],
     'GET  /api/cart'       => [CartController::class,      'show'],
-    'POST /api/login'      => [AuthController::class,      'login'],
-    'POST /api/logout'     => [AuthController::class,      'logout'],
+    'GET  /api/me'             => [AuthController::class,      'me'],
+    'POST /api/login'          => [AuthController::class,      'login'],
+    'POST /api/register'       => [AuthController::class,      'register'],
+    'POST /api/password-reset' => [AuthController::class,      'resetPassword'],
+    'POST /api/logout'         => [AuthController::class,      'logout'],
 ];

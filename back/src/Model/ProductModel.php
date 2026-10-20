@@ -26,6 +26,15 @@ final class ProductModel
         AND EXISTS (SELECT 1 FROM variant WHERE variant.product_id = product.id)';
 
     /**
+     * Colonne SQL single_variant_id d'une carte produit : l'identifiant de la
+     * variante si le produit n'en a qu'une, NULL sinon. Elle permet d'ajouter
+     * au panier depuis la carte (CMD-b) sans avoir à choisir de variante.
+     */
+    private const SINGLE_VARIANT = '(SELECT IF(COUNT(*) = 1, MIN(variant.id), NULL)
+                  FROM variant
+                 WHERE variant.product_id = product.id) AS single_variant_id';
+
+    /**
      * Condition SQL « le produit est dans la catégorie :category, ou dans
      * l'une de ses sous-catégories ».
      * Un seul marqueur :category : PDO, sans émulation des requêtes préparées,
@@ -76,14 +85,14 @@ final class ProductModel
      * @param int|null $categoryId Catégorie (sous-catégories comprises), ou
      *                             null pour tout le catalogue.
      *
-     * @return array<int, array{id:int, name:string, price:float, image:?string}>
+     * @return array<int, array{id:int, name:string, price:float, image:?string, variantId:?int}>
      */
     public function findVisiblePage(string $orderBy, int $limit, int $offset, ?int $categoryId = null): array
     {
         // product.id en dernier critère : deux produits au même prix gardent
         // toujours le même ordre, sinon un produit pourrait apparaître sur
         // deux pages successives.
-        $sql = 'SELECT product.id, product.name, product.price, product.image
+        $sql = 'SELECT product.id, product.name, product.price, product.image, ' . self::SINGLE_VARIANT . '
                   FROM product
                  WHERE ' . self::VISIBLE . self::categoryFilter($categoryId) . "
               ORDER BY {$orderBy}, product.id
@@ -214,13 +223,13 @@ final class ProductModel
      * @param int $categoryId Catégorie du produit affiché.
      * @param int $limit      Nombre de suggestions.
      *
-     * @return array<int, array{id:int, name:string, price:float, image:?string}>
+     * @return array<int, array{id:int, name:string, price:float, image:?string, variantId:?int}>
      */
     public function findRelated(int $productId, int $categoryId, int $limit): array
     {
         // « product.category_id = :category » vaut 1 ou 0 : trié en DESC, il
         // place la même catégorie en tête.
-        $sql = 'SELECT product.id, product.name, product.price, product.image
+        $sql = 'SELECT product.id, product.name, product.price, product.image, ' . self::SINGLE_VARIANT . '
                   FROM product
                  WHERE product.id <> :product
                    AND ' . self::VISIBLE . '
@@ -321,17 +330,19 @@ final class ProductModel
      * DECIMAL et les entiers sous forme de chaînes : on les type pour que le
      * JSON contienne de vrais nombres.
      *
-     * @param array{id:string, name:string, price:string, image:?string} $row
+     * @param array{id:string, name:string, price:string, image:?string, single_variant_id:?string} $row
      *
-     * @return array{id:int, name:string, price:float, image:?string}
+     * @return array{id:int, name:string, price:float, image:?string, variantId:?int}
+     *         variantId : la variante unique du produit, ou null s'il en a plusieurs.
      */
     private static function toCard(array $row): array
     {
         return [
-            'id'    => (int) $row['id'],
-            'name'  => $row['name'],
-            'price' => (float) $row['price'],
-            'image' => $row['image'],
+            'id'        => (int) $row['id'],
+            'name'      => $row['name'],
+            'price'     => (float) $row['price'],
+            'image'     => $row['image'],
+            'variantId' => $row['single_variant_id'] === null ? null : (int) $row['single_variant_id'],
         ];
     }
 }

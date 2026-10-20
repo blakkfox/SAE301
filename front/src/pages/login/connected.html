@@ -1,0 +1,9 @@
+<!-- Déjà connecté : pas de formulaire, mais de quoi continuer ou changer de compte. -->
+<section aria-labelledby="connected-title" class="flex max-w-146 flex-col gap-4 rounded-xl border border-line bg-page p-6 sm:p-7">
+  <h2 id="connected-title" class="font-display text-h3 leading-none text-ink">Vous êtes connecté</h2>
+  <p class="text-small text-ink-muted">Bonjour {{firstName}}, vous êtes identifié avec l’adresse <span class="font-semibold text-ink">{{email}}</span>.</p>
+  <div class="flex flex-col gap-3 sm:flex-row">
+    <a href="/panier" data-link class="button h-12 px-6 text-small">Retour au panier</a>
+    <button type="button" data-action="logout" class="button button--outline h-12 px-6 text-small">{{logoutLabel}}</button>
+  </div>
+</section>

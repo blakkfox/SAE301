@@ -213,4 +213,36 @@
     --_fg: var(--clr-text);
     --_border: var(--clr-border);
   }
+
+  /*
+    Champ de saisie de la charte (formulaires de CMD-c). Comme pour .button,
+    l'état ne fait que réassigner la variable privée : un champ en erreur
+    (aria-invalid, posé par applyFieldErrors) est bordé du rouge Honda.
+  */
+  .field {
+    --_border: var(--clr-border);
+
+    width: 100%;
+    min-width: 0;
+    height: 3rem;
+    padding-inline: 1rem;
+    border: 1px solid var(--_border);
+    border-radius: 0.25rem;
+    background-color: var(--clr-bg-page);
+    color: var(--clr-text);
+    font-size: var(--size-text-small);
+    transition: border-color 150ms ease;
+
+    &::placeholder {
+      color: var(--clr-text-muted);
+    }
+
+    &:hover {
+      --_border: var(--clr-border-strong);
+    }
+
+    &[aria-invalid="true"] {
+      --_border: var(--clr-action);
+    }
+  }
 }

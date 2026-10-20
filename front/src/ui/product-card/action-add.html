@@ -1,0 +1,6 @@
+<!-- Produit à variante unique : ajout direct au panier (CMD-b). Après l'ajout,
+     le libellé devient « Ajouté au panier ✓ » (voir index.js) ; un nouveau
+     clic ajoute un exemplaire de plus. Le nom du produit, masqué, complète le
+     libellé pour les lecteurs d'écran. relative z-10 : au-dessus du lien
+     étiré de la carte. -->
+<button type="button" data-add-to-cart data-focus-key="add" class="button relative z-10 mt-auto h-12 w-full px-6 text-base">{{label}}<span class="sr-only"> : {{name}}</span></button>

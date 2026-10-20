@@ -10,6 +10,8 @@
 --     category 1 ── n product 1 ── n variant
 --                           └── n product_feature
 --
+--     customer : comptes clients et administrateurs (US CMD-c)
+--
 -- Chaque produit a AU MOINS une variante (taille, coloris, garniture… ou
 -- « Unique »). C'est la variante qui porte la référence et le stock : le
 -- panier, les commandes et les stocks s'appuieront sur variant.id, et l'arrivée
@@ -31,6 +33,7 @@ SET NAMES utf8mb4;
 -- Ordre de suppression : d'abord les tables qui dépendent des autres.
 DROP TABLE IF EXISTS film;
 DROP TABLE IF EXISTS genre;
+DROP TABLE IF EXISTS customer;
 DROP TABLE IF EXISTS product_feature;
 DROP TABLE IF EXISTS variant;
 DROP TABLE IF EXISTS product;
@@ -145,6 +148,33 @@ CREATE TABLE product_feature (
     CONSTRAINT fk_feature_product
         FOREIGN KEY (product_id) REFERENCES product (id)
         ON DELETE CASCADE
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- Comptes (US CMD-c)
+--
+-- Une seule table pour les clients et l'administration : role distingue les
+-- deux. Le rôle est lu en base et rangé en session côté serveur, jamais
+-- confié au navigateur.
+-- password_hash contient le résultat de password_hash() (algorithme, sel et
+-- empreinte) : le mot de passe lui-même n'est jamais enregistré.
+-- email est unique : c'est l'identifiant de connexion. Il est enregistré en
+-- minuscules par l'API.
+-- ---------------------------------------------------------------------------
+CREATE TABLE customer (
+    id            INT UNSIGNED              NOT NULL AUTO_INCREMENT,
+    first_name    VARCHAR(60)               NOT NULL,
+    last_name     VARCHAR(60)               NOT NULL,
+    email         VARCHAR(190)              NOT NULL,
+    phone         VARCHAR(20)               NOT NULL,
+    password_hash VARCHAR(255)              NOT NULL,
+    role          ENUM('customer', 'admin') NOT NULL DEFAULT 'customer',
+    created_at    DATETIME                  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_customer_email (email)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
@@ -309,3 +339,12 @@ INSERT INTO product_feature (product_id, label, value, position) VALUES
     (14, 'Fourni avec',   'Dosseret passager',                            3),
     (16, 'Compatibilité', 'X-ADV 750 (2017-2020)',                        1),
     (16, 'Réglage',       '5 niveaux de chauffe',                         2);
+
+-- Comptes de démonstration (voir README) : alice@exemple.fr / azerty et
+-- admin@honda-lyon.fr / motdepasse. Les empreintes ont été produites par
+-- password_hash() ; password_verify() les reconnaît.
+INSERT INTO customer (id, first_name, last_name, email, phone, password_hash, role) VALUES
+    (1, 'Alice', 'Martin', 'alice@exemple.fr',    '0601020304',
+      '$2y$12$KhZok8GMkFs9fnyzIr.e4epTlmI4nqEg44GokNMrW4EiMJf.8NH7K', 'customer'),
+    (2, 'Honda', 'Lyon',   'admin@honda-lyon.fr', '0478000000',
+      '$2y$12$EXfknxoF6Jj9XfazOLOsduOJAV7VXRAQHDMNT/D2am1QrYnV3mwxC', 'admin');

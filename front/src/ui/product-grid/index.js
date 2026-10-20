@@ -5,20 +5,22 @@ import templateEmpty from "./empty.html?raw";
 import templateLoading from "./loading.html?raw";
 
 // Grille de cartes produit. Elle compose ProductCardView : les cartes prennent
-// la place du <slot name="cards">.
+// la place du <slot name="cards">. Sa zone [data-grid-status] annonce l'ajout
+// au panier depuis une carte.
 let ProductGridView = {
   /**
-   * @param {Array<{id: number, name: string, price: number, imageUrl: ?string}>} products
-   * @param {2|3} [headingLevel=2] - Niveau du titre des cartes (h2 ou h3).
+   * @param {Array<Parameters<typeof ProductCardView.dom>[0]>} products
+   * @param {2|3} headingLevel - Niveau du titre des cartes (h2 ou h3).
+   * @param {Parameters<typeof ProductCardView.dom>[2]} actions
    * @returns {DocumentFragment} La grille, ou le message « catalogue vide ».
    */
-  dom: function (products, headingLevel = 2) {
+  dom: function (products, headingLevel, actions) {
     if (products.length === 0) {
       return htmlToFragment(templateEmpty);
     }
 
     let fragment = htmlToFragment(template);
-    let cards = products.map((product) => ProductCardView.dom(product, headingLevel));
+    let cards = products.map((product) => ProductCardView.dom(product, headingLevel, actions));
     fragment.querySelector('slot[name="cards"]').replaceWith(...cards);
     return fragment;
   },

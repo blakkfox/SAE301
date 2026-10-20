@@ -1,0 +1,36 @@
+<!--
+  « Mot de passe oublié » : remplace « J'ai déjà un compte » dans la colonne de
+  gauche. Hors maquette : il en reprend la carte et les champs. Version
+  simplifiée, sans e-mail de vérification. L'adresse reste nécessaire pour
+  savoir quel compte modifier.
+-->
+<section aria-labelledby="reset-title" class="flex flex-col gap-4 rounded-xl border border-line bg-page p-6 sm:p-7">
+  <div class="flex flex-col gap-3">
+    <h2 id="reset-title" tabindex="-1" class="font-display text-h3 leading-none text-ink outline-none">Mot de passe oublié</h2>
+    <p class="text-caption text-ink-muted">Choisissez un nouveau mot de passe pour votre compte.</p>
+  </div>
+
+  <form novalidate class="flex flex-col gap-4">
+    <div class="flex flex-col gap-2">
+      <label for="reset-email" class="text-caption font-semibold text-ink">Adresse e-mail</label>
+      <input id="reset-email" name="email" type="email" autocomplete="email" required value="{{email}}" placeholder="nom@exemple.fr" aria-describedby="reset-email-error" class="field" />
+      <p id="reset-email-error" data-error-for="email" hidden class="text-caption text-accent"></p>
+    </div>
+
+    <div class="flex flex-col gap-2">
+      <label for="reset-password" class="text-caption font-semibold text-ink">Nouveau mot de passe</label>
+      <input id="reset-password" name="password" type="password" autocomplete="new-password" required minlength="8" placeholder="8 caractères minimum" aria-describedby="reset-password-hint reset-password-error" class="field" />
+      <p id="reset-password-hint" class="sr-only">8 caractères minimum.</p>
+      <p id="reset-password-error" data-error-for="password" hidden class="text-caption text-accent"></p>
+    </div>
+
+    <div class="flex flex-col gap-2">
+      <label for="reset-password-confirm" class="text-caption font-semibold text-ink">Confirmer le nouveau mot de passe</label>
+      <input id="reset-password-confirm" name="passwordConfirm" type="password" autocomplete="new-password" required aria-describedby="reset-password-confirm-error" class="field" />
+      <p id="reset-password-confirm-error" data-error-for="passwordConfirm" hidden class="text-caption text-accent"></p>
+    </div>
+
+    <button type="submit" class="button h-12 w-full px-6 text-small">{{submitLabel}}</button>
+    <button type="button" data-action="cancel" class="self-start text-caption font-medium text-link underline-offset-4 hover:underline"><span aria-hidden="true">←</span> Retour à la connexion</button>
+  </form>
+</section>

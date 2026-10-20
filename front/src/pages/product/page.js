@@ -4,6 +4,7 @@ import { formatPrice } from "../../lib/format.js";
 import { genericRenderer, htmlToFragment, replaceKeepingFocus } from "../../lib/utils.js";
 import { MessageView } from "../../ui/message/index.js";
 import { ProductFeaturesView } from "../../ui/product-features/index.js";
+import { ProductCardView } from "../../ui/product-card/index.js";
 import { ProductGalleryView } from "../../ui/product-gallery/index.js";
 import { ProductGridView } from "../../ui/product-grid/index.js";
 import { QuantityStepperView } from "../../ui/quantity-stepper/index.js";
@@ -51,6 +52,8 @@ let M = {
   selectedVariantId: null, // variante choisie, ou null tant qu'aucune ne l'est
   quantity: 1, // quantité à ajouter au panier
   feedback: null, // { type: "succes" | "erreur", texte } après « Ajouter au panier », ou null
+  addedProductId: null, // produit de la dernière carte « Vous aimerez aussi » ajoutée, ou null
+  cartStatus: null, // confirmation d'ajout depuis une carte, à annoncer, ou null
 };
 
 /**
@@ -64,6 +67,8 @@ M.reset = function () {
   M.selectedVariantId = null;
   M.quantity = 1;
   M.feedback = null;
+  M.addedProductId = null;
+  M.cartStatus = null;
 };
 
 /**
@@ -245,6 +250,53 @@ M.getPurchaseData = function () {
 };
 
 /**
+ * Prépare un produit du bloc « Vous aimerez aussi » pour la carte produit.
+ *
+ * @param {{id: number, name: string, price: number, image: ?string, variantId: ?number}} product
+ * @returns {{id: number, name: string, price: number, imageUrl: ?string,
+ *   variantId: ?number, isAdded: boolean}}
+ */
+M.toCardData = function (product) {
+  return {
+    id: product.id,
+    name: product.name,
+    price: product.price,
+    imageUrl: ProductData.imageUrl(product.image),
+    variantId: product.variantId,
+    isAdded: product.id === M.addedProductId,
+  };
+};
+
+/**
+ * Ajoute au panier le produit d'une carte « Vous aimerez aussi ». Seuls les
+ * produits à variante unique ont un bouton d'ajout : la variante est lue dans
+ * le modèle, jamais dans la page. Prépare la confirmation à annoncer.
+ *
+ * @param {number} productId - Produit de la carte cliquée.
+ */
+M.addRelatedToCart = function (productId) {
+  let product = M.related.find((candidate) => candidate.id === productId);
+  if (product === undefined || product.variantId === null) return;
+
+  if (CartData.add(product.variantId, 1)) {
+    M.addedProductId = productId;
+    M.cartStatus = `${product.name} ajouté au panier.`;
+  } else {
+    M.addedProductId = null;
+    M.cartStatus = "Le panier n'a pas pu être enregistré sur cet appareil.";
+  }
+};
+
+/**
+ * @param {number} productId
+ * @returns {?ReturnType<typeof M.toCardData>} La carte d'un produit suggéré, ou null.
+ */
+M.getRelatedCard = function (productId) {
+  let product = M.related.find((candidate) => candidate.id === productId);
+  return product === undefined ? null : M.toCardData(product);
+};
+
+/**
  * Rassemble tout ce que la Vue doit afficher, déjà préparé.
  *
  * @returns {{error: ?{title: string, text: string}, page: ?{name: string,
@@ -252,7 +304,7 @@ M.getPurchaseData = function () {
  *   parent: ?{name: string, url: string}, description: ?string, gallery: ?Object,
  *   purchase: ?ReturnType<typeof M.getPurchaseData>,
  *   features: Array<{label: string, value: string}>,
- *   related: Array<{id: number, name: string, price: number, imageUrl: ?string}>}}
+ *   related: Array<ReturnType<typeof M.toCardData>>}}
  */
 M.getViewData = function () {
   if (M.product === null) {
@@ -284,12 +336,7 @@ M.getViewData = function () {
     gallery: M.getGalleryData(),
     purchase: M.getPurchaseData(),
     features: M.product.features,
-    related: M.related.map((product) => ({
-      id: product.id,
-      name: product.name,
-      price: product.price,
-      imageUrl: ProductData.imageUrl(product.image),
-    })),
+    related: M.related.map(M.toCardData),
   };
 };
 
@@ -344,6 +391,24 @@ C.handler_changeQuantity = function (quantity) {
 };
 
 /**
+ * Clic sur « Ajouter au panier » d'une carte « Vous aimerez aussi » : la
+ * carte affiche « Ajouté au panier ✓ » et la confirmation est annoncée.
+ *
+ * @param {number} productId - Produit de la carte cliquée.
+ */
+C.handler_addRelatedToCart = function (productId) {
+  let previous = M.addedProductId;
+  M.addRelatedToCart(productId);
+
+  // La carte précédemment « ajoutée » redevient « Ajouter au panier ».
+  if (previous !== null && previous !== productId) {
+    V.renderRelatedCard(M.getRelatedCard(previous));
+  }
+  V.renderRelatedCard(M.getRelatedCard(productId));
+  V.renderCartStatus(M.cartStatus);
+};
+
+/**
  * Clic sur « Ajouter au panier ».
  */
 C.handler_addToCart = function () {
@@ -360,6 +425,7 @@ let V = {
   gallery: null, // élément racine de la galerie affichée
   purchase: null, // bloc d'achat affiché
   feedback: null, // zone du message d'ajout au panier
+  related: null, // bloc « Vous aimerez aussi » affiché, ou null
 };
 
 /**
@@ -433,6 +499,31 @@ V.createPurchaseFragment = function (purchaseData) {
 };
 
 /**
+ * Reconstruit une carte « Vous aimerez aussi », en gardant le focus sur son bouton.
+ *
+ * @param {?ReturnType<typeof M.toCardData>} card
+ */
+V.renderRelatedCard = function (card) {
+  if (card === null || V.related === null) return;
+  let element = V.related.querySelector(`[data-product-id="${card.id}"]`);
+  if (element === null) return;
+  // Cartes en h3 : elles sont sous le h2 « Vous aimerez aussi ».
+  replaceKeepingFocus(element, ProductCardView.dom(card, 3, { onAdd: C.handler_addRelatedToCart }));
+};
+
+/**
+ * Annonce la confirmation d'ajout depuis une carte (zone role="status" de la grille).
+ *
+ * @param {?string} text
+ */
+V.renderCartStatus = function (text) {
+  let status = V.related?.querySelector("[data-grid-status]") ?? null;
+  if (status !== null) {
+    status.textContent = text ?? "";
+  }
+};
+
+/**
  * @param {ReturnType<typeof M.getGalleryData>} galleryData
  * @returns {DocumentFragment} La galerie, reliée au contrôleur.
  */
@@ -476,12 +567,16 @@ V.createPageFragment = function (data) {
   page.querySelector('slot[name="features"]').replaceWith(ProductFeaturesView.dom(data.features));
 
   let relatedSlot = page.querySelector('slot[name="related"]');
+  V.related = null;
   if (data.related.length === 0) {
     relatedSlot.remove();
   } else {
     let related = htmlToFragment(templateRelated);
     // Cartes en h3 : elles sont sous le h2 « Vous aimerez aussi ».
-    related.querySelector('slot[name="grid"]').replaceWith(ProductGridView.dom(data.related, 3));
+    related
+      .querySelector('slot[name="grid"]')
+      .replaceWith(ProductGridView.dom(data.related, 3, { onAdd: C.handler_addRelatedToCart }));
+    V.related = related.firstElementChild;
     relatedSlot.replaceWith(related);
   }
 

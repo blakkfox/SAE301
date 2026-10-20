@@ -9,6 +9,9 @@ let ProductData = {};
 /**
  * Une page du catalogue : GET /api/products?page=…&sort=…&category=…
  *
+ * variantId est la variante unique du produit (ajout au panier depuis la
+ * carte, CMD-b), ou null si le produit en a plusieurs.
+ *
  * sort n'est fourni qu'après un choix de l'utilisateur. Sans lui, le serveur
  * applique le tri qu'il a mémorisé (cookie), ou le tri par défaut.
  * category limite la liste à une catégorie et à ses sous-catégories (DEC-a).
@@ -16,7 +19,8 @@ let ProductData = {};
  * @param {number} page - Numéro de page demandé (le serveur le borne).
  * @param {string} [sort] - Clé de tri : price_asc, price_desc, name_asc, newest.
  * @param {string} [category] - Slug de la catégorie, par exemple « collection-honda ».
- * @returns {Promise<{products: Array<{id: number, name: string, price: number, image: ?string}>,
+ * @returns {Promise<{products: Array<{id: number, name: string, price: number, image: ?string,
+ *   variantId: ?number}>,
  *   sort: string, page: number, pageCount: number, perPage: number, total: number}>}
  * @throws {ErreurApi} Si le serveur répond par une erreur (404 : catégorie inconnue).
  */
@@ -43,7 +47,7 @@ ProductData.fetchPage = async function (page, sort, category) {
  *     parent: ?{id: number, name: string, slug: string}},
  *   variants: Array<{id: number, label: string, reference: string}>,
  *   features: Array<{label: string, value: string}>},
- *   related: Array<{id: number, name: string, price: number, image: ?string}>}>}
+ *   related: Array<{id: number, name: string, price: number, image: ?string, variantId: ?number}>}>}
  * @throws {ErreurApi} 400 si l'identifiant est invalide, 404 si le produit n'existe pas.
  */
 ProductData.fetchOne = async function (id) {
