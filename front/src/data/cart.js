@@ -1,0 +1,170 @@
+import { getRequest } from "../lib/api-request.js";
+
+/**
+ * Panier (US CMD-b), gardé dans le localStorage du navigateur.
+ *
+ * Le panier ne contient que des identifiants de variantes et des quantités :
+ * [{ variantId: 12, quantity: 2 }, …]. Le nom, la photo et surtout le prix
+ * sont toujours redemandés à l'API (fetchVariants) : une valeur modifiée à la
+ * main dans le navigateur ne peut donc pas changer un prix.
+ *
+ * Le localStorage peut être indisponible (navigation privée, stockage bloqué)
+ * ou contenir une valeur abîmée : chaque lecture et écriture est protégée, et
+ * le panier est alors simplement vide.
+ *
+ * Plusieurs parties de l'application affichent le panier (le compteur de
+ * l'en-tête, la page Panier) : subscribe permet d'être prévenu de chaque
+ * modification.
+ */
+
+const STORAGE_KEY = "honda-cart";
+
+// Quantité maximale d'une ligne. Les contraintes de stock réelles arrivent
+// avec STK-c ; le serveur revérifiera tout à la validation (CMD-a).
+const MAX_QUANTITY = 10;
+
+// Fonctions à appeler après chaque modification du panier.
+const listeners = [];
+
+let CartData = {
+  MAX_QUANTITY,
+};
+
+/**
+ * @param {*} item - Valeur lue dans le stockage.
+ * @returns {boolean} true si c'est une ligne de panier exploitable.
+ */
+let isValidItem = function (item) {
+  return (
+    item !== null &&
+    typeof item === "object" &&
+    Number.isInteger(item.variantId) &&
+    item.variantId > 0 &&
+    Number.isInteger(item.quantity) &&
+    item.quantity >= 1 &&
+    item.quantity <= MAX_QUANTITY
+  );
+};
+
+/**
+ * Les lignes du panier. Une valeur abîmée ou un stockage indisponible donne
+ * un panier vide ; une ligne invalide est ignorée.
+ *
+ * @returns {Array<{variantId: number, quantity: number}>}
+ */
+CartData.read = function () {
+  try {
+    let items = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
+    return Array.isArray(items) ? items.filter(isValidItem) : [];
+  } catch (error) {
+    return [];
+  }
+};
+
+/**
+ * Enregistre les lignes du panier, puis prévient les abonnés.
+ *
+ * @param {Array<{variantId: number, quantity: number}>} items
+ * @returns {boolean} false si le stockage a refusé l'écriture.
+ */
+CartData.write = function (items) {
+  let isSaved = true;
+
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+  } catch (error) {
+    isSaved = false;
+  }
+
+  CartData.notify();
+  return isSaved;
+};
+
+/**
+ * Ajoute une quantité d'une variante. Si la variante est déjà dans le panier,
+ * les quantités s'additionnent, dans la limite de MAX_QUANTITY.
+ *
+ * @param {number} variantId
+ * @param {number} quantity - Quantité à ajouter (au moins 1).
+ * @returns {boolean} false si le panier n'a pas pu être enregistré.
+ */
+CartData.add = function (variantId, quantity) {
+  let items = CartData.read();
+  let existing = items.find((item) => item.variantId === variantId);
+
+  if (existing === undefined) {
+    items.push({ variantId, quantity: Math.min(quantity, MAX_QUANTITY) });
+  } else {
+    existing.quantity = Math.min(existing.quantity + quantity, MAX_QUANTITY);
+  }
+
+  return CartData.write(items);
+};
+
+/**
+ * Change la quantité d'une ligne (bornée entre 1 et MAX_QUANTITY).
+ *
+ * @param {number} variantId
+ * @param {number} quantity
+ * @returns {boolean} false si le panier n'a pas pu être enregistré.
+ */
+CartData.setQuantity = function (variantId, quantity) {
+  let bounded = Math.min(Math.max(quantity, 1), MAX_QUANTITY);
+  let items = CartData.read().map((item) =>
+    item.variantId === variantId ? { variantId, quantity: bounded } : item
+  );
+  return CartData.write(items);
+};
+
+/**
+ * Retire des lignes du panier.
+ *
+ * @param {number[]} variantIds - Variantes à retirer.
+ * @returns {boolean} false si le panier n'a pas pu être enregistré.
+ */
+CartData.remove = function (variantIds) {
+  let items = CartData.read().filter((item) => !variantIds.includes(item.variantId));
+  return CartData.write(items);
+};
+
+/**
+ * @returns {number} Nombre d'articles du panier (somme des quantités).
+ */
+CartData.count = function () {
+  return CartData.read().reduce((total, item) => total + item.quantity, 0);
+};
+
+/**
+ * Enregistre une fonction appelée après chaque modification du panier.
+ *
+ * @param {() => void} listener
+ */
+CartData.subscribe = function (listener) {
+  listeners.push(listener);
+};
+
+/**
+ * Prévient les abonnés que le panier a changé (y compris depuis un autre
+ * onglet : voir le layout, qui écoute l'événement « storage »).
+ */
+CartData.notify = function () {
+  for (const listener of listeners) {
+    listener();
+  }
+};
+
+/**
+ * Nom, photo et prix des variantes du panier : GET /api/cart?variants=…
+ *
+ * Une variante absente de la réponse n'est plus au catalogue.
+ *
+ * @param {number[]} variantIds
+ * @returns {Promise<{variants: Array<{variantId: number, label: string, reference: string,
+ *   productId: number, name: string, price: number, image: ?string}>}>}
+ * @throws {ErreurApi} Si le serveur répond par une erreur.
+ */
+CartData.fetchVariants = async function (variantIds) {
+  return getRequest(`cart?variants=${encodeURIComponent(variantIds.join(","))}`);
+};
+
+export { CartData };

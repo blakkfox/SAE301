@@ -1,0 +1,15 @@
+<!--
+  Choix de la variante (taille, coloris, contenance…) de la fiche produit,
+  d'après le bloc « Taille » de la maquette (écran 2). Version simple de
+  CMD-b : les pastilles de stock arriveront avec STK-b, le guide des tailles
+  et les variantes enrichies avec OPT-b.
+
+  Des boutons radio (et non des <button>) : le groupe se parcourt aux flèches
+  du clavier, et le choix courant est annoncé par les lecteurs d'écran.
+-->
+<fieldset class="flex flex-col gap-3">
+  <legend class="mb-3 text-small font-semibold text-ink">Choix : {{selectedLabel}}</legend>
+  <div class="flex flex-wrap gap-2.5">
+    <slot name="options"></slot>
+  </div>
+</fieldset>

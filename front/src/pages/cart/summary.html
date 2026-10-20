@@ -1,0 +1,29 @@
+<!--
+  Récapitulatif (400 px dès 1024 px). Hors CMD-b, et donc absents ici :
+  la ligne « Dont promotion » (PRO-c) et le champ « Code promo » (PRO-a).
+-->
+<section aria-labelledby="cart-summary-title" class="flex flex-col gap-4 rounded-xl bg-page p-6 sm:p-7">
+  <h2 id="cart-summary-title" class="font-display text-h3 leading-none text-ink">Récapitulatif</h2>
+
+  <dl class="flex flex-col gap-4 text-small">
+    <div class="flex justify-between gap-4">
+      <dt class="text-ink-muted">Sous-total ({{countLabel}})</dt>
+      <dd class="font-semibold text-ink">{{subtotal}}</dd>
+    </div>
+    <div class="flex justify-between gap-4">
+      <dt class="text-ink-muted">Retrait en concession</dt>
+      <!-- La maquette écrit « Gratuit » en vert Statut/Succès, trop peu
+           contrasté pour un texte de 15 px : il reste en gris anthracite. -->
+      <dd class="font-semibold text-ink">Gratuit</dd>
+    </div>
+  </dl>
+
+  <hr class="border-line-subtle" />
+
+  <p class="flex justify-between gap-4 text-xl font-bold text-ink"><span>Total</span><span>{{total}}</span></p>
+
+  <!-- La validation de la commande arrive avec CMD-a (écran 6). -->
+  <button type="button" disabled aria-describedby="cart-summary-note" class="button h-12 w-full px-6 text-base">Valider la commande</button>
+
+  <p id="cart-summary-note" class="text-caption text-ink-muted">Paiement sur place au moment du retrait. Vos articles sont réservés 48 h.</p>
+</section>

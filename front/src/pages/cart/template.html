@@ -1,0 +1,21 @@
+<!-- Page Panier (écran 4) : fond gris, cartes blanches. -->
+<div class="bg-section">
+  <section class="mx-auto flex max-w-312 flex-col gap-6 px-4 pt-6 pb-16 sm:px-6 lg:gap-8 lg:pt-8 lg:pb-24">
+    <nav aria-label="Fil d'Ariane" class="text-sm text-ink-muted">
+      <ol class="flex flex-wrap gap-2">
+        <li><a href="/" data-link class="transition-colors hover:text-accent">Accueil</a></li>
+        <li aria-hidden="true">/</li>
+        <li class="text-ink">Panier</li>
+      </ol>
+    </nav>
+
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
+      <h1 class="font-display text-h1-mobile leading-none text-ink sm:text-h1 sm:leading-h1">Mon panier</h1>
+      <p data-cart-count-label class="shrink-0 text-base text-ink-muted">{{countLabel}}</p>
+    </div>
+
+    <!-- Messages (article retiré du catalogue, panier non enregistré). -->
+    <div data-cart-notice class="empty:hidden"></div>
+    <slot name="content"></slot>
+  </section>
+</div>

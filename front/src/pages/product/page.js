@@ -1,14 +1,20 @@
+import { CartData } from "../../data/cart.js";
 import { ProductData } from "../../data/product.js";
 import { formatPrice } from "../../lib/format.js";
-import { genericRenderer, htmlToFragment } from "../../lib/utils.js";
+import { genericRenderer, htmlToFragment, replaceKeepingFocus } from "../../lib/utils.js";
+import { MessageView } from "../../ui/message/index.js";
 import { ProductFeaturesView } from "../../ui/product-features/index.js";
 import { ProductGalleryView } from "../../ui/product-gallery/index.js";
 import { ProductGridView } from "../../ui/product-grid/index.js";
+import { QuantityStepperView } from "../../ui/quantity-stepper/index.js";
+import { VariantPickerView } from "../../ui/variant-picker/index.js";
 import template from "./template.html?raw";
 import templateBreadcrumbParent from "./breadcrumb-parent.html?raw";
 import templateDescription from "./description.html?raw";
 import templateRelated from "./related.html?raw";
 import templateError from "./error.html?raw";
+import templatePurchase from "./purchase.html?raw";
+import templateFeedback from "./feedback.html?raw";
 
 /**
  * Page « Fiche produit » — US DEC-c (écran Figma n° 2), route /produits/:id.
@@ -17,6 +23,10 @@ import templateError from "./error.html?raw";
  * rendre la page : le routeur l'insère ensuite et complète lui-même ses liens
  * (chemin du projet, aria-current). Le clic sur une miniature ne reconstruit
  * que la galerie, qui ne contient aucun lien.
+ *
+ * Ajout au panier (CMD-b) : le choix de la variante et de la quantité ne
+ * reconstruit que le bloc d'achat. Le panier lui-même est géré par
+ * data/cart.js ; le compteur de l'en-tête se met à jour seul (voir le layout).
  *
  * Découpage MVC strict :
  *   M — état de la page, appel à l'API, préparation des données affichables ;
@@ -38,6 +48,9 @@ let M = {
   related: [], // produits du bloc « Vous aimerez aussi »
   error: null, // { title, text } à afficher, ou null
   selectedImage: 0, // indice de la photo affichée en grand
+  selectedVariantId: null, // variante choisie, ou null tant qu'aucune ne l'est
+  quantity: 1, // quantité à ajouter au panier
+  feedback: null, // { type: "succes" | "erreur", texte } après « Ajouter au panier », ou null
 };
 
 /**
@@ -48,6 +61,9 @@ M.reset = function () {
   M.related = [];
   M.error = null;
   M.selectedImage = 0;
+  M.selectedVariantId = null;
+  M.quantity = 1;
+  M.feedback = null;
 };
 
 /**
@@ -61,6 +77,11 @@ M.loadProduct = async function (id) {
     let response = await ProductData.fetchOne(id);
     M.product = response.product;
     M.related = response.related;
+
+    // Une seule variante : elle est choisie d'office, sans sélecteur.
+    if (M.product.variants.length === 1) {
+      M.selectedVariantId = M.product.variants[0].id;
+    }
   } catch (error) {
     // 400 (identifiant invalide) et 404 (produit absent) ont le même sens
     // pour le client : ce produit n'existe pas.
@@ -138,17 +159,113 @@ M.getGalleryData = function () {
 };
 
 /**
+ * @returns {?{id: number, label: string, reference: string}} La variante
+ *   choisie, ou null.
+ */
+M.getSelectedVariant = function () {
+  return M.product.variants.find((variant) => variant.id === M.selectedVariantId) ?? null;
+};
+
+/**
+ * Choisit la variante à ajouter au panier, si elle appartient au produit.
+ *
+ * @param {number} variantId
+ */
+M.selectVariant = function (variantId) {
+  if (M.product.variants.some((variant) => variant.id === variantId)) {
+    M.selectedVariantId = variantId;
+    M.feedback = null;
+  }
+};
+
+/**
+ * Change la quantité à ajouter, bornée entre 1 et le maximum du panier.
+ *
+ * @param {number} quantity
+ */
+M.setQuantity = function (quantity) {
+  M.quantity = Math.min(Math.max(quantity, 1), CartData.MAX_QUANTITY);
+};
+
+/**
+ * Ajoute la variante choisie au panier, et prépare le message à afficher.
+ * La quantité revient ensuite à 1.
+ */
+M.addToCart = function () {
+  let variant = M.getSelectedVariant();
+
+  if (variant === null) {
+    M.feedback = { type: "erreur", texte: "Choisissez d'abord une option ci-dessus." };
+    return;
+  }
+
+  if (!CartData.add(variant.id, M.quantity)) {
+    M.feedback = { type: "erreur", texte: "Le panier n'a pas pu être enregistré sur cet appareil." };
+    return;
+  }
+
+  let label = M.product.variants.length > 1 ? ` (${variant.label})` : "";
+  let count = M.quantity > 1 ? `${M.quantity} × ` : "";
+  M.feedback = { type: "succes", texte: `${count}${M.product.name}${label} ajouté au panier.` };
+  M.quantity = 1;
+};
+
+/**
+ * Données du bloc d'achat : le sélecteur de variante (null s'il n'y a qu'une
+ * variante) et le sélecteur de quantité.
+ *
+ * @returns {{picker: ?Parameters<typeof VariantPickerView.dom>[0],
+ *   quantity: Parameters<typeof QuantityStepperView.dom>[0]}}
+ */
+M.getPurchaseData = function () {
+  let selected = M.getSelectedVariant();
+  let picker = null;
+
+  if (M.product.variants.length > 1) {
+    picker = {
+      selectedLabel: selected === null ? "à sélectionner" : selected.label,
+      options: M.product.variants.map((variant) => ({
+        id: variant.id,
+        label: variant.label,
+        isSelected: variant.id === M.selectedVariantId,
+      })),
+    };
+  }
+
+  return {
+    picker,
+    quantity: {
+      quantity: M.quantity,
+      min: 1,
+      max: CartData.MAX_QUANTITY,
+      label: `Quantité de ${M.product.name}`,
+      size: "large",
+    },
+  };
+};
+
+/**
  * Rassemble tout ce que la Vue doit afficher, déjà préparé.
  *
  * @returns {{error: ?{title: string, text: string}, page: ?{name: string,
  *   subtitle: string, price: string, categoryName: string, categoryUrl: string},
  *   parent: ?{name: string, url: string}, description: ?string, gallery: ?Object,
+ *   purchase: ?ReturnType<typeof M.getPurchaseData>,
  *   features: Array<{label: string, value: string}>,
  *   related: Array<{id: number, name: string, price: number, imageUrl: ?string}>}}
  */
 M.getViewData = function () {
   if (M.product === null) {
-    return { error: M.error, page: null, parent: null, description: null, gallery: null, features: [], related: [] };
+    return {
+      error: M.error,
+      page: null,
+      parent: null,
+      description: null,
+      gallery: null,
+      purchase: null,
+      features: [],
+      related: [],
+    };
   }
 
   let parent = M.product.category.parent;
@@ -165,6 +282,7 @@ M.getViewData = function () {
     parent: parent === null ? null : { name: parent.name, url: `/categories/${parent.slug}` },
     description: M.product.description,
     gallery: M.getGalleryData(),
+    purchase: M.getPurchaseData(),
     features: M.product.features,
     related: M.related.map((product) => ({
       id: product.id,
@@ -204,12 +322,44 @@ C.handler_selectImage = function (index) {
   V.renderGallery(M.getGalleryData());
 };
 
+/**
+ * Choix d'une variante (taille, coloris…).
+ *
+ * @param {number} variantId
+ */
+C.handler_selectVariant = function (variantId) {
+  M.selectVariant(variantId);
+  V.renderPurchase(M.getPurchaseData());
+  V.renderFeedback(M.feedback);
+};
+
+/**
+ * Clic sur « − » ou « + » du sélecteur de quantité.
+ *
+ * @param {number} quantity - Quantité demandée.
+ */
+C.handler_changeQuantity = function (quantity) {
+  M.setQuantity(quantity);
+  V.renderPurchase(M.getPurchaseData());
+};
+
+/**
+ * Clic sur « Ajouter au panier ».
+ */
+C.handler_addToCart = function () {
+  M.addToCart();
+  V.renderPurchase(M.getPurchaseData());
+  V.renderFeedback(M.feedback);
+};
+
 // ---------------------------------------------------------------------------
 // V — Vue
 // ---------------------------------------------------------------------------
 
 let V = {
   gallery: null, // élément racine de la galerie affichée
+  purchase: null, // bloc d'achat affiché
+  feedback: null, // zone du message d'ajout au panier
 };
 
 /**
@@ -235,6 +385,51 @@ V.renderGallery = function (galleryData) {
   let newGallery = fragment.firstElementChild;
   V.gallery.replaceWith(fragment);
   V.gallery = newGallery;
+};
+
+/**
+ * Reconstruit le bloc d'achat, en gardant le focus sur l'élément utilisé.
+ *
+ * @param {ReturnType<typeof M.getPurchaseData>} purchaseData
+ */
+V.renderPurchase = function (purchaseData) {
+  V.purchase = replaceKeepingFocus(V.purchase, V.createPurchaseFragment(purchaseData));
+};
+
+/**
+ * Affiche le message d'ajout au panier, ou aucun.
+ *
+ * @param {?{type: "succes"|"erreur", texte: string}} feedback
+ */
+V.renderFeedback = function (feedback) {
+  if (feedback !== null && feedback.type === "succes") {
+    V.feedback.replaceChildren(htmlToFragment(genericRenderer(templateFeedback, { text: feedback.texte })));
+  } else {
+    V.feedback.replaceChildren(MessageView.dom(feedback));
+  }
+};
+
+/**
+ * @param {ReturnType<typeof M.getPurchaseData>} purchaseData
+ * @returns {DocumentFragment} Le bloc d'achat, relié au contrôleur.
+ */
+V.createPurchaseFragment = function (purchaseData) {
+  let fragment = htmlToFragment(templatePurchase);
+
+  let variantsSlot = fragment.querySelector('slot[name="variants"]');
+  if (purchaseData.picker === null) {
+    variantsSlot.remove();
+  } else {
+    variantsSlot.replaceWith(VariantPickerView.dom(purchaseData.picker, { onSelect: C.handler_selectVariant }));
+  }
+
+  fragment
+    .querySelector('slot[name="quantity"]')
+    .replaceWith(QuantityStepperView.dom(purchaseData.quantity, { onChange: C.handler_changeQuantity }));
+
+  fragment.querySelector("[data-add-to-cart]").addEventListener("click", C.handler_addToCart);
+
+  return fragment;
 };
 
 /**
@@ -265,6 +460,11 @@ V.createPageFragment = function (data) {
   let gallery = V.createGalleryFragment(data.gallery);
   V.gallery = gallery.firstElementChild;
   page.querySelector('slot[name="gallery"]').replaceWith(gallery);
+
+  let purchase = V.createPurchaseFragment(data.purchase);
+  V.purchase = purchase.firstElementChild;
+  page.querySelector('slot[name="purchase"]').replaceWith(purchase);
+  V.feedback = page.querySelector("[data-purchase-feedback]");
 
   let descriptionSlot = page.querySelector('slot[name="description"]');
   if (data.description === null) {

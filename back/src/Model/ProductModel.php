@@ -237,6 +237,61 @@ final class ProductModel
     }
 
     /**
+     * Variantes du panier (US CMD-b), avec le produit qui les porte.
+     *
+     * Seules les variantes d'un produit visible sont renvoyées : une variante
+     * inconnue ou retirée du catalogue est simplement absente du résultat.
+     * Le prix vient toujours de la base, jamais du navigateur.
+     *
+     * @param array<int, int> $variantIds Identifiants de variantes, déjà validés
+     *                                    par le contrôleur (entiers > 0, sans doublon).
+     *
+     * @return array<int, array{variantId:int, label:string, reference:string,
+     *                          productId:int, name:string, price:float, image:?string}>
+     */
+    public function findCartVariants(array $variantIds): array
+    {
+        if ($variantIds === []) {
+            return [];
+        }
+
+        // Un marqueur par identifiant (:v0, :v1…) : seuls les NOMS des
+        // marqueurs sont écrits dans la requête, jamais les valeurs reçues.
+        $markers = array_map(
+            static fn (int $index): string => ':v' . $index,
+            array_keys($variantIds),
+        );
+
+        $sql = 'SELECT variant.id AS variant_id, variant.label, variant.reference,
+                       product.id, product.name, product.price, product.image
+                  FROM variant
+            INNER JOIN product ON product.id = variant.product_id
+                 WHERE variant.id IN (' . implode(', ', $markers) . ')
+                   AND ' . self::VISIBLE;
+
+        $statement = $this->pdo->prepare($sql);
+
+        for ($i = 0; $i < count($variantIds); $i++) {
+            $statement->bindValue($markers[$i], $variantIds[$i], PDO::PARAM_INT);
+        }
+
+        $statement->execute();
+
+        return array_map(
+            static fn (array $row): array => [
+                'variantId' => (int) $row['variant_id'],
+                'label'     => $row['label'],
+                'reference' => $row['reference'],
+                'productId' => (int) $row['id'],
+                'name'      => $row['name'],
+                'price'     => (float) $row['price'],
+                'image'     => $row['image'],
+            ],
+            $statement->fetchAll(),
+        );
+    }
+
+    /**
      * Fragment SQL à ajouter après self::VISIBLE pour filtrer par catégorie.
      *
      * @param int|null $categoryId Catégorie, ou null pour ne pas filtrer.

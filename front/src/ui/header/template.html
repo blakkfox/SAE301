@@ -7,10 +7,10 @@
   -->
   <!-- relative : le menu des catégories se place sous cette ligne. -->
   <div class="relative mx-auto flex max-w-360 flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3 sm:px-6 lg:px-10 xl:h-20 xl:flex-nowrap xl:gap-10 xl:px-20 xl:py-0">
-    <a href="/" data-link class="order-1 font-display text-[1.75rem] leading-none tracking-[0.04em] text-accent sm:text-[2.125rem]" aria-label="Honda Moto, retour au catalogue">HONDA</a>
+    <a href="/" data-link class="order-1 font-display text-logo leading-none tracking-logo text-accent sm:text-logo-lg" aria-label="Honda Moto, retour au catalogue">HONDA</a>
 
     <!-- Le routeur pose aria-current="page" sur le lien de la page affichée. -->
-    <nav aria-label="Navigation principale" class="order-4 -mx-4 w-[calc(100%+2rem)] overflow-x-auto px-4 sm:mx-0 sm:w-full sm:px-0 xl:order-2 xl:w-auto">
+    <nav aria-label="Navigation principale" class="order-4 -mx-4 w-(--size-nav-bleed) overflow-x-auto px-4 sm:mx-0 sm:w-full sm:px-0 xl:order-2 xl:w-auto">
       <ul class="flex gap-6 text-base font-medium whitespace-nowrap sm:gap-8">
         <li><a href="/" data-link class="inline-block py-2 text-ink underline-offset-8 transition-colors hover:text-accent aria-[current=page]:text-accent aria-[current=page]:underline">Catalogue</a></li>
         <!-- Bouton et non lien : il ouvre le menu des catégories (DEC-a).
@@ -30,14 +30,14 @@
       <label class="flex h-10 items-center gap-2 rounded-full border border-line bg-section px-3.5 text-ink-muted">
         <span aria-hidden="true" class="text-lg leading-none">⌕</span>
         <span class="sr-only">Rechercher un produit (bientôt disponible)</span>
-        <input type="search" name="q" placeholder="Rechercher un produit" disabled class="w-full min-w-0 bg-transparent text-[0.9375rem] placeholder:text-ink-muted disabled:cursor-not-allowed" />
+        <input type="search" name="q" placeholder="Rechercher un produit" disabled class="w-full min-w-0 bg-transparent text-small placeholder:text-ink-muted disabled:cursor-not-allowed" />
       </label>
     </form>
 
     <div class="order-2 ml-auto flex items-center gap-4 sm:gap-6 xl:order-4 xl:ml-0 xl:gap-10">
       <a href="/compte" data-link class="text-base font-medium whitespace-nowrap text-ink transition-colors hover:text-accent">Mon compte</a>
-      <a href="/panier" data-link class="rounded-full bg-action px-4 py-2.5 text-[0.9375rem] leading-none font-semibold whitespace-nowrap text-on-action transition-opacity hover:opacity-90">
-        Panier (<span data-cart-count>0</span>)
+      <a href="/panier" data-link class="rounded-full bg-action px-4 py-2.5 text-small leading-none font-semibold whitespace-nowrap text-on-action transition-opacity hover:opacity-90">
+        Panier (<span data-cart-count>{{cartCount}}</span>)
       </a>
     </div>
 

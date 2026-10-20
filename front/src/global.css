@@ -25,6 +25,7 @@
   --color-ink-inverse: var(--clr-text-inverse);
   --color-ink-disabled: var(--clr-text-disabled);
   --color-accent: var(--clr-text-accent);
+  --color-link: var(--clr-text-link);
 
   /* Fonds */
   --color-page: var(--clr-bg-page);
@@ -42,6 +43,34 @@
   --color-action: var(--clr-action);
   --color-on-action: var(--clr-on-action);
   --color-success: var(--clr-success);
+
+  /* Tailles de texte : text-small, text-h1… */
+  --text-small: var(--size-text-small);
+  --text-caption: var(--size-text-caption);
+  --text-micro: var(--size-text-micro);
+  --text-h1: var(--size-title-h1);
+  --text-h1-mobile: var(--size-title-h1-mobile);
+  --text-product-mobile: var(--size-title-product-mobile);
+  --text-h3: var(--size-title-h3);
+  --text-h4: var(--size-title-h4);
+  --text-price-xl: var(--size-price-xl);
+  --text-logo: var(--size-logo);
+  --text-logo-lg: var(--size-logo-lg);
+  --text-logo-footer: var(--size-logo-footer);
+
+  /* Interlignes et espacements de lettres : leading-h1, tracking-logo… */
+  --leading-h1: var(--size-title-h1-line);
+  --leading-title: var(--line-title);
+  --leading-card-title: var(--line-card-title);
+  --tracking-logo: var(--letter-logo);
+  --tracking-logo-footer: var(--letter-logo-footer);
+
+  /* Proportions : aspect-card. */
+  --aspect-card: var(--ratio-card);
+
+  /* Les dimensions (--size-…) et grilles (--grid-…) ne sont pas dans un
+     espace de noms Tailwind : les templates les lisent directement, avec la
+     syntaxe des variables, par exemple lg:grid-cols-(--grid-cart). */
 }
 
 @layer base {
@@ -59,6 +88,7 @@
     --clr-black: #000000;
     --clr-green-600: #279639;
     --clr-green-50: #e7f4e9;
+    --clr-blue-600: #2b62b3;
 
     /* Tokens sémantiques : ils disent à quoi ils servent (noms Figma). */
     --clr-text: var(--clr-grey-900); /* Texte/Principal */
@@ -66,6 +96,7 @@
     --clr-text-inverse: var(--clr-white); /* Texte/Inverse */
     --clr-text-disabled: var(--clr-grey-400); /* Texte/Désactivé */
     --clr-text-accent: var(--clr-honda-red); /* Texte/Accent */
+    --clr-text-link: var(--clr-blue-600); /* Texte/Lien */
 
     --clr-bg-page: var(--clr-white); /* Fond/Page */
     --clr-bg-section: var(--clr-grey-100); /* Fond/Section */
@@ -80,6 +111,53 @@
     --clr-action: var(--clr-honda-red); /* Action/Principale */
     --clr-on-action: var(--clr-white); /* Action/Sur principale */
     --clr-success: var(--clr-green-600); /* Statut/Succès */
+
+    /* Tailles primitives : valeurs brutes des styles de texte Figma, en rem
+       (base 16 px) pour suivre la taille de police choisie par l'utilisateur. */
+    --fs-11: 0.6875rem;
+    --fs-13: 0.8125rem;
+    --fs-15: 0.9375rem;
+    --fs-28: 1.75rem;
+    --fs-32: 2rem;
+    --fs-34: 2.125rem;
+    --fs-36: 2.25rem;
+    --fs-44: 2.75rem;
+    --fs-56: 3.5rem;
+    --lh-60: 3.75rem;
+
+    /* Tailles sémantiques : elles disent à quoi elles servent (noms Figma). */
+    --size-text-small: var(--fs-15); /* Texte/Corps petit, Bouton, Lien */
+    --size-text-caption: var(--fs-13); /* Texte/Légende, Libellé */
+    --size-text-micro: var(--fs-11); /* Légende des miniatures, sur mobile */
+    --size-title-h1: var(--fs-56); /* Titre/H1 */
+    --size-title-h1-line: var(--lh-60); /* Interligne du Titre/H1 */
+    --size-title-h1-mobile: var(--fs-44); /* Titre/H1, réduit sur mobile */
+    --size-title-product-mobile: var(--fs-36); /* Nom de la fiche produit, sur mobile */
+    --size-title-h3: var(--fs-32); /* Titre/H3 */
+    --size-title-h4: var(--fs-28); /* Titre de la colonne Catégories */
+    --size-price-xl: var(--fs-32); /* Prix de la fiche produit */
+    --size-logo: var(--fs-28); /* Logo HONDA de l'en-tête, sur mobile */
+    --size-logo-lg: var(--fs-34); /* Logo HONDA de l'en-tête */
+    --size-logo-footer: var(--fs-32); /* Logo HONDA du pied de page */
+
+    /* Interlignes et espacements de lettres. */
+    --line-title: 1.1; /* Nom de la fiche produit */
+    --line-card-title: 1.2; /* Nom d'une carte produit */
+    --letter-logo: 0.04em; /* Logo HONDA */
+    --letter-logo-footer: 0.02em; /* Logo HONDA du pied de page */
+
+    /* Proportions et dimensions des composants. */
+    --ratio-card: 9 / 7; /* Photo de carte produit : 282 × 220 px */
+    --size-card-title-min: 2.4em; /* Deux lignes de nom : les prix restent alignés */
+    --size-menu-max-height: calc(100dvh - 10rem); /* Menu des catégories */
+    --size-nav-bleed: calc(100% + 2rem); /* Navigation mobile jusqu'aux bords (2 × 16 px) */
+
+    /* Grilles des maquettes (desktop). */
+    --grid-product: minmax(0, 620fr) minmax(0, 524fr); /* Fiche : galerie 620 / infos 524 */
+    --grid-category: 16.25rem minmax(0, 1fr); /* Catégorie : colonne 260 px / produits */
+    --grid-cart: minmax(0, 1fr) 25rem; /* Panier : articles / récapitulatif 400 px */
+    --grid-cart-line: 5rem minmax(0, 1fr); /* Ligne du panier sur mobile : photo 80 px / infos */
+    --grid-footer: 20rem repeat(3, auto); /* Pied de page : marque 320 px / 3 colonnes */
   }
 
   .theme-dark {

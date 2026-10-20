@@ -1,11 +1,11 @@
 <nav aria-label="Pagination du catalogue" class="flex justify-center">
   <ul class="flex flex-wrap items-center justify-center gap-2">
     <li>
-      <button type="button" data-page="{{previous}}" aria-label="Page précédente" class="flex size-10 items-center justify-center rounded-lg border border-line bg-page text-[0.9375rem] font-semibold text-ink transition-colors hover:border-line-strong disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-line">‹</button>
+      <button type="button" data-page="{{previous}}" aria-label="Page précédente" class="flex size-10 items-center justify-center rounded-lg border border-line bg-page text-small font-semibold text-ink transition-colors hover:border-line-strong disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-line">‹</button>
     </li>
     <slot name="pages"></slot>
     <li>
-      <button type="button" data-page="{{next}}" aria-label="Page suivante" class="flex size-10 items-center justify-center rounded-lg border border-line bg-page text-[0.9375rem] font-semibold text-ink transition-colors hover:border-line-strong disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-line">›</button>
+      <button type="button" data-page="{{next}}" aria-label="Page suivante" class="flex size-10 items-center justify-center rounded-lg border border-line bg-page text-small font-semibold text-ink transition-colors hover:border-line-strong disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-line">›</button>
     </li>
   </ul>
 </nav>

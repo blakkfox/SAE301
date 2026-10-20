@@ -1,0 +1,12 @@
+<!--
+  Bloc d'achat de la fiche (écran 2) : choix de la variante s'il y en a
+  plusieurs, puis quantité (132 px) et bouton sur une même rangée.
+  tabindex="-1" : voir replaceKeepingFocus dans lib/utils.js.
+-->
+<div tabindex="-1" class="flex flex-col gap-5 outline-none">
+  <slot name="variants"></slot>
+  <div class="flex gap-3">
+    <slot name="quantity"></slot>
+    <button type="button" data-add-to-cart data-focus-key="add" class="button h-13 min-w-0 flex-1 px-6 text-base">Ajouter au panier</button>
+  </div>
+</div>
