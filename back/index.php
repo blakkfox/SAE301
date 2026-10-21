@@ -20,8 +20,12 @@ use App\Controller\AuthController;
 use App\Controller\CartController;
 use App\Controller\CatalogueController;
 use App\Controller\CategoryController;
+use App\Controller\OrderController;
 use App\Controller\ProductController;
 use App\Model\CategoryModel;
+use App\Model\CustomerModel;
+use App\Model\DealershipModel;
+use App\Model\OrderModel;
 use App\Model\ProductModel;
 
 // --- Chargement automatique des classes ------------------------------------
@@ -67,7 +71,8 @@ try {
         ProductController::class   => new ProductController(new ProductModel($pdo)),
         CategoryController::class  => new CategoryController(new CategoryModel($pdo), new ProductModel($pdo)),
         CartController::class      => new CartController(new ProductModel($pdo)),
-        AuthController::class      => new AuthController(),
+        AuthController::class      => new AuthController(new CustomerModel($pdo)),
+        OrderController::class     => new OrderController(new CustomerModel($pdo), new DealershipModel($pdo), new OrderModel($pdo)),
     ];
 
     $routes = require __DIR__ . '/src/routes.php';

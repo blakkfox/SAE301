@@ -1,0 +1,22 @@
+<!-- Page Validation de commande (écran 6) : fond gris, cartes blanches, comme le panier. -->
+<div class="bg-section">
+  <section class="mx-auto flex max-w-312 flex-col gap-6 px-4 pt-6 pb-16 sm:px-6 lg:gap-8 lg:pt-8 lg:pb-24">
+    <nav aria-label="Fil d'Ariane" class="text-sm text-ink-muted">
+      <ol class="flex flex-wrap gap-2">
+        <li><a href="/" data-link class="transition-colors hover:text-accent">Accueil</a></li>
+        <li aria-hidden="true">/</li>
+        <li><a href="/panier" data-link class="transition-colors hover:text-accent">Panier</a></li>
+        <li aria-hidden="true">/</li>
+        <li class="text-ink">Validation</li>
+      </ol>
+    </nav>
+
+    <slot name="steps"></slot>
+
+    <h1 data-checkout-title class="font-display text-h1-mobile leading-none text-ink sm:text-h1 sm:leading-h1">{{title}}</h1>
+
+    <!-- Messages (article retiré, stock insuffisant, créneau expiré, serveur injoignable). -->
+    <div data-checkout-notice class="empty:hidden"></div>
+    <slot name="content"></slot>
+  </section>
+</div>

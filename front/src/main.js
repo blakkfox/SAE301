@@ -4,6 +4,8 @@ import { CataloguePage } from "./pages/catalogue/page.js";
 import { ProductPage } from "./pages/product/page.js";
 import { CategoryPage } from "./pages/category/page.js";
 import { CartPage } from "./pages/cart/page.js";
+import { LoginPage } from "./pages/login/page.js";
+import { CheckoutPage } from "./pages/checkout/page.js";
 import { The404Page } from "./pages/404/page.js";
 
 // base : chemin du projet sur le serveur (BASE dans vite.config.js).
@@ -22,6 +24,12 @@ router.addRoute("/categories/:slug", CategoryPage);
 
 // CMD-b — Panier (écran Figma n° 4).
 router.addRoute("/panier", CartPage);
+
+// CMD-c — Authentification (écran Figma n° 5).
+router.addRoute("/connexion", LoginPage);
+
+// CMD-a — Validation de commande (écran Figma n° 6).
+router.addRoute("/commande", CheckoutPage);
 
 // En dernier : toute adresse qui ne correspond à aucune route.
 router.addRoute("*", The404Page);

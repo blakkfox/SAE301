@@ -1,0 +1,8 @@
+<!-- Concession : bordure rouge doublée (ring) quand elle est choisie, sans décaler la carte. -->
+<label class="flex cursor-pointer items-center gap-3.5 rounded-lg border border-line bg-page p-4 transition-colors hover:border-line-strong has-checked:border-action has-checked:ring-1 has-checked:ring-action sm:p-4.5">
+  <input type="radio" name="dealership" value="{{id}}" data-focus-key="dealership-{{id}}" class="size-5 shrink-0 accent-action" />
+  <span class="flex min-w-0 flex-col gap-1">
+    <span class="text-base font-semibold text-ink">{{name}}</span>
+    <span class="text-sm text-ink-muted">{{address}} · {{hoursLabel}}</span>
+  </span>
+</label>

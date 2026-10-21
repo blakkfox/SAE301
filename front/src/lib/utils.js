@@ -83,4 +83,27 @@ function replaceKeepingFocus(element, fragment) {
   return newElement;
 }
 
-export { genericRenderer, htmlToFragment, replaceKeepingFocus };
+/**
+ * Affiche les erreurs de saisie d'un formulaire, chacune sous son champ.
+ *
+ * Chaque message a sa place dans le template : un élément
+ * data-error-for="email", masqué tant qu'il est vide, que le champ du même
+ * nom désigne par aria-describedby. Le champ en erreur reçoit
+ * aria-invalid="true" : le lecteur d'écran l'annonce, et la classe .field le
+ * borde de rouge.
+ *
+ * @param {ParentNode} root - Formulaire (ou fragment) qui contient les champs.
+ * @param {Object<string, string>} errors - Message de chaque champ en erreur.
+ */
+function applyFieldErrors(root, errors) {
+  for (const element of root.querySelectorAll("[data-error-for]")) {
+    let name = element.dataset.errorFor;
+    let message = errors[name] ?? null;
+
+    element.textContent = message ?? "";
+    element.hidden = message === null;
+    root.querySelector(`[name="${name}"]`)?.setAttribute("aria-invalid", String(message !== null));
+  }
+}
+
+export { genericRenderer, htmlToFragment, replaceKeepingFocus, applyFieldErrors };

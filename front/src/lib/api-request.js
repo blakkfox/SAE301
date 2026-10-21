@@ -14,12 +14,19 @@ const API_URL = import.meta.env.BASE_URL + "api/";
  *
  * Une page a parfois besoin de distinguer un 401 d'un 403 pour afficher le bon
  * message : le message seul ne le permettrait pas.
+ *
+ * champs : erreurs de saisie, une par champ ({ email: "…" }), quand l'API
+ * en renvoie (formulaires de CMD-c) ; un objet vide sinon.
+ * donnees : le corps complet de la réponse d'erreur, pour les détails propres
+ * à une route (variantes « indisponibles » d'un 409 de CMD-a) ; null si illisible.
  */
 class ErreurApi extends Error {
-  constructor(message, statut) {
+  constructor(message, statut, champs = {}, donnees = null) {
     super(message);
     this.name = "ErreurApi";
     this.statut = statut;
+    this.champs = champs;
+    this.donnees = donnees;
   }
 }
 
@@ -39,7 +46,7 @@ let request = async function (uri, options) {
 
   if (!response.ok) {
     // L'API décrit ses erreurs dans un champ « erreur ».
-    throw new ErreurApi(data?.erreur ?? `Erreur ${response.status}`, response.status);
+    throw new ErreurApi(data?.erreur ?? `Erreur ${response.status}`, response.status, data?.champs ?? {}, data);
   }
 
   return data;

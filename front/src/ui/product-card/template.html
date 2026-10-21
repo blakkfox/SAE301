@@ -6,7 +6,7 @@
   Niveau du titre (headingLevel) : 2 sous le h1 du catalogue, 3 sous le h2 « Vous aimerez
   aussi » de la fiche produit, pour garder une hiérarchie de titres continue.
 -->
-<article class="group relative flex flex-col overflow-hidden rounded-lg border border-line-subtle bg-page transition-shadow duration-200 hover:shadow-lg motion-reduce:transition-none">
+<article data-product-id="{{id}}" class="group relative flex flex-col overflow-hidden rounded-lg border border-line-subtle bg-page transition-shadow duration-200 hover:shadow-lg motion-reduce:transition-none">
   <slot name="visual"></slot>
 
   <div class="flex flex-1 flex-col gap-2 p-4">
@@ -16,7 +16,8 @@
 
     <p class="text-xl font-bold text-ink"><span class="sr-only">Prix : </span>{{price}}</p>
 
-    <!-- L'ajout au panier arrive avec CMD-b : le bouton est désactivé d'ici là. -->
-    <button type="button" disabled class="button relative z-10 mt-auto h-12 w-full px-6 text-base">Ajouter au panier</button>
+    <!-- « Ajouter au panier » (variante unique) ou « Choisir une option »
+         (plusieurs variantes) : voir action-add.html et action-choose.html. -->
+    <slot name="action"></slot>
   </div>
 </article>

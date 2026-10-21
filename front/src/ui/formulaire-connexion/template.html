@@ -1,25 +1,27 @@
-<section class="mb-6 rounded-lg border border-zinc-200 p-6 shadow-xs dark:border-zinc-800">
-  <h2 class="mb-5 text-base font-semibold tracking-tight">Connexion</h2>
+<!--
+  « J'ai déjà un compte » (écran 5, colonne de gauche). novalidate : c'est le
+  serveur qui valide, et ses messages s'affichent sous les champs comme sur
+  la maquette, au lieu des bulles du navigateur.
+-->
+<section aria-labelledby="login-title" class="flex flex-col gap-4 rounded-xl border border-line bg-page p-6 sm:p-7">
+  <h2 id="login-title" class="font-display text-h3 leading-none text-ink">J’ai déjà un compte</h2>
 
-  <form class="flex flex-col gap-4">
-    <label class="flex flex-col gap-2 text-sm font-medium">
-      Identifiant
-      <input name="login" type="text" autocomplete="username" value="{{login}}" class="h-9 rounded-md border border-zinc-200 bg-white px-3 font-normal transition-colors hover:border-zinc-500 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-400" />
-    </label>
-
-    <label class="flex flex-col gap-2 text-sm font-medium">
-      Mot de passe
-      <input name="mdp" type="password" autocomplete="current-password" class="h-9 rounded-md border border-zinc-200 bg-white px-3 font-normal transition-colors hover:border-zinc-500 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-400" />
-    </label>
-
-    <div class="flex flex-wrap gap-3">
-      <button type="submit" class="h-9 rounded-md bg-zinc-900 px-4 text-sm font-medium text-zinc-50 transition-opacity hover:opacity-90 dark:bg-zinc-50 dark:text-zinc-900">
-        Se connecter
-      </button>
-      <!-- type « button » et non « submit » : ce bouton n'envoie pas le formulaire. -->
-      <button type="button" data-action="deconnexion" class="h-9 rounded-md border border-zinc-200 px-4 text-sm font-medium transition-colors hover:bg-zinc-100 dark:border-zinc-800 dark:hover:bg-zinc-800">
-        Se déconnecter
-      </button>
+  <form novalidate class="flex flex-col gap-4">
+    <div class="flex flex-col gap-2">
+      <label for="login-email" class="text-caption font-semibold text-ink">Adresse e-mail</label>
+      <input id="login-email" name="email" type="email" autocomplete="email" required value="{{email}}" placeholder="nom@exemple.fr" aria-describedby="login-email-error" class="field" />
+      <p id="login-email-error" data-error-for="email" hidden class="text-caption text-accent"></p>
     </div>
+
+    <div class="flex flex-col gap-2">
+      <label for="login-password" class="text-caption font-semibold text-ink">Mot de passe</label>
+      <input id="login-password" name="password" type="password" autocomplete="current-password" required aria-describedby="login-password-error" class="field" />
+      <p id="login-password-error" data-error-for="password" hidden class="text-caption text-accent"></p>
+    </div>
+
+    <!-- Bouton et non lien : il remplace ce bloc par le formulaire « Mot de passe oublié ». -->
+    <button type="button" data-action="forgot-password" class="self-start text-caption font-medium text-link underline-offset-4 hover:underline">Mot de passe oublié ?</button>
+
+    <button type="submit" class="button h-12 w-full px-6 text-small">{{submitLabel}}</button>
   </form>
 </section>

@@ -1,0 +1,19 @@
+<!--
+  Choix de la concession et du créneau : de vrais boutons radio, regroupés
+  par leur name, que le clavier parcourt avec les flèches. data-focus-key :
+  le focus est rendu au bouton radio choisi quand le bloc est reconstruit.
+-->
+<div class="flex flex-col gap-6">
+  <section role="radiogroup" aria-labelledby="checkout-dealership-title" class="flex flex-col gap-4 rounded-xl border border-line bg-page p-6 sm:p-7">
+    <h2 id="checkout-dealership-title" class="font-display text-2xl leading-none font-bold text-ink">1. Concession de retrait</h2>
+    <slot name="dealerships"></slot>
+  </section>
+
+  <section role="radiogroup" aria-labelledby="checkout-slot-title" aria-describedby="checkout-slot-note" class="flex flex-col gap-4 rounded-xl border border-line bg-page p-6 sm:p-7">
+    <h2 id="checkout-slot-title" class="font-display text-2xl leading-none font-bold text-ink">2. Créneau de retrait</h2>
+    <div class="flex flex-wrap gap-2.5">
+      <slot name="slots"></slot>
+    </div>
+    <p id="checkout-slot-note" class="text-sm text-ink-muted">{{slotNote}}</p>
+  </section>
+</div>

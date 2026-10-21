@@ -1,0 +1,23 @@
+<!-- Récapitulatif (420 px dès 1024 px). Promotions et code promo : PRO-a et PRO-c. -->
+<section aria-labelledby="checkout-summary-title" class="flex flex-col gap-3.5 rounded-xl bg-page p-6 sm:p-7">
+  <h2 id="checkout-summary-title" class="font-display text-h3 leading-none text-ink">Récapitulatif</h2>
+
+  <ul aria-label="Articles commandés" class="flex flex-col gap-3.5 text-small">
+    <slot name="lines"></slot>
+  </ul>
+
+  <p class="flex justify-between gap-4 text-small">
+    <span class="text-ink-muted">Retrait à {{dealershipShortName}}</span>
+    <!-- Comme sur le panier : le vert de la maquette est trop peu contrasté pour ce texte. -->
+    <span class="font-semibold text-ink">Gratuit</span>
+  </p>
+
+  <hr class="border-line-subtle" />
+
+  <p class="flex justify-between gap-4 text-xl font-bold text-ink"><span>Total</span><span>{{total}}</span></p>
+
+  <button type="button" data-confirm data-focus-key="confirm" aria-describedby="checkout-summary-note" class="button h-12 w-full px-6 text-base">{{confirmLabel}}</button>
+
+  <p id="checkout-summary-note" class="text-caption text-ink-muted">Paiement sur place au moment du retrait.</p>
+  <a href="/panier" data-link class="self-start text-small font-medium text-link underline-offset-4 hover:underline"><span aria-hidden="true">←</span> Modifier mon panier</a>
+</section>

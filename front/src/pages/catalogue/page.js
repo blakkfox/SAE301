@@ -1,7 +1,9 @@
+import { CartData } from "../../data/cart.js";
 import { ProductData } from "../../data/product.js";
-import { genericRenderer, htmlToFragment } from "../../lib/utils.js";
+import { genericRenderer, htmlToFragment, replaceKeepingFocus } from "../../lib/utils.js";
 import { MessageView } from "../../ui/message/index.js";
 import { PaginationView } from "../../ui/pagination/index.js";
+import { ProductCardView } from "../../ui/product-card/index.js";
 import { ProductGridView } from "../../ui/product-grid/index.js";
 import { SortSelectView } from "../../ui/sort-select/index.js";
 import template from "./template.html?raw";
@@ -34,6 +36,8 @@ let M = {
   error: null, // texte de l'erreur à afficher, ou null
   isLoading: false, // une requête est en cours
   lastRequest: 0, // numéro de la dernière requête lancée
+  addedProductId: null, // produit de la dernière carte ajoutée au panier, ou null
+  cartStatus: null, // confirmation d'ajout à annoncer, ou null
 };
 
 /**
@@ -46,6 +50,8 @@ M.reset = function () {
   M.sort = null;
   M.error = null;
   M.isLoading = false;
+  M.addedProductId = null;
+  M.cartStatus = null;
 };
 
 /**
@@ -66,6 +72,8 @@ M.loadPage = async function (page, sort) {
 
   M.isLoading = true;
   M.error = null;
+  M.addedProductId = null;
+  M.cartStatus = null;
   if (sort !== undefined) {
     M.sort = sort;
   }
@@ -88,8 +96,9 @@ M.loadPage = async function (page, sort) {
 /**
  * Prépare un produit de l'API pour la carte produit.
  *
- * @param {{id: number, name: string, price: number, image: ?string}} product
- * @returns {{id: number, name: string, price: number, imageUrl: ?string}}
+ * @param {{id: number, name: string, price: number, image: ?string, variantId: ?number}} product
+ * @returns {{id: number, name: string, price: number, imageUrl: ?string,
+ *   variantId: ?number, isAdded: boolean}}
  */
 M.toCardData = function (product) {
   return {
@@ -97,8 +106,40 @@ M.toCardData = function (product) {
     name: product.name,
     price: product.price,
     imageUrl: ProductData.imageUrl(product.image),
+    variantId: product.variantId,
+    isAdded: product.id === M.addedProductId,
   };
 };
+
+/**
+ * Ajoute au panier le produit d'une carte. Seuls les produits à variante
+ * unique ont un bouton d'ajout : la variante est lue dans le modèle, jamais
+ * dans la page. Prépare la confirmation à annoncer.
+ *
+ * @param {number} productId - Produit de la carte cliquée.
+ */
+M.addToCart = function (productId) {
+  let product = (M.catalogue?.products ?? []).find((candidate) => candidate.id === productId);
+  if (product === undefined || product.variantId === null) return;
+
+  if (CartData.add(product.variantId, 1)) {
+    M.addedProductId = productId;
+    M.cartStatus = `${product.name} ajouté au panier.`;
+  } else {
+    M.addedProductId = null;
+    M.cartStatus = "Le panier n'a pas pu être enregistré sur cet appareil.";
+  }
+};
+
+/**
+ * @param {number} productId
+ * @returns {?ReturnType<typeof M.toCardData>} La carte d'un produit de la page affichée, ou null.
+ */
+M.getCard = function (productId) {
+  let product = (M.catalogue?.products ?? []).find((candidate) => candidate.id === productId);
+  return product === undefined ? null : M.toCardData(product);
+};
+
 
 /**
  * Phrase d'accroche sous le titre, avec le nombre de produits accordé.
@@ -126,7 +167,7 @@ M.getPageNumbers = function (pageCount) {
  *
  * @returns {{isLoading: boolean, summary: ?string, sort: string,
  *   message: ?{type: string, texte: string},
- *   products: Array<{id: number, name: string, price: number, imageUrl: ?string}>,
+ *   products: Array<ReturnType<typeof M.toCardData>>,
  *   pagination: ?{page: number, pagesTotal: number, pages: number[]}}}
  */
 M.getViewData = function () {
@@ -198,6 +239,25 @@ C.renderWhenLoaded = async function (loading) {
 };
 
 /**
+ * Clic sur « Ajouter au panier » d'une carte : la carte affiche « Ajouté au
+ * panier ✓ » et la confirmation est annoncée. Le compteur de l'en-tête se met
+ * à jour seul (voir le layout).
+ *
+ * @param {number} productId - Produit de la carte cliquée.
+ */
+C.handler_addToCart = function (productId) {
+  let previous = M.addedProductId;
+  M.addToCart(productId);
+
+  // La carte précédemment « ajoutée » redevient « Ajouter au panier ».
+  if (previous !== null && previous !== productId) {
+    V.renderCard(M.getCard(previous));
+  }
+  V.renderCard(M.getCard(productId));
+  V.renderCartStatus(M.cartStatus);
+};
+
+/**
  * Changer de tri rend la page courante sans objet : on repart de la première.
  *
  * @param {string} sort - Clé de tri choisie dans la liste.
@@ -251,6 +311,38 @@ V.render = function (data) {
 };
 
 /**
+ * Reconstruit une carte, en gardant le focus sur son bouton.
+ *
+ * @param {?ReturnType<typeof M.toCardData>} card
+ */
+V.renderCard = function (card) {
+  if (card === null) return;
+  let element = V.root.querySelector(`[data-product-id="${card.id}"]`);
+  if (element === null) return;
+  replaceKeepingFocus(element, V.createCardFragment(card));
+};
+
+/**
+ * Annonce la confirmation d'ajout au panier (zone role="status" de la grille).
+ *
+ * @param {?string} text
+ */
+V.renderCartStatus = function (text) {
+  let status = V.root.querySelector("[data-grid-status]");
+  if (status !== null) {
+    status.textContent = text ?? "";
+  }
+};
+
+/**
+ * @param {ReturnType<typeof M.toCardData>} card
+ * @returns {DocumentFragment} La carte, reliée au contrôleur.
+ */
+V.createCardFragment = function (card) {
+  return ProductCardView.dom(card, 2, { onAdd: C.handler_addToCart });
+};
+
+/**
  * Remonte en haut de la page, sans animation si l'utilisateur a demandé à
  * réduire les mouvements.
  */
@@ -288,7 +380,7 @@ V.createPageFragment = function (data) {
   } else if (data.message !== null) {
     gridSlot.remove();
   } else {
-    gridSlot.replaceWith(ProductGridView.dom(data.products));
+    gridSlot.replaceWith(ProductGridView.dom(data.products, 2, { onAdd: C.handler_addToCart }));
   }
 
   let paginationSlot = page.querySelector('slot[name="pagination"]');

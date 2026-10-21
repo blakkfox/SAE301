@@ -1,6 +1,7 @@
+import { CartData } from "../../data/cart.js";
 import { CategoryData } from "../../data/category.js";
 import { ProductData } from "../../data/product.js";
-import { genericRenderer, htmlToFragment } from "../../lib/utils.js";
+import { genericRenderer, htmlToFragment, replaceKeepingFocus } from "../../lib/utils.js";
 import { CategoryChipsView } from "../../ui/category-chips/index.js";
 import { CategoryNavView } from "../../ui/category-nav/index.js";
 import { MessageView } from "../../ui/message/index.js";
@@ -51,6 +52,8 @@ let M = {
   pageError: null, // texte de l'erreur d'un changement de page, ou null
   isLoading: false, // un changement de page est en cours
   lastRequest: 0, // numéro de la dernière requête lancée
+  addedProductId: null, // produit de la dernière carte ajoutée au panier, ou null
+  cartStatus: null, // confirmation d'ajout à annoncer, ou null
 };
 
 /**
@@ -66,6 +69,8 @@ M.reset = function () {
   M.error = null;
   M.pageError = null;
   M.isLoading = false;
+  M.addedProductId = null;
+  M.cartStatus = null;
 };
 
 /**
@@ -118,6 +123,8 @@ M.loadPage = async function (page) {
 
   M.isLoading = true;
   M.pageError = null;
+  M.addedProductId = null;
+  M.cartStatus = null;
 
   try {
     // Sans tri précisé, le serveur applique celui mémorisé par le catalogue.
@@ -224,8 +231,9 @@ M.getChipsData = function (section) {
 /**
  * Prépare un produit de l'API pour la carte produit.
  *
- * @param {{id: number, name: string, price: number, image: ?string}} product
- * @returns {{id: number, name: string, price: number, imageUrl: ?string}}
+ * @param {{id: number, name: string, price: number, image: ?string, variantId: ?number}} product
+ * @returns {{id: number, name: string, price: number, imageUrl: ?string,
+ *   variantId: ?number, isAdded: boolean}}
  */
 M.toCardData = function (product) {
   return {
@@ -233,8 +241,40 @@ M.toCardData = function (product) {
     name: product.name,
     price: product.price,
     imageUrl: ProductData.imageUrl(product.image),
+    variantId: product.variantId,
+    isAdded: product.id === M.addedProductId,
   };
 };
+
+/**
+ * Ajoute au panier le produit d'une carte. Seuls les produits à variante
+ * unique ont un bouton d'ajout : la variante est lue dans le modèle, jamais
+ * dans la page. Prépare la confirmation à annoncer.
+ *
+ * @param {number} productId - Produit de la carte cliquée.
+ */
+M.addToCart = function (productId) {
+  let product = (M.catalogue?.products ?? []).find((candidate) => candidate.id === productId);
+  if (product === undefined || product.variantId === null) return;
+
+  if (CartData.add(product.variantId, 1)) {
+    M.addedProductId = productId;
+    M.cartStatus = `${product.name} ajouté au panier.`;
+  } else {
+    M.addedProductId = null;
+    M.cartStatus = "Le panier n'a pas pu être enregistré sur cet appareil.";
+  }
+};
+
+/**
+ * @param {number} productId
+ * @returns {?ReturnType<typeof M.toCardData>} La carte d'un produit de la page affichée, ou null.
+ */
+M.getCard = function (productId) {
+  let product = (M.catalogue?.products ?? []).find((candidate) => candidate.id === productId);
+  return product === undefined ? null : M.toCardData(product);
+};
+
 
 /**
  * Numéros de page à afficher dans la pagination.
@@ -343,6 +383,25 @@ C.handler_changePage = async function (page) {
   }
 };
 
+/**
+ * Clic sur « Ajouter au panier » d'une carte : la carte affiche « Ajouté au
+ * panier ✓ » et la confirmation est annoncée. Le compteur de l'en-tête se met
+ * à jour seul (voir le layout).
+ *
+ * @param {number} productId - Produit de la carte cliquée.
+ */
+C.handler_addToCart = function (productId) {
+  let previous = M.addedProductId;
+  M.addToCart(productId);
+
+  // La carte précédemment « ajoutée » redevient « Ajouter au panier ».
+  if (previous !== null && previous !== productId) {
+    V.renderCard(M.getCard(previous));
+  }
+  V.renderCard(M.getCard(productId));
+  V.renderCartStatus(M.cartStatus);
+};
+
 // ---------------------------------------------------------------------------
 // V — Vue
 // ---------------------------------------------------------------------------
@@ -374,6 +433,30 @@ V.renderResults = function (results) {
   let newResults = fragment.firstElementChild;
   V.results.replaceWith(fragment);
   V.results = newResults;
+};
+
+/**
+ * Reconstruit une carte, en gardant le focus sur son bouton.
+ *
+ * @param {?ReturnType<typeof M.toCardData>} card
+ */
+V.renderCard = function (card) {
+  if (card === null) return;
+  let element = V.results.querySelector(`[data-product-id="${card.id}"]`);
+  if (element === null) return;
+  replaceKeepingFocus(element, V.createCardFragment(card));
+};
+
+/**
+ * Annonce la confirmation d'ajout au panier (zone role="status" de la grille).
+ *
+ * @param {?string} text
+ */
+V.renderCartStatus = function (text) {
+  let status = V.results.querySelector("[data-grid-status]");
+  if (status !== null) {
+    status.textContent = text ?? "";
+  }
 };
 
 /**
@@ -458,9 +541,17 @@ V.createResultsFragment = function (results) {
  */
 V.createGridFragment = function (products) {
   let fragment = htmlToFragment(templateGrid);
-  let cards = products.map((product) => ProductCardView.dom(product));
+  let cards = products.map(V.createCardFragment);
   fragment.querySelector('slot[name="cards"]').replaceWith(...cards);
   return fragment;
+};
+
+/**
+ * @param {ReturnType<typeof M.toCardData>} card
+ * @returns {DocumentFragment} La carte, reliée au contrôleur.
+ */
+V.createCardFragment = function (card) {
+  return ProductCardView.dom(card, 2, { onAdd: C.handler_addToCart });
 };
 
 /**

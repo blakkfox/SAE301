@@ -1,0 +1,53 @@
+<!-- « Créer un compte » (écran 5, colonne de droite). novalidate : voir formulaire-connexion. -->
+<section aria-labelledby="register-title" class="flex flex-col gap-4 rounded-xl border border-line bg-page p-6 sm:p-7">
+  <div class="flex flex-col gap-3">
+    <h2 id="register-title" class="font-display text-h3 leading-none text-ink">Créer un compte</h2>
+    <p class="text-caption text-ink-muted">Pour suivre vos commandes et recommander en un clic.</p>
+  </div>
+
+  <form novalidate class="flex flex-col gap-4">
+    <!-- Prénom et nom côte à côte dès 640 px, l'un sous l'autre sur mobile. -->
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div class="flex flex-col gap-2">
+        <label for="register-first-name" class="text-caption font-semibold text-ink">Prénom</label>
+        <input id="register-first-name" name="firstName" type="text" autocomplete="given-name" required maxlength="60" value="{{firstName}}" placeholder="Matthias" aria-describedby="register-first-name-error" class="field" />
+        <p id="register-first-name-error" data-error-for="firstName" hidden class="text-caption text-accent"></p>
+      </div>
+
+      <div class="flex flex-col gap-2">
+        <label for="register-last-name" class="text-caption font-semibold text-ink">Nom</label>
+        <input id="register-last-name" name="lastName" type="text" autocomplete="family-name" required maxlength="60" value="{{lastName}}" placeholder="Dupont" aria-describedby="register-last-name-error" class="field" />
+        <p id="register-last-name-error" data-error-for="lastName" hidden class="text-caption text-accent"></p>
+      </div>
+    </div>
+
+    <div class="flex flex-col gap-2">
+      <label for="register-email" class="text-caption font-semibold text-ink">Adresse e-mail</label>
+      <input id="register-email" name="email" type="email" autocomplete="email" required maxlength="190" value="{{email}}" placeholder="nom@exemple.fr" aria-describedby="register-email-error" class="field" />
+      <p id="register-email-error" data-error-for="email" hidden class="text-caption text-accent"></p>
+    </div>
+
+    <div class="flex flex-col gap-2">
+      <label for="register-phone" class="text-caption font-semibold text-ink">Téléphone</label>
+      <input id="register-phone" name="phone" type="tel" autocomplete="tel" required value="{{phone}}" placeholder="06 00 00 00 00" aria-describedby="register-phone-error" class="field" />
+      <p id="register-phone-error" data-error-for="phone" hidden class="text-caption text-accent"></p>
+    </div>
+
+    <div class="flex flex-col gap-2">
+      <label for="register-password" class="text-caption font-semibold text-ink">Mot de passe</label>
+      <!-- La consigne est en placeholder sur la maquette ; elle est aussi
+           donnée au lecteur d'écran, un placeholder n'étant pas une description. -->
+      <input id="register-password" name="password" type="password" autocomplete="new-password" required minlength="8" placeholder="8 caractères minimum" aria-describedby="register-password-hint register-password-error" class="field" />
+      <p id="register-password-hint" class="sr-only">8 caractères minimum.</p>
+      <p id="register-password-error" data-error-for="password" hidden class="text-caption text-accent"></p>
+    </div>
+
+    <div class="flex flex-col gap-2">
+      <label for="register-password-confirm" class="text-caption font-semibold text-ink">Confirmer le mot de passe</label>
+      <input id="register-password-confirm" name="passwordConfirm" type="password" autocomplete="new-password" required aria-describedby="register-password-confirm-error" class="field" />
+      <p id="register-password-confirm-error" data-error-for="passwordConfirm" hidden class="text-caption text-accent"></p>
+    </div>
+
+    <button type="submit" class="button button--outline h-12 w-full px-6 text-small">{{submitLabel}}</button>
+  </form>
+</section>
