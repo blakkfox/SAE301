@@ -1,6 +1,7 @@
 import { CartData } from "../../data/cart.js";
 import { CategoryData } from "../../data/category.js";
 import { ProductData } from "../../data/product.js";
+import { getStockStatus } from "../../lib/stock.js";
 import { genericRenderer, htmlToFragment, replaceKeepingFocus } from "../../lib/utils.js";
 import { CategoryChipsView } from "../../ui/category-chips/index.js";
 import { CategoryNavView } from "../../ui/category-nav/index.js";
@@ -231,9 +232,10 @@ M.getChipsData = function (section) {
 /**
  * Prépare un produit de l'API pour la carte produit.
  *
- * @param {{id: number, name: string, price: number, image: ?string, variantId: ?number}} product
+ * @param {{id: number, name: string, price: number, image: ?string, variantId: ?number,
+ *   stock: number}} product
  * @returns {{id: number, name: string, price: number, imageUrl: ?string,
- *   variantId: ?number, isAdded: boolean}}
+ *   variantId: ?number, stockStatus: "in"|"low"|"out", isAdded: boolean}}
  */
 M.toCardData = function (product) {
   return {
@@ -242,6 +244,7 @@ M.toCardData = function (product) {
     price: product.price,
     imageUrl: ProductData.imageUrl(product.image),
     variantId: product.variantId,
+    stockStatus: getStockStatus(product.stock),
     isAdded: product.id === M.addedProductId,
   };
 };
@@ -255,7 +258,7 @@ M.toCardData = function (product) {
  */
 M.addToCart = function (productId) {
   let product = (M.catalogue?.products ?? []).find((candidate) => candidate.id === productId);
-  if (product === undefined || product.variantId === null) return;
+  if (product === undefined || product.variantId === null || product.stock <= 0) return;
 
   if (CartData.add(product.variantId, 1)) {
     M.addedProductId = productId;

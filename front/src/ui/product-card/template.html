@@ -9,15 +9,18 @@
 <article data-product-id="{{id}}" class="group relative flex flex-col overflow-hidden rounded-lg border border-line-subtle bg-page transition-shadow duration-200 hover:shadow-lg motion-reduce:transition-none">
   <slot name="visual"></slot>
 
-  <div class="flex flex-1 flex-col gap-2 p-4">
-    <h{{headingLevel}} class="min-h-(--size-card-title-min) text-lg leading-card-title font-semibold text-ink">
+  <div class="flex flex-1 flex-col items-start gap-2 p-4">
+    <!-- Pastille de stock (STK-b). -->
+    <slot name="stock"></slot>
+
+    <h{{headingLevel}} class="min-h-(--size-card-title-min) self-stretch text-lg leading-card-title font-semibold text-ink">
       <a href="/produits/{{id}}" data-link class="transition-colors after:absolute after:inset-0 hover:text-accent">{{name}}</a>
     </h{{headingLevel}}>
 
     <p class="text-xl font-bold text-ink"><span class="sr-only">Prix : </span>{{price}}</p>
 
-    <!-- « Ajouter au panier » (variante unique) ou « Choisir une option »
-         (plusieurs variantes) : voir action-add.html et action-choose.html. -->
+    <!-- « Ajouter au panier » (variante unique), « Choisir une option »
+         (plusieurs variantes) ou « Épuisé » : voir action-*.html. -->
     <slot name="action"></slot>
   </div>
 </article>

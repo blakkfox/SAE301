@@ -1,19 +1,23 @@
 import { genericRenderer, htmlToFragment } from "../../lib/utils.js";
 import { formatPrice } from "../../lib/format.js";
+import { StockBadgeView } from "../stock-badge/index.js";
 import template from "./template.html?raw";
 import templateImage from "./image.html?raw";
 import templatePlaceholder from "./placeholder.html?raw";
 import templateActionAdd from "./action-add.html?raw";
 import templateActionChoose from "./action-choose.html?raw";
+import templateActionSoldOut from "./action-sold-out.html?raw";
 
 // Carte d'un produit, telle que la prépare le modèle de la page :
-// { id, name, price, imageUrl, variantId, isAdded } — imageUrl vaut null sans
-// photo ; variantId vaut null si le produit a plusieurs variantes (le bouton
-// mène alors à la fiche) ; isAdded vaut true juste après un ajout au panier.
+// { id, name, price, imageUrl, variantId, stockStatus, isAdded } — imageUrl
+// vaut null sans photo ; variantId vaut null si le produit a plusieurs
+// variantes (le bouton mène alors à la fiche) ; stockStatus est le statut de
+// stock du produit (STK-b), « out » désactive l'ajout ; isAdded vaut true
+// juste après un ajout au panier.
 let ProductCardView = {
   /**
    * @param {{id: number, name: string, price: number, imageUrl: ?string,
-   *   variantId: ?number, isAdded: boolean}} product
+   *   variantId: ?number, stockStatus: "in"|"low"|"out", isAdded: boolean}} product
    * @param {2|3} [headingLevel=2] - Niveau du titre de la carte (h2 ou h3).
    * @returns {string} Le HTML de la carte, sans son visuel ni son bouton
    *   (slots « visual » et « action »).
@@ -30,7 +34,7 @@ let ProductCardView = {
 
   /**
    * @param {{id: number, name: string, price: number, imageUrl: ?string,
-   *   variantId: ?number, isAdded: boolean}} product
+   *   variantId: ?number, stockStatus: "in"|"low"|"out", isAdded: boolean}} product
    * @param {2|3} headingLevel - Niveau du titre de la carte (h2 ou h3).
    * @param {{onAdd: (productId: number) => void}} actions
    * @returns {DocumentFragment} La carte, visuel et bouton compris.
@@ -38,6 +42,7 @@ let ProductCardView = {
   dom: function (product, headingLevel, actions) {
     let fragment = htmlToFragment(ProductCardView.html(product, headingLevel));
 
+    fragment.querySelector('slot[name="stock"]').replaceWith(StockBadgeView.dom(product.stockStatus));
     fragment.querySelector('slot[name="action"]').replaceWith(ProductCardView.action(product, actions));
     fragment.querySelector('slot[name="visual"]').replaceWith(ProductCardView.visual(product));
 
@@ -47,10 +52,15 @@ let ProductCardView = {
   /**
    * @param {Parameters<typeof ProductCardView.dom>[0]} product
    * @param {Parameters<typeof ProductCardView.dom>[2]} actions
-   * @returns {DocumentFragment} « Ajouter au panier », ou « Choisir une option »
-   *   si le produit a plusieurs variantes.
+   * @returns {DocumentFragment} « Épuisé » (désactivé) si le produit est
+   *   épuisé, sinon « Ajouter au panier », ou « Choisir une option » si le
+   *   produit a plusieurs variantes.
    */
   action: function (product, actions) {
+    if (product.stockStatus === "out") {
+      return htmlToFragment(genericRenderer(templateActionSoldOut, { name: product.name }));
+    }
+
     if (product.variantId === null) {
       return htmlToFragment(genericRenderer(templateActionChoose, product));
     }

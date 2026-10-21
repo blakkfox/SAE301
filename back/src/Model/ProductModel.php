@@ -35,6 +35,21 @@ final class ProductModel
                  WHERE variant.product_id = product.id) AS single_variant_id';
 
     /**
+     * Colonne SQL stock d'une carte produit (US STK-b) : le stock total de ses
+     * variantes. 0 signifie que le produit est épuisé dans toutes ses variantes.
+     */
+    private const TOTAL_STOCK = '(SELECT COALESCE(SUM(variant.stock), 0)
+                  FROM variant
+                 WHERE variant.product_id = product.id) AS stock';
+
+    /**
+     * Condition SQL « au moins une variante en stock », pour « Masquer les
+     * produits épuisés » (US STK-b).
+     */
+    private const IN_STOCK = 'EXISTS (SELECT 1 FROM variant
+        WHERE variant.product_id = product.id AND variant.stock > 0)';
+
+    /**
      * Condition SQL « le produit est dans la catégorie :category, ou dans
      * l'une de ses sous-catégories ».
      * Un seul marqueur :category : PDO, sans émulation des requêtes préparées,
@@ -57,14 +72,17 @@ final class ProductModel
     /**
      * Nombre de produits visibles, dans tout le catalogue ou dans une catégorie.
      *
-     * @param int|null $categoryId Catégorie (sous-catégories comprises), ou
-     *                             null pour tout le catalogue.
+     * @param int|null $categoryId  Catégorie (sous-catégories comprises), ou
+     *                              null pour tout le catalogue.
+     * @param bool     $inStockOnly true pour ne compter que les produits dont
+     *                              une variante au moins est en stock.
      *
      * @return int Nombre de produits visibles.
      */
-    public function countVisible(?int $categoryId = null): int
+    public function countVisible(?int $categoryId = null, bool $inStockOnly = false): int
     {
-        $sql = 'SELECT COUNT(*) FROM product WHERE ' . self::VISIBLE . self::categoryFilter($categoryId);
+        $sql = 'SELECT COUNT(*) FROM product WHERE ' . self::VISIBLE
+            . self::categoryFilter($categoryId) . self::stockFilter($inStockOnly);
 
         $statement = $this->pdo->prepare($sql);
         self::bindCategory($statement, $categoryId);
@@ -84,17 +102,25 @@ final class ProductModel
      * @param int      $offset     Nombre de produits à sauter (pagination).
      * @param int|null $categoryId Catégorie (sous-catégories comprises), ou
      *                             null pour tout le catalogue.
+     * @param bool     $inStockOnly true pour ne garder que les produits dont
+     *                              une variante au moins est en stock.
      *
-     * @return array<int, array{id:int, name:string, price:float, image:?string, variantId:?int}>
+     * @return array<int, array{id:int, name:string, price:float, image:?string, variantId:?int, stock:int}>
      */
-    public function findVisiblePage(string $orderBy, int $limit, int $offset, ?int $categoryId = null): array
-    {
+    public function findVisiblePage(
+        string $orderBy,
+        int $limit,
+        int $offset,
+        ?int $categoryId = null,
+        bool $inStockOnly = false,
+    ): array {
         // product.id en dernier critère : deux produits au même prix gardent
         // toujours le même ordre, sinon un produit pourrait apparaître sur
         // deux pages successives.
-        $sql = 'SELECT product.id, product.name, product.price, product.image, ' . self::SINGLE_VARIANT . '
+        $sql = 'SELECT product.id, product.name, product.price, product.image, '
+                     . self::SINGLE_VARIANT . ', ' . self::TOTAL_STOCK . '
                   FROM product
-                 WHERE ' . self::VISIBLE . self::categoryFilter($categoryId) . "
+                 WHERE ' . self::VISIBLE . self::categoryFilter($categoryId) . self::stockFilter($inStockOnly) . "
               ORDER BY {$orderBy}, product.id
                  LIMIT :limit OFFSET :offset";
 
@@ -167,16 +193,17 @@ final class ProductModel
     /**
      * Variantes d'un produit, dans l'ordre d'affichage.
      *
-     * Le stock n'est pas renvoyé : son affichage relève de l'US STK-b.
+     * Le stock de chaque variante est renvoyé pour son affichage (US STK-b) ;
+     * il est revérifié par le serveur à la commande (CMD-a).
      *
      * @param int $productId Identifiant du produit.
      *
-     * @return array<int, array{id:int, label:string, reference:string}>
+     * @return array<int, array{id:int, label:string, reference:string, stock:int}>
      */
     public function findVariants(int $productId): array
     {
         $statement = $this->pdo->prepare(
-            'SELECT id, label, reference
+            'SELECT id, label, reference, stock
                FROM variant
               WHERE product_id = :product
            ORDER BY position, id'
@@ -189,6 +216,7 @@ final class ProductModel
                 'id'        => (int) $row['id'],
                 'label'     => $row['label'],
                 'reference' => $row['reference'],
+                'stock'     => (int) $row['stock'],
             ],
             $statement->fetchAll(),
         );
@@ -223,13 +251,14 @@ final class ProductModel
      * @param int $categoryId Catégorie du produit affiché.
      * @param int $limit      Nombre de suggestions.
      *
-     * @return array<int, array{id:int, name:string, price:float, image:?string, variantId:?int}>
+     * @return array<int, array{id:int, name:string, price:float, image:?string, variantId:?int, stock:int}>
      */
     public function findRelated(int $productId, int $categoryId, int $limit): array
     {
         // « product.category_id = :category » vaut 1 ou 0 : trié en DESC, il
         // place la même catégorie en tête.
-        $sql = 'SELECT product.id, product.name, product.price, product.image, ' . self::SINGLE_VARIANT . '
+        $sql = 'SELECT product.id, product.name, product.price, product.image, '
+                     . self::SINGLE_VARIANT . ', ' . self::TOTAL_STOCK . '
                   FROM product
                  WHERE product.id <> :product
                    AND ' . self::VISIBLE . '
@@ -313,6 +342,19 @@ final class ProductModel
     }
 
     /**
+     * Fragment SQL à ajouter après self::VISIBLE pour ne garder que les
+     * produits en stock.
+     *
+     * @param bool $inStockOnly true pour filtrer.
+     *
+     * @return string Le fragment « AND … », ou une chaîne vide.
+     */
+    private static function stockFilter(bool $inStockOnly): string
+    {
+        return $inStockOnly ? ' AND ' . self::IN_STOCK : '';
+    }
+
+    /**
      * Lie la catégorie au marqueur :category, si un filtre est demandé.
      *
      * @param PDOStatement $statement  Requête préparée avec self::categoryFilter().
@@ -330,10 +372,12 @@ final class ProductModel
      * DECIMAL et les entiers sous forme de chaînes : on les type pour que le
      * JSON contienne de vrais nombres.
      *
-     * @param array{id:string, name:string, price:string, image:?string, single_variant_id:?string} $row
+     * @param array{id:string, name:string, price:string, image:?string, single_variant_id:?string,
+     *              stock:string} $row
      *
-     * @return array{id:int, name:string, price:float, image:?string, variantId:?int}
-     *         variantId : la variante unique du produit, ou null s'il en a plusieurs.
+     * @return array{id:int, name:string, price:float, image:?string, variantId:?int, stock:int}
+     *         variantId : la variante unique du produit, ou null s'il en a plusieurs ;
+     *         stock : le stock total de ses variantes (US STK-b).
      */
     private static function toCard(array $row): array
     {
@@ -343,6 +387,7 @@ final class ProductModel
             'price'     => (float) $row['price'],
             'image'     => $row['image'],
             'variantId' => $row['single_variant_id'] === null ? null : (int) $row['single_variant_id'],
+            'stock'     => (int) $row['stock'],
         ];
     }
 }

@@ -7,6 +7,7 @@
   <slot name="variants"></slot>
   <div class="flex gap-3">
     <slot name="quantity"></slot>
-    <button type="button" data-add-to-cart data-focus-key="add" class="button h-13 min-w-0 flex-1 px-6 text-base">Ajouter au panier</button>
+    <!-- « Épuisé », désactivé, si la variante choisie (ou toutes) est épuisée (STK-b). -->
+    <button type="button" data-add-to-cart data-focus-key="add" class="button h-13 min-w-0 flex-1 px-6 text-base">{{addLabel}}</button>
   </div>
 </div>

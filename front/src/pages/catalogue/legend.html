@@ -1,0 +1,6 @@
+<!-- Légende des pastilles de stock (écran 7), sous la grille. -->
+<ul aria-label="Légende des disponibilités" class="flex flex-wrap gap-x-6 gap-y-3 text-sm text-ink-muted">
+  <li class="flex items-center gap-2"><slot name="in"></slot>{{inText}}</li>
+  <li class="flex items-center gap-2"><slot name="low"></slot>{{lowText}}</li>
+  <li class="flex items-center gap-2"><slot name="out"></slot>{{outText}}</li>
+</ul>
