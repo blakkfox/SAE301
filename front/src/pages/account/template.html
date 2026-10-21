@@ -1,0 +1,25 @@
+<!-- Espace personnel (écran 14) : fond gris, menu du compte et cartes blanches, comme « Mes commandes ». -->
+<div class="bg-section">
+  <section class="mx-auto flex max-w-312 flex-col gap-6 px-4 pt-6 pb-16 sm:px-6 lg:gap-7 lg:pt-8 lg:pb-24">
+    <nav aria-label="Fil d'Ariane" class="text-sm text-ink-muted">
+      <ol class="flex flex-wrap gap-2">
+        <li><a href="/" data-link class="transition-colors hover:text-accent">Accueil</a></li>
+        <li aria-hidden="true">/</li>
+        <li class="text-ink">Mon compte</li>
+      </ol>
+    </nav>
+
+    <!-- Mobile First : le menu passe au-dessus ; à partir de lg, la colonne de 260 px de la maquette. -->
+    <div class="grid gap-6 lg:grid-cols-(--grid-account) lg:items-start lg:gap-10">
+      <slot name="menu"></slot>
+
+      <div class="flex min-w-0 flex-col gap-6">
+        <!-- « Bonjour Matthias » : le texte est mis à jour dans page.js quand le prénom change. -->
+        <h1 tabindex="-1" class="font-display text-h1-mobile leading-none break-words text-ink outline-none sm:text-h1 sm:leading-h1">{{title}}</h1>
+        <!-- Messages (déconnexion). -->
+        <div data-account-notice class="empty:hidden"></div>
+        <slot name="content"></slot>
+      </div>
+    </div>
+  </section>
+</div>

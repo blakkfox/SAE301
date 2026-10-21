@@ -14,6 +14,7 @@
 --
 --     customer 1 ── n customer_order 1 ── n order_line n ── 1 variant
 --     dealership 1 ── n customer_order          (US CMD-a)
+--     dealership 1 ── n customer (concession préférée, US SUI-b)
 --
 --     variant 1 ── n stock_movement n ── 0..1 customer_order   (US STK-a)
 --     customer_order 1 ── n order_event n ── 0..1 customer      (US PIL-b)
@@ -43,8 +44,8 @@ DROP TABLE IF EXISTS order_event;
 DROP TABLE IF EXISTS stock_movement;
 DROP TABLE IF EXISTS order_line;
 DROP TABLE IF EXISTS customer_order;
-DROP TABLE IF EXISTS dealership;
 DROP TABLE IF EXISTS customer;
+DROP TABLE IF EXISTS dealership;
 DROP TABLE IF EXISTS product_feature;
 DROP TABLE IF EXISTS variant;
 DROP TABLE IF EXISTS product;
@@ -170,37 +171,11 @@ CREATE TABLE product_feature (
   COLLATE = utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
--- Comptes (US CMD-c)
---
--- Une seule table pour les clients et l'administration : role distingue les
--- deux. Le rôle est lu en base et rangé en session côté serveur, jamais
--- confié au navigateur.
--- password_hash contient le résultat de password_hash() (algorithme, sel et
--- empreinte) : le mot de passe lui-même n'est jamais enregistré.
--- email est unique : c'est l'identifiant de connexion. Il est enregistré en
--- minuscules par l'API.
--- ---------------------------------------------------------------------------
-CREATE TABLE customer (
-    id            INT UNSIGNED              NOT NULL AUTO_INCREMENT,
-    first_name    VARCHAR(60)               NOT NULL,
-    last_name     VARCHAR(60)               NOT NULL,
-    email         VARCHAR(190)              NOT NULL,
-    phone         VARCHAR(20)               NOT NULL,
-    password_hash VARCHAR(255)              NOT NULL,
-    role          ENUM('customer', 'admin') NOT NULL DEFAULT 'customer',
-    created_at    DATETIME                  NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    PRIMARY KEY (id),
-    UNIQUE KEY uq_customer_email (email)
-) ENGINE = InnoDB
-  DEFAULT CHARSET = utf8mb4
-  COLLATE = utf8mb4_unicode_ci;
-
--- ---------------------------------------------------------------------------
 -- Concessions de retrait (US CMD-a)
 --
 -- short_name sert au récapitulatif (« Retrait à Lyon Centre ») ;
 -- hours_label est la mention affichée sous l'adresse.
+-- Créée avant customer, qui y fait référence (concession préférée, SUI-b).
 -- ---------------------------------------------------------------------------
 CREATE TABLE dealership (
     id          TINYINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -211,6 +186,41 @@ CREATE TABLE dealership (
     position    TINYINT UNSIGNED NOT NULL DEFAULT 0,
 
     PRIMARY KEY (id)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- Comptes (US CMD-c)
+--
+-- Une seule table pour les clients et l'administration : role distingue les
+-- deux. Le rôle est lu en base et rangé en session côté serveur, jamais
+-- confié au navigateur.
+-- password_hash contient le résultat de password_hash() (algorithme, sel et
+-- empreinte) : le mot de passe lui-même n'est jamais enregistré.
+-- email est unique : c'est l'identifiant de connexion. Il est enregistré en
+-- minuscules par l'API.
+-- preferred_dealership_id : concession choisie dans l'espace personnel
+-- (US SUI-b), proposée d'office à la validation de commande. NULL tant que
+-- le client n'en a pas choisi, ou si la concession est supprimée.
+-- ---------------------------------------------------------------------------
+CREATE TABLE customer (
+    id                      INT UNSIGNED              NOT NULL AUTO_INCREMENT,
+    first_name              VARCHAR(60)               NOT NULL,
+    last_name               VARCHAR(60)               NOT NULL,
+    email                   VARCHAR(190)              NOT NULL,
+    phone                   VARCHAR(20)               NOT NULL,
+    password_hash           VARCHAR(255)              NOT NULL,
+    role                    ENUM('customer', 'admin') NOT NULL DEFAULT 'customer',
+    preferred_dealership_id TINYINT UNSIGNED          NULL,
+    created_at              DATETIME                  NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_customer_email (email),
+
+    CONSTRAINT fk_customer_dealership
+        FOREIGN KEY (preferred_dealership_id) REFERENCES dealership (id)
+        ON DELETE SET NULL
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;

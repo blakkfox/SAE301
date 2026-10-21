@@ -14,10 +14,12 @@ let OrderData = {};
 /**
  * Ce qu'il faut pour valider : GET /api/checkout
  *
- * @returns {Promise<{customer: {firstName: string, lastName: string, email: string, phone: string},
+ * @returns {Promise<{customer: {firstName: string, lastName: string, email: string, phone: string,
+ *     preferredDealershipId: ?number},
  *   dealerships: Array<{id: number, name: string, shortName: string, address: string, hoursLabel: string}>,
  *   slots: Array<{id: string, date: string, dayOffset: number, startHour: number, endHour: number}>}>}
  *   slots : prochains créneaux de retrait ; dayOffset vaut 0 aujourd'hui, 1 demain…
+ *   preferredDealershipId : concession choisie dans l'espace personnel (SUI-b), ou null.
  * @throws {ErreurApi} 401 si personne n'est connecté.
  */
 OrderData.fetchCheckout = async function () {

@@ -19,6 +19,8 @@ use PDOException;
  *
  * Les erreurs de saisie sont renvoyées champ par champ (422, clé « champs »),
  * pour que le front les affiche sous le bon champ, comme sur la maquette.
+ * Les fonctions de validation sont publiques : l'espace personnel
+ * (AccountController, US SUI-b) applique les mêmes règles.
  */
 final class AuthController
 {
@@ -254,7 +256,7 @@ final class AuthController
      * @param array<string, string> $errors Message de chaque champ en erreur.
      * @param int                   $status Code HTTP de la réponse.
      */
-    private static function fieldErrors(array $errors, int $status): void
+    public static function fieldErrors(array $errors, int $status): void
     {
         Response::json(['erreur' => 'Certains champs sont à corriger.', 'champs' => $errors], $status);
     }
@@ -269,7 +271,7 @@ final class AuthController
      *
      * @return string
      */
-    private static function text(array $body, string $key): string
+    public static function text(array $body, string $key): string
     {
         $value = $body[$key] ?? '';
 
@@ -282,7 +284,7 @@ final class AuthController
      * @return string L'adresse sans espaces autour, en minuscules : « Alice@… »
      *                et « alice@… » désignent le même compte.
      */
-    private static function normalizeEmail(string $email): string
+    public static function normalizeEmail(string $email): string
     {
         return mb_strtolower(trim($email));
     }
@@ -292,7 +294,7 @@ final class AuthController
      *
      * @return string Le numéro sans espaces, points ni tirets.
      */
-    private static function normalizePhone(string $phone): string
+    public static function normalizePhone(string $phone): string
     {
         return preg_replace('/[\s.\-]/', '', $phone) ?? '';
     }
@@ -304,7 +306,7 @@ final class AuthController
      *
      * @return array<string, string> L'erreur du champ, ou un tableau vide.
      */
-    private static function validateName(string $value, string $field, string $label): array
+    public static function validateName(string $value, string $field, string $label): array
     {
         if ($value === '') {
             return [$field => "Indiquez {$label}."];
@@ -321,7 +323,7 @@ final class AuthController
      *
      * @return array<string, string> L'erreur du champ, ou un tableau vide.
      */
-    private static function validateEmail(string $email): array
+    public static function validateEmail(string $email): array
     {
         if ($email === '') {
             return ['email' => 'Indiquez votre adresse e-mail.'];
@@ -338,7 +340,7 @@ final class AuthController
      *
      * @return array<string, string> L'erreur du champ, ou un tableau vide.
      */
-    private static function validatePhone(string $phone): array
+    public static function validatePhone(string $phone): array
     {
         if ($phone === '') {
             return ['phone' => 'Indiquez votre numéro de téléphone.'];
@@ -358,7 +360,7 @@ final class AuthController
      * @return array<string, string> Les erreurs des champs password et
      *                               passwordConfirm, ou un tableau vide.
      */
-    private static function validatePassword(string $password, string $confirm): array
+    public static function validatePassword(string $password, string $confirm): array
     {
         if (mb_strlen($password) < self::PASSWORD_MIN) {
             return ['password' => self::PASSWORD_MIN . ' caractères minimum.'];

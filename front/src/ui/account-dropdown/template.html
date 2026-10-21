@@ -1,0 +1,20 @@
+<!--
+  Compte connecté (écran 14, « Matthias ▾ ») : le prénom ouvre un menu
+  déroulant, dessiné comme le menu « Mon compte » de l'espace client.
+  aria-expanded et hidden sont réglés dans index.js. Le menu s'aligne à
+  droite du bouton : il reste dans l'écran dès 320 px.
+-->
+<div data-account-dropdown class="relative">
+  <button type="button" data-action="toggle" data-focus-key="account-toggle" aria-expanded="false" aria-controls="account-dropdown" class="group inline-flex max-w-40 items-center gap-1 text-base font-medium whitespace-nowrap text-ink transition-colors hover:text-accent aria-expanded:text-accent">
+    <span class="sr-only">Mon compte : </span><span class="truncate">{{firstName}}</span>
+    <span aria-hidden="true" class="inline-block text-caption transition-transform duration-200 group-aria-expanded:rotate-180 motion-reduce:transition-none">▾</span>
+  </button>
+
+  <div id="account-dropdown" hidden class="absolute top-full right-0 z-30 mt-3 w-56 rounded-xl border border-line-subtle bg-page p-2 shadow-lg">
+    <ul class="flex flex-col gap-1">
+      <li><a href="/compte" data-link class="block rounded-lg px-3 py-2.5 text-small text-ink transition-colors hover:bg-section hover:text-accent aria-[current=page]:font-semibold">Mes informations</a></li>
+      <li><a href="/compte/commandes" data-link class="block rounded-lg px-3 py-2.5 text-small text-ink transition-colors hover:bg-section hover:text-accent aria-[current=page]:font-semibold">Mes commandes</a></li>
+      <li><button type="button" data-action="logout" data-focus-key="account-logout" class="block w-full rounded-lg px-3 py-2.5 text-left text-small text-ink-muted transition-colors hover:bg-section hover:text-accent disabled:cursor-wait">{{logoutLabel}}</button></li>
+    </ul>
+  </div>
+</div>

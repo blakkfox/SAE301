@@ -212,6 +212,33 @@ final class OrderModel
     }
 
     /**
+     * Dernière commande d'un client (US SUI-b), avec sa concession et ses
+     * lignes : la plus récente, quel que soit son statut.
+     *
+     * @param int $customerId Compte connecté.
+     *
+     * @return array{id:int, status:string, total:float, pickupStart:string, pickupEnd:string,
+     *               createdAt:string, dealership:array{id:int, name:string, shortName:string},
+     *               lines:array<int, array{variantId:?int, name:string, label:string,
+     *                                      reference:string, unitPrice:float, quantity:int}>}|null
+     *         null si le client n'a jamais commandé.
+     */
+    public function findLastByCustomer(int $customerId): ?array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT id FROM customer_order
+              WHERE customer_id = :customer
+           ORDER BY created_at DESC, id DESC
+              LIMIT 1'
+        );
+        $statement->bindValue(':customer', $customerId, PDO::PARAM_INT);
+        $statement->execute();
+        $id = $statement->fetchColumn();
+
+        return $id === false ? null : $this->findById((int) $id);
+    }
+
+    /**
      * Nombre de commandes de chaque statut, pour le tableau de bord du
      * back-office (US GOF-b) et les pastilles de filtre de la gestion des
      * commandes (US PIL-b). Un statut sans commande vaut 0.

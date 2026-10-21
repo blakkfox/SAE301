@@ -1,0 +1,8 @@
+<!-- Connecté : dernière commande, puis les deux formulaires. Côte à côte à partir de xl (mot de passe : 360 px). -->
+<div class="flex flex-col gap-6">
+  <slot name="last-order"></slot>
+  <div class="grid gap-6 xl:grid-cols-(--grid-account-forms) xl:items-start">
+    <slot name="profile"></slot>
+    <slot name="password"></slot>
+  </div>
+</div>
