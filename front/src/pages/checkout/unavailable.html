@@ -1,0 +1,12 @@
+<!--
+  Stock pris entre-temps (écran 9, STK-a) : l'API a refusé la commande (409),
+  rien n'est enregistré. Même alerte que le panier (STK-c). tabindex="-1" :
+  la carte reçoit le focus après l'envoi.
+-->
+<div tabindex="-1" class="flex flex-col items-start gap-5 rounded-xl bg-page p-4 outline-none sm:p-5">
+  <div class="flex w-full items-start gap-3 rounded-lg bg-error-soft px-4 py-3.5 sm:items-center">
+    <span aria-hidden="true" class="flex size-5.5 shrink-0 items-center justify-center rounded-full bg-error text-caption font-bold text-ink-inverse">!</span>
+    <p role="alert" class="text-small font-medium text-ink">{{text}}</p>
+  </div>
+  <a href="/panier" data-link class="button h-12 px-6 text-base">Revenir au panier</a>
+</div>

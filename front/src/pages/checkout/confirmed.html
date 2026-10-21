@@ -1,22 +1,19 @@
 <!--
-  Étape 4 : commande enregistrée (pas de maquette, même charte que les
-  autres cartes). tabindex="-1" : la carte reçoit le focus après l'envoi.
+  Étape 4 : commande enregistrée (écran 9, STK-a). La pastille confirme que
+  le stock a été baissé avec la commande. tabindex="-1" : la carte reçoit le
+  focus après l'envoi.
 -->
-<section tabindex="-1" aria-labelledby="checkout-confirmed-title" class="flex max-w-180 flex-col gap-5 rounded-xl border border-line bg-page p-6 outline-none sm:p-7">
-  <div class="flex flex-col gap-2">
-    <h2 id="checkout-confirmed-title" class="font-display text-h3 leading-none text-ink">Commande {{number}}</h2>
-    <p role="status" class="text-small text-ink">Merci {{firstName}}, votre commande est enregistrée. Nous la préparons pour votre créneau de retrait.</p>
+<section tabindex="-1" aria-labelledby="checkout-confirmed-title" class="flex flex-col items-center gap-5 rounded-xl bg-page px-4 py-10 text-center outline-none sm:px-8 sm:py-12">
+  <span aria-hidden="true" class="flex size-14 items-center justify-center rounded-full bg-success-soft text-3xl text-success">✓</span>
+
+  <div class="flex flex-col items-center gap-3">
+    <h2 id="checkout-confirmed-title" class="font-display text-h3 leading-none text-ink">Merci, votre commande est confirmée</h2>
+    <p class="text-small text-ink-muted">Commande n° {{number}} · statut « {{statusLabel}} » · retrait à {{dealershipName}}, {{pickup}}</p>
   </div>
 
-  <dl class="flex flex-col gap-3 text-small">
-    <div class="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
-      <dt class="text-ink-muted">Concession</dt>
-      <dd class="font-semibold text-ink sm:text-right">{{dealershipName}}</dd>
-    </div>
-    <div class="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
-      <dt class="text-ink-muted">Créneau de retrait</dt>
-      <dd class="font-semibold text-ink sm:text-right">{{pickup}}</dd>
-    </div>
+  <p role="status" class="stock-badge whitespace-normal text-left">Articles réservés : le stock de la concession a été mis à jour</p>
+
+  <dl class="flex w-full max-w-120 flex-col gap-3 border-t border-line pt-5 text-left text-small">
     <div class="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
       <dt class="text-ink-muted">Articles</dt>
       <dd class="font-semibold text-ink sm:text-right">{{countLabel}}</dd>
@@ -27,5 +24,5 @@
     </div>
   </dl>
 
-  <a href="/" data-link class="button h-12 self-start px-6 text-base">Retour au catalogue</a>
+  <a href="/" data-link class="button button--outline h-12 px-6 text-base">Retour au catalogue</a>
 </section>

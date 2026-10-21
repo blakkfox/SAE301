@@ -27,6 +27,7 @@ use App\Model\CustomerModel;
 use App\Model\DealershipModel;
 use App\Model\OrderModel;
 use App\Model\ProductModel;
+use App\Model\StockModel;
 
 // --- Chargement automatique des classes ------------------------------------
 // App\Core\Router  ->  back/src/Core/Router.php
@@ -72,7 +73,7 @@ try {
         CategoryController::class  => new CategoryController(new CategoryModel($pdo), new ProductModel($pdo)),
         CartController::class      => new CartController(new ProductModel($pdo)),
         AuthController::class      => new AuthController(new CustomerModel($pdo)),
-        OrderController::class     => new OrderController(new CustomerModel($pdo), new DealershipModel($pdo), new OrderModel($pdo)),
+        OrderController::class     => new OrderController(new CustomerModel($pdo), new DealershipModel($pdo), new OrderModel($pdo, new StockModel($pdo))),
     ];
 
     $routes = require __DIR__ . '/src/routes.php';
