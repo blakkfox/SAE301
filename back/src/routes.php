@@ -32,6 +32,7 @@ return [
     'POST /api/logout'         => [AuthController::class,      'logout'],
     'GET  /api/checkout'       => [OrderController::class,     'checkout'],
     'POST /api/orders'         => [OrderController::class,     'create'],
+    'GET  /api/orders'         => [OrderController::class,     'history'],
     'POST /api/admin/login'    => [AuthController::class,      'adminLogin'],
     'GET  /api/admin/dashboard' => [AdminController::class,    'dashboard'],
     'GET  /api/admin/orders'         => [AdminController::class, 'orders'],

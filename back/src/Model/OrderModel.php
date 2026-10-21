@@ -10,7 +10,8 @@ use PDOStatement;
 use Throwable;
 
 /**
- * Accès aux commandes (US CMD-a) et à leur gestion au back-office (US PIL-b).
+ * Accès aux commandes (US CMD-a), à leur gestion au back-office (US PIL-b) et
+ * à l'historique du client (US SUI-c).
  *
  * L'enregistrement d'une commande, la baisse des stocks et leur journal
  * (US STK-a, StockModel) se font dans UNE transaction : si un seul article
@@ -143,6 +144,71 @@ final class OrderModel
             ],
             'lines'       => $this->findLines($id),
         ];
+    }
+
+    /**
+     * Historique d'un client (US SUI-c) : ses commandes, des plus récentes aux
+     * plus anciennes, chacune avec sa concession, ses lignes et le journal de
+     * ses statuts (US PIL-b). Le journal ne dit pas quel administrateur a
+     * changé le statut : le client n'a pas à le savoir.
+     *
+     * Trois requêtes en tout (commandes, lignes, journal), quel que soit le
+     * nombre de commandes, plutôt qu'une paire de requêtes par commande.
+     *
+     * @param int                    $customerId Compte connecté.
+     * @param DateTimeImmutable|null $since      Commandes passées depuis cette date,
+     *                                           ou null pour toutes.
+     *
+     * @return array<int, array{id:int, status:string, total:float, pickupStart:string,
+     *                          pickupEnd:string, createdAt:string,
+     *                          dealership:array{id:int, name:string, shortName:string},
+     *                          lines:array<int, array{variantId:?int, name:string, label:string,
+     *                                                 reference:string, unitPrice:float, quantity:int}>,
+     *                          events:array<int, array{status:string, createdAt:string}>}>
+     */
+    public function findCustomerHistory(int $customerId, ?DateTimeImmutable $since): array
+    {
+        $filter = self::historyFilter($since);
+
+        $statement = $this->pdo->prepare(
+            'SELECT customer_order.id, customer_order.status, customer_order.total,
+                    customer_order.pickup_start, customer_order.pickup_end, customer_order.created_at,
+                    dealership.id AS dealership_id, dealership.name AS dealership_name,
+                    dealership.short_name AS dealership_short_name
+               FROM customer_order
+         INNER JOIN dealership ON dealership.id = customer_order.dealership_id
+              WHERE ' . $filter . '
+           ORDER BY customer_order.created_at DESC, customer_order.id DESC'
+        );
+        self::bindHistory($statement, $customerId, $since);
+        $statement->execute();
+        $orders = $statement->fetchAll();
+
+        if ($orders === []) {
+            return [];
+        }
+
+        $lines  = $this->findHistoryLines($filter, $customerId, $since);
+        $events = $this->findHistoryEvents($filter, $customerId, $since);
+
+        return array_map(
+            static fn (array $row): array => [
+                'id'          => (int) $row['id'],
+                'status'      => $row['status'],
+                'total'       => (float) $row['total'],
+                'pickupStart' => $row['pickup_start'],
+                'pickupEnd'   => $row['pickup_end'],
+                'createdAt'   => $row['created_at'],
+                'dealership'  => [
+                    'id'        => (int) $row['dealership_id'],
+                    'name'      => $row['dealership_name'],
+                    'shortName' => $row['dealership_short_name'],
+                ],
+                'lines'       => $lines[(int) $row['id']] ?? [],
+                'events'      => $events[(int) $row['id']] ?? [],
+            ],
+            $orders,
+        );
     }
 
     /**
@@ -549,6 +615,110 @@ final class OrderModel
             ],
             $statement->fetchAll(),
         );
+    }
+
+    /**
+     * Lignes des commandes de l'historique, rangées par commande.
+     *
+     * @param string                 $filter     Condition de historyFilter.
+     * @param int                    $customerId
+     * @param DateTimeImmutable|null $since
+     *
+     * @return array<int, array<int, array{variantId:?int, name:string, label:string, reference:string,
+     *                                     unitPrice:float, quantity:int}>> Clé : identifiant de la commande.
+     */
+    private function findHistoryLines(string $filter, int $customerId, ?DateTimeImmutable $since): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT order_line.order_id, order_line.variant_id, order_line.product_name,
+                    order_line.variant_label, order_line.reference, order_line.unit_price, order_line.quantity
+               FROM order_line
+         INNER JOIN customer_order ON customer_order.id = order_line.order_id
+              WHERE ' . $filter . '
+           ORDER BY order_line.id'
+        );
+        self::bindHistory($statement, $customerId, $since);
+        $statement->execute();
+        $rows = $statement->fetchAll();
+
+        $lines = [];
+
+        for ($i = 0; $i < count($rows); $i++) {
+            $lines[(int) $rows[$i]['order_id']][] = [
+                'variantId' => $rows[$i]['variant_id'] === null ? null : (int) $rows[$i]['variant_id'],
+                'name'      => $rows[$i]['product_name'],
+                'label'     => $rows[$i]['variant_label'],
+                'reference' => $rows[$i]['reference'],
+                'unitPrice' => (float) $rows[$i]['unit_price'],
+                'quantity'  => (int) $rows[$i]['quantity'],
+            ];
+        }
+
+        return $lines;
+    }
+
+    /**
+     * Journal des statuts des commandes de l'historique, rangé par commande,
+     * du plus ancien au plus récent.
+     *
+     * @param string                 $filter     Condition de historyFilter.
+     * @param int                    $customerId
+     * @param DateTimeImmutable|null $since
+     *
+     * @return array<int, array<int, array{status:string, createdAt:string}>> Clé : identifiant de la commande.
+     */
+    private function findHistoryEvents(string $filter, int $customerId, ?DateTimeImmutable $since): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT order_event.order_id, order_event.status, order_event.created_at
+               FROM order_event
+         INNER JOIN customer_order ON customer_order.id = order_event.order_id
+              WHERE ' . $filter . '
+           ORDER BY order_event.created_at, order_event.id'
+        );
+        self::bindHistory($statement, $customerId, $since);
+        $statement->execute();
+        $rows = $statement->fetchAll();
+
+        $events = [];
+
+        for ($i = 0; $i < count($rows); $i++) {
+            $events[(int) $rows[$i]['order_id']][] = [
+                'status'    => $rows[$i]['status'],
+                'createdAt' => $rows[$i]['created_at'],
+            ];
+        }
+
+        return $events;
+    }
+
+    /**
+     * @param DateTimeImmutable|null $since Début de la période, ou null.
+     *
+     * @return string Condition SQL des commandes de l'historique : celles du
+     *                client, passées depuis $since. La requête doit lire la
+     *                table customer_order.
+     */
+    private static function historyFilter(?DateTimeImmutable $since): string
+    {
+        return 'customer_order.customer_id = :customer'
+            . ($since === null ? '' : ' AND customer_order.created_at >= :since');
+    }
+
+    /**
+     * Lie les marqueurs de historyFilter.
+     *
+     * @param PDOStatement           $statement
+     * @param int                    $customerId
+     * @param DateTimeImmutable|null $since
+     */
+    private static function bindHistory(PDOStatement $statement, int $customerId, ?DateTimeImmutable $since): void
+    {
+        $statement->bindValue(':customer', $customerId, PDO::PARAM_INT);
+
+        if ($since !== null) {
+            $statement->bindValue(':since', $since->format(self::DATETIME));
+        }
     }
 
     /**

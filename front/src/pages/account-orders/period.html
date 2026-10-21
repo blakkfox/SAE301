@@ -1,0 +1,11 @@
+<!-- Les valeurs sont les clés de la liste blanche du serveur (OrderController::PERIODS). -->
+<label class="relative flex h-11 w-full shrink-0 items-center gap-2.5 rounded-lg border border-line bg-page px-3.5 transition-colors hover:border-line-strong sm:w-auto">
+  <span class="text-sm whitespace-nowrap text-ink-muted">Période :</span>
+  <select name="period" data-focus-key="period" class="min-w-0 flex-1 appearance-none bg-transparent pr-6 text-small font-semibold text-ink disabled:cursor-wait">
+    <option value="3">3 derniers mois</option>
+    <option value="6">6 derniers mois</option>
+    <option value="12">12 derniers mois</option>
+    <option value="all">Toutes les commandes</option>
+  </select>
+  <span aria-hidden="true" class="pointer-events-none absolute right-3.5 text-caption text-ink">▾</span>
+</label>

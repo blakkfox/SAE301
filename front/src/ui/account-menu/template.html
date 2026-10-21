@@ -1,0 +1,13 @@
+<!--
+  Menu « Mon compte » (écrans 13 et 14) : carte blanche de 260 px à partir de
+  lg ; au-dessus du contenu, en ligne qui défile, sur petit écran.
+  aria-current="page" est posé dans index.js sur l'entrée de la page affichée.
+-->
+<nav aria-labelledby="account-menu-title" class="flex flex-col gap-1 rounded-xl bg-page p-4 lg:p-5">
+  <h2 id="account-menu-title" class="pb-1 font-display text-h4 leading-none text-ink">Mon compte</h2>
+  <ul class="-mx-1 flex gap-1 overflow-x-auto px-1 whitespace-nowrap lg:flex-col">
+    <li><a href="/compte" data-link data-entry="informations" class="block rounded-lg px-3 py-2.5 text-small text-ink transition-colors hover:text-accent aria-[current=page]:bg-action aria-[current=page]:font-semibold aria-[current=page]:text-on-action">Mes informations</a></li>
+    <li><a href="/compte/commandes" data-link data-entry="orders" class="block rounded-lg px-3 py-2.5 text-small text-ink transition-colors hover:text-accent aria-[current=page]:bg-action aria-[current=page]:font-semibold aria-[current=page]:text-on-action">Mes commandes</a></li>
+    <li><button type="button" data-action="logout" data-focus-key="logout" class="block w-full rounded-lg px-3 py-2.5 text-left text-small text-ink-muted transition-colors hover:text-accent disabled:cursor-wait">{{logoutLabel}}</button></li>
+  </ul>
+</nav>
