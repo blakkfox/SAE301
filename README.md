@@ -157,6 +157,8 @@ Une page dynamique suit le découpage Modèle / Contrôleur / Vue :
 | `POST /api/register` | création de compte puis connexion, corps JSON `{firstName, lastName, email, phone, password, passwordConfirm}`. 422 si saisie invalide, 409 si e-mail déjà pris (erreurs par champ dans `champs`) |
 | `POST /api/password-reset` | nouveau mot de passe d'un compte client, corps JSON `{email, password, passwordConfirm}`. **Sans vérification d'identité** (version simplifiée du projet) ; les comptes admin sont exclus |
 | `POST /api/logout` | déconnexion |
+| `POST /api/admin/login` | connexion du back-office (US GOF-b), corps JSON `{"email": …, "password": …}`. 401 si identifiants incorrects **ou compte client** |
+| `GET /api/admin/dashboard` | tableau de bord : indicateurs (`stats`), prochaines commandes (`upcomingOrders`), alertes stock (`stockAlerts`, `stockAlertCount`). 401 sans session, 403 pour un compte client |
 
 Tris acceptés : `price_asc` (défaut), `price_desc`, `name_asc`, `newest`.
 `sort` est facultatif : sans lui, le serveur applique le tri mémorisé dans le

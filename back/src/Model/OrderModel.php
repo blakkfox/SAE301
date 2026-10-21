@@ -142,6 +142,66 @@ final class OrderModel
     }
 
     /**
+     * Nombre de commandes de chaque statut, pour le tableau de bord du
+     * back-office (US GOF-b). Un statut sans commande vaut 0.
+     *
+     * @return array{en_cours:int, disponible:int, retiree:int, annulee:int}
+     */
+    public function countByStatus(): array
+    {
+        $counts = ['en_cours' => 0, 'disponible' => 0, 'retiree' => 0, 'annulee' => 0];
+
+        $rows = $this->pdo->query(
+            'SELECT status, COUNT(*) AS order_count FROM customer_order GROUP BY status'
+        )->fetchAll();
+
+        for ($i = 0; $i < count($rows); $i++) {
+            $counts[$rows[$i]['status']] = (int) $rows[$i]['order_count'];
+        }
+
+        return $counts;
+    }
+
+    /**
+     * Prochaines commandes à préparer ou à remettre (statut « en_cours » ou
+     * « disponible »), par début de créneau : les plus urgentes d'abord
+     * (US GOF-b).
+     *
+     * @param int $limit Nombre de commandes.
+     *
+     * @return array<int, array{id:int, status:string, total:float, pickupStart:string,
+     *                          customer:array{firstName:string, lastName:string}}>
+     */
+    public function findUpcoming(int $limit): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT customer_order.id, customer_order.status, customer_order.total, customer_order.pickup_start,
+                    customer.first_name, customer.last_name
+               FROM customer_order
+         INNER JOIN customer ON customer.id = customer_order.customer_id
+              WHERE customer_order.status IN (\'en_cours\', \'disponible\')
+           ORDER BY customer_order.pickup_start, customer_order.id
+              LIMIT :limit'
+        );
+        $statement->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $statement->execute();
+
+        return array_map(
+            static fn (array $row): array => [
+                'id'          => (int) $row['id'],
+                'status'      => $row['status'],
+                'total'       => (float) $row['total'],
+                'pickupStart' => $row['pickup_start'],
+                'customer'    => [
+                    'firstName' => $row['first_name'],
+                    'lastName'  => $row['last_name'],
+                ],
+            ],
+            $statement->fetchAll(),
+        );
+    }
+
+    /**
      * @param int               $customerId
      * @param int               $dealershipId
      * @param DateTimeImmutable $pickupStart

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Controller\AdminController;
 use App\Controller\AuthController;
 use App\Controller\CartController;
 use App\Controller\CatalogueController;
@@ -31,4 +32,6 @@ return [
     'POST /api/logout'         => [AuthController::class,      'logout'],
     'GET  /api/checkout'       => [OrderController::class,     'checkout'],
     'POST /api/orders'         => [OrderController::class,     'create'],
+    'POST /api/admin/login'    => [AuthController::class,      'adminLogin'],
+    'GET  /api/admin/dashboard' => [AdminController::class,    'dashboard'],
 ];

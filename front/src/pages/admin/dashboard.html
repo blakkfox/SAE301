@@ -1,0 +1,27 @@
+<!-- Connecté en administrateur : indicateurs, prochaines commandes, alertes stock. -->
+<div class="flex flex-col gap-6">
+  <header class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <h1 tabindex="-1" class="font-display text-h1-mobile leading-none text-ink">Bonjour {{firstName}}</h1>
+    <p class="text-caption text-ink-muted">{{firstName}} (admin) · Lyon Centre</p>
+  </header>
+
+  <section aria-labelledby="admin-stats-title">
+    <h2 id="admin-stats-title" class="sr-only">Indicateurs</h2>
+    <dl class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 xl:gap-5">
+      <slot name="stats"></slot>
+    </dl>
+  </section>
+
+  <div class="grid gap-6 xl:grid-cols-(--grid-admin-dashboard) xl:items-start">
+    <section aria-labelledby="admin-orders-title" class="flex min-w-0 flex-col gap-5 rounded-xl bg-page p-6">
+      <h2 id="admin-orders-title" class="font-display text-h4 leading-none text-ink">Prochaines commandes à préparer</h2>
+      <slot name="orders"></slot>
+      <a href="/admin/commandes" data-link class="self-start text-small font-medium text-link underline-offset-4 hover:underline">Voir toutes les commandes <span aria-hidden="true">→</span></a>
+    </section>
+
+    <section aria-labelledby="admin-alerts-title" class="flex flex-col gap-5 rounded-xl bg-page p-6">
+      <h2 id="admin-alerts-title" class="font-display text-h4 leading-none text-ink">Alertes stock</h2>
+      <slot name="alerts"></slot>
+    </section>
+  </div>
+</div>

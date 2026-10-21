@@ -1,0 +1,28 @@
+<!--
+  Menu latéral noir de l'administration (écran 10). Mobile First : sur petit
+  écran, une barre en haut (logo, navigation qui défile, déconnexion) ; à
+  partir de lg, la colonne de 240 px de la maquette, fixée à l'écran.
+  Le routeur pose aria-current="page" sur le lien de la page affichée.
+-->
+<aside class="flex flex-col bg-dark text-ink-inverse lg:sticky lg:top-0 lg:h-screen">
+  <a href="/admin" data-link class="flex items-baseline gap-2 px-4 pt-4 pb-3 sm:px-6 lg:px-6 lg:pt-8 lg:pb-8" aria-label="Honda Admin, tableau de bord">
+    <span class="font-display text-logo leading-none tracking-logo text-accent">HONDA</span>
+    <span class="text-base font-semibold">Admin</span>
+  </a>
+
+  <nav aria-label="Administration" class="overflow-x-auto px-4 pb-3 sm:px-6 lg:px-4 lg:pb-0">
+    <ul class="flex gap-2 whitespace-nowrap lg:flex-col lg:gap-1">
+      <li><a href="/admin" data-link class="block rounded-md px-3 py-2.5 text-small font-medium text-ink-inverse-muted transition-colors hover:text-ink-inverse aria-[current=page]:bg-action aria-[current=page]:font-semibold aria-[current=page]:text-on-action">Tableau de bord</a></li>
+      <li><a href="/admin/commandes" data-link class="block rounded-md px-3 py-2.5 text-small font-medium text-ink-inverse-muted transition-colors hover:text-ink-inverse aria-[current=page]:bg-action aria-[current=page]:font-semibold aria-[current=page]:text-on-action">Commandes</a></li>
+      <li><a href="/admin/produits" data-link class="block rounded-md px-3 py-2.5 text-small font-medium text-ink-inverse-muted transition-colors hover:text-ink-inverse aria-[current=page]:bg-action aria-[current=page]:font-semibold aria-[current=page]:text-on-action">Produits</a></li>
+      <li><a href="/admin/categories" data-link class="block rounded-md px-3 py-2.5 text-small font-medium text-ink-inverse-muted transition-colors hover:text-ink-inverse aria-[current=page]:bg-action aria-[current=page]:font-semibold aria-[current=page]:text-on-action">Catégories</a></li>
+      <li><a href="/admin/codes-promo" data-link class="block rounded-md px-3 py-2.5 text-small font-medium text-ink-inverse-muted transition-colors hover:text-ink-inverse aria-[current=page]:bg-action aria-[current=page]:font-semibold aria-[current=page]:text-on-action">Codes promo</a></li>
+      <li><a href="/admin/statistiques" data-link class="block rounded-md px-3 py-2.5 text-small font-medium text-ink-inverse-muted transition-colors hover:text-ink-inverse aria-[current=page]:bg-action aria-[current=page]:font-semibold aria-[current=page]:text-on-action">Statistiques</a></li>
+    </ul>
+  </nav>
+
+  <div class="flex items-center justify-between gap-4 border-t border-line-inverse/20 px-4 py-3 sm:px-6 lg:mt-auto lg:flex-col lg:items-start lg:gap-1 lg:border-t-0 lg:px-7 lg:py-6">
+    <p class="text-small font-semibold">Honda Moto Lyon Centre</p>
+    <button type="button" data-action="logout" class="text-caption text-ink-inverse-muted underline-offset-4 transition-colors hover:text-ink-inverse hover:underline">{{logoutLabel}}</button>
+  </div>
+</aside>

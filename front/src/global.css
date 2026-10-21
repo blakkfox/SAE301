@@ -23,6 +23,7 @@
   --color-ink: var(--clr-text);
   --color-ink-muted: var(--clr-text-muted);
   --color-ink-inverse: var(--clr-text-inverse);
+  --color-ink-inverse-muted: var(--clr-text-inverse-muted);
   --color-ink-disabled: var(--clr-text-disabled);
   --color-accent: var(--clr-text-accent);
   --color-link: var(--clr-text-link);
@@ -101,6 +102,7 @@
     --clr-text: var(--clr-grey-900); /* Texte/Principal */
     --clr-text-muted: var(--clr-grey-700); /* Texte/Secondaire */
     --clr-text-inverse: var(--clr-white); /* Texte/Inverse */
+    --clr-text-inverse-muted: var(--clr-grey-300); /* Menu latéral de l'admin, liens inactifs */
     --clr-text-disabled: var(--clr-grey-400); /* Texte/Désactivé */
     --clr-text-accent: var(--clr-honda-red); /* Texte/Accent */
     --clr-text-link: var(--clr-blue-600); /* Texte/Lien */
@@ -171,6 +173,10 @@
     --grid-checkout: minmax(0, 1fr) 26.25rem; /* Validation : étapes / récapitulatif 420 px */
     --grid-cart-line: 5rem minmax(0, 1fr); /* Ligne du panier sur mobile : photo 80 px / infos */
     --grid-footer: 20rem repeat(3, auto); /* Pied de page : marque 320 px / 3 colonnes */
+    --grid-admin: 15rem minmax(0, 1fr); /* Admin : menu latéral 240 px / contenu */
+    --grid-admin-dashboard: minmax(0, 1fr) 21.25rem; /* Tableau de bord : commandes / alertes 340 px */
+    --grid-admin-login: minmax(0, 1fr) minmax(0, 1fr) auto; /* Connexion admin : 2 champs / bouton */
+    --size-admin-table-min: 36rem; /* Tableau des commandes : défile en dessous */
   }
 
   .theme-dark {
@@ -269,6 +275,52 @@
   }
 
   .stock-badge--out {
+    --_bg: var(--clr-bg-error);
+    --_dot: var(--clr-error);
+  }
+
+  /*
+    Pastille de statut de commande (US GOF-b) : « En cours », « Disponible »,
+    « Retirée » ou « Annulée ». Même forme que .stock-badge, mais une autre
+    information : les deux évoluent séparément.
+  */
+  .status-badge {
+    --_bg: var(--clr-bg-warning);
+    --_dot: var(--clr-warning);
+
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.75rem 0.25rem 0.625rem;
+    border-radius: 999px;
+    background-color: var(--_bg);
+    color: var(--clr-text);
+    font-size: var(--size-text-caption);
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+
+    &::before {
+      content: "";
+      flex-shrink: 0;
+      width: 0.5rem;
+      height: 0.5rem;
+      border-radius: 999px;
+      background-color: var(--_dot);
+    }
+  }
+
+  .status-badge--success {
+    --_bg: var(--clr-bg-success);
+    --_dot: var(--clr-success);
+  }
+
+  .status-badge--neutral {
+    --_bg: var(--clr-bg-section);
+    --_dot: var(--clr-border-strong);
+  }
+
+  .status-badge--error {
     --_bg: var(--clr-bg-error);
     --_dot: var(--clr-error);
   }

@@ -16,6 +16,7 @@ use App\Core\Database;
 use App\Core\Request;
 use App\Core\Response;
 use App\Core\Router;
+use App\Controller\AdminController;
 use App\Controller\AuthController;
 use App\Controller\CartController;
 use App\Controller\CatalogueController;
@@ -74,6 +75,7 @@ try {
         CartController::class      => new CartController(new ProductModel($pdo)),
         AuthController::class      => new AuthController(new CustomerModel($pdo)),
         OrderController::class     => new OrderController(new CustomerModel($pdo), new DealershipModel($pdo), new OrderModel($pdo, new StockModel($pdo))),
+        AdminController::class     => new AdminController(new CustomerModel($pdo), new ProductModel($pdo), new CategoryModel($pdo), new OrderModel($pdo, new StockModel($pdo))),
     ];
 
     $routes = require __DIR__ . '/src/routes.php';

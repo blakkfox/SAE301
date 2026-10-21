@@ -1,0 +1,8 @@
+<!-- Administration (écran 10) : menu latéral noir, puis zone grise des pages. -->
+<div class="min-h-screen bg-section lg:grid lg:grid-cols-(--grid-admin)">
+  <slot name="sidebar"></slot>
+  <main class="min-w-0 px-4 pt-6 pb-16 sm:px-6 lg:px-10 lg:pt-8">
+    <!-- Le slot sans nom reçoit la page affichée (voir lib/router.js). -->
+    <slot></slot>
+  </main>
+</div>
