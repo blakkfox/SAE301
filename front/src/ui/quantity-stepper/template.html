@@ -3,8 +3,9 @@
   120 × 44 px, voir SIZES dans index.js). Les boutons ont une zone de clic
   de 44 px de large au moins ; aria-live annonce la nouvelle quantité.
   À la quantité minimale (ou maximale), « − » (ou « + ») est désactivé.
+  stateClasses : bordure et couleurs de l'état (STATES dans index.js).
 -->
-<div role="group" aria-label="{{label}}" class="inline-flex shrink-0 items-center justify-between rounded-lg border border-line bg-page text-ink {{sizeClasses}}">
+<div role="group" aria-label="{{label}}" class="inline-flex shrink-0 items-center justify-between rounded-lg {{stateClasses}} {{sizeClasses}}">
   <button type="button" data-step="-1" data-focus-key="minus" aria-label="Diminuer la quantité" class="flex h-full w-11 items-center justify-center rounded-l-lg text-xl leading-none transition-colors hover:text-accent disabled:cursor-not-allowed disabled:text-ink-disabled">−</button>
   <output aria-live="polite" class="min-w-6 text-center text-base font-semibold">{{quantity}}</output>
   <button type="button" data-step="1" data-focus-key="plus" aria-label="Augmenter la quantité" class="flex h-full w-11 items-center justify-center rounded-r-lg text-xl leading-none transition-colors hover:text-accent disabled:cursor-not-allowed disabled:text-ink-disabled">+</button>

@@ -7,7 +7,7 @@
 
   <dl class="flex flex-col gap-4 text-small">
     <div class="flex justify-between gap-4">
-      <dt class="text-ink-muted">Sous-total ({{countLabel}})</dt>
+      <dt class="text-ink-muted">Sous-total ({{subtotalLabel}})</dt>
       <dd class="font-semibold text-ink">{{subtotal}}</dd>
     </div>
     <div class="flex justify-between gap-4">
@@ -23,8 +23,10 @@
   <p class="flex justify-between gap-4 text-xl font-bold text-ink"><span>Total</span><span>{{total}}</span></p>
 
   <!-- Validation de la commande (CMD-a, écran 6) : la page /commande demande
-       la connexion si besoin. -->
-  <a href="/commande" data-link aria-describedby="cart-summary-note" class="button h-12 w-full px-6 text-base">Valider la commande</a>
+       la connexion si besoin. Avec un article épuisé (STK-c, écran 8), le
+       lien est retiré au profit du bouton désactivé, et la note dit pourquoi. -->
+  <a href="/commande" data-link data-checkout-link aria-describedby="cart-summary-note" class="button h-12 w-full px-6 text-base">Valider la commande</a>
+  <button type="button" disabled data-checkout-blocked aria-describedby="cart-summary-note" class="button h-12 w-full px-6 text-base">Valider la commande</button>
 
-  <p id="cart-summary-note" class="text-caption text-ink-muted">Paiement sur place au moment du retrait. Vos articles sont réservés 48 h.</p>
+  <p id="cart-summary-note" class="text-caption text-ink-muted">{{note}}</p>
 </section>

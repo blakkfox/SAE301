@@ -35,6 +35,9 @@ import templateFeedback from "./feedback.html?raw";
  * choisie, ou celui du produit tant qu'aucune ne l'est. Une variante épuisée
  * est barrée, et le bouton devient « Épuisé », désactivé.
  *
+ * Contraintes de stock (STK-c) : la quantité à ajouter ne dépasse pas le
+ * stock de la variante choisie, moins ce qui est déjà dans le panier.
+ *
  * Découpage MVC strict :
  *   M — état de la page, appel à l'API, préparation des données affichables ;
  *   V — construction du DOM à partir des données REÇUES en paramètre ;
@@ -200,16 +203,30 @@ M.selectVariant = function (variantId) {
   if (M.product.variants.some((variant) => variant.id === variantId)) {
     M.selectedVariantId = variantId;
     M.feedback = null;
+    M.setQuantity(M.quantity);
   }
 };
 
 /**
- * Change la quantité à ajouter, bornée entre 1 et le maximum du panier.
+ * Quantité maximale à ajouter (STK-c) : ce qui reste du stock de la variante
+ * choisie une fois déduit le panier, ou le maximum du panier tant qu'aucune
+ * ne l'est. Au moins 1, pour que le sélecteur reste lisible.
+ *
+ * @returns {number}
+ */
+M.getMaxQuantity = function () {
+  let variant = M.getSelectedVariant();
+  let remaining = variant === null ? CartData.MAX_QUANTITY : CartData.remainingFor(variant.id, variant.stock);
+  return Math.max(1, remaining);
+};
+
+/**
+ * Change la quantité à ajouter, bornée entre 1 et M.getMaxQuantity().
  *
  * @param {number} quantity
  */
 M.setQuantity = function (quantity) {
-  M.quantity = Math.min(Math.max(quantity, 1), CartData.MAX_QUANTITY);
+  M.quantity = Math.min(Math.max(quantity, 1), M.getMaxQuantity());
 };
 
 /**
@@ -228,6 +245,17 @@ M.addToCart = function () {
     M.feedback = { type: "erreur", texte: "Cette option est épuisée : choisissez-en une autre." };
     return;
   }
+
+  // Le panier a pu changer dans un autre onglet : la limite est relue.
+  let remaining = CartData.remainingFor(variant.id, variant.stock);
+  if (remaining === 0) {
+    M.feedback = {
+      type: "erreur",
+      texte: "Vous avez déjà dans votre panier la quantité maximale disponible pour cet article.",
+    };
+    return;
+  }
+  M.quantity = Math.min(M.quantity, remaining);
 
   if (!CartData.add(variant.id, M.quantity)) {
     M.feedback = { type: "erreur", texte: "Le panier n'a pas pu être enregistré sur cet appareil." };
@@ -271,7 +299,7 @@ M.getPurchaseData = function () {
     quantity: {
       quantity: M.quantity,
       min: 1,
-      max: CartData.MAX_QUANTITY,
+      max: M.getMaxQuantity(),
       label: `Quantité de ${M.product.name}`,
       size: "large",
     },
@@ -310,6 +338,12 @@ M.toCardData = function (product) {
 M.addRelatedToCart = function (productId) {
   let product = M.related.find((candidate) => candidate.id === productId);
   if (product === undefined || product.variantId === null || product.stock <= 0) return;
+
+  if (CartData.remainingFor(product.variantId, product.stock) === 0) {
+    M.addedProductId = null;
+    M.cartStatus = `Votre panier contient déjà tout le stock disponible de ${product.name}.`;
+    return;
+  }
 
   if (CartData.add(product.variantId, 1)) {
     M.addedProductId = productId;

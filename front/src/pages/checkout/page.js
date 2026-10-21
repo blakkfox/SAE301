@@ -97,7 +97,8 @@ M.reset = function () {
 /**
  * Lit le panier, puis demande à l'API, en parallèle, les données de
  * validation et les variantes du panier. Les variantes que l'API ne renvoie
- * plus sont retirées du panier, comme sur la page Panier.
+ * plus sont retirées du panier, comme sur la page Panier. Un stock devenu
+ * insuffisant (STK-c) est signalé : le serveur refuserait la commande.
  *
  * @returns {Promise<void>}
  */
@@ -133,6 +134,26 @@ M.load = async function () {
           : "Un article n'est plus disponible et a été retiré de votre panier.",
     };
   }
+
+  let short = M.items.filter((item) => {
+    let variant = M.findVariant(item.variantId);
+    return variant !== undefined && item.quantity > variant.stock;
+  });
+
+  if (short.length > 0) {
+    M.notice ??= { type: "erreur", texte: M.formatShortage(short.map((item) => item.variantId)) };
+  }
+};
+
+/**
+ * Message d'un stock insuffisant constaté au chargement, avant tout envoi.
+ *
+ * @param {number[]} variantIds - Variantes dont le stock ne suffit plus.
+ * @returns {string}
+ */
+M.formatShortage = function (variantIds) {
+  let names = variantIds.map((id) => M.formatArticle(M.findVariant(id)));
+  return `Stock insuffisant : ${names.join(", ")}. Modifiez votre panier avant de valider.`;
 };
 
 /**
