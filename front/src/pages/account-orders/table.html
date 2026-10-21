@@ -1,0 +1,18 @@
+<!-- Défile horizontalement sur petit écran plutôt que de casser ses colonnes.
+     Chaque commande a son propre tbody (sa ligne, puis son détail), ajouté
+     dans page.js : un slot n'a pas sa place dans un tableau. -->
+<div class="overflow-x-auto rounded-xl bg-page">
+  <table class="w-full min-w-(--size-account-orders-table-min) text-left text-small text-ink">
+    <caption class="sr-only">{{caption}}</caption>
+    <thead class="bg-section text-caption font-semibold text-ink-muted">
+      <tr>
+        <th scope="col" class="px-6 py-3.5">N°</th>
+        <th scope="col" class="px-3 py-3.5">Date</th>
+        <th scope="col" class="px-3 py-3.5">Articles</th>
+        <th scope="col" class="px-3 py-3.5">Total</th>
+        <th scope="col" class="px-3 py-3.5">Statut</th>
+        <th scope="col" class="px-6 py-3.5"><span class="sr-only">Détail</span></th>
+      </tr>
+    </thead>
+  </table>
+</div>

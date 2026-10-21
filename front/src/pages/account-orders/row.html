@@ -1,0 +1,16 @@
+<!-- Une commande. aria-expanded et hidden du détail sont réglés dans page.js. -->
+<tbody class="border-t border-line-subtle">
+  <tr>
+    <th scope="row" class="px-6 py-4.5 font-semibold whitespace-nowrap">{{number}}</th>
+    <td class="px-3 py-4.5 whitespace-nowrap">{{date}}</td>
+    <td class="max-w-80 px-3 py-4.5">{{articles}}</td>
+    <td class="px-3 py-4.5 whitespace-nowrap">{{total}}</td>
+    <td class="px-3 py-4.5"><slot name="status"></slot></td>
+    <td class="px-6 py-4.5 whitespace-nowrap">
+      <button type="button" data-action="toggle-detail" data-id="{{id}}" data-focus-key="detail-{{id}}" aria-expanded="false" aria-controls="order-detail-{{id}}" class="text-link underline-offset-4 hover:underline">{{toggleLabel}}<span class="sr-only"> de la commande {{number}}</span></button>
+    </td>
+  </tr>
+  <tr id="order-detail-{{id}}" hidden>
+    <td colspan="6" class="px-4 pb-5 sm:px-6"><slot name="detail"></slot></td>
+  </tr>
+</tbody>

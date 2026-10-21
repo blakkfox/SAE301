@@ -172,6 +172,8 @@
     --grid-cart: minmax(0, 1fr) 25rem; /* Panier : articles / récapitulatif 400 px */
     --grid-checkout: minmax(0, 1fr) 26.25rem; /* Validation : étapes / récapitulatif 420 px */
     --grid-cart-line: 5rem minmax(0, 1fr); /* Ligne du panier sur mobile : photo 80 px / infos */
+    --grid-account: 16.25rem minmax(0, 1fr); /* Mon compte : menu 260 px / contenu */
+    --size-account-orders-table-min: 46rem; /* Mes commandes (6 colonnes) : défile en dessous */
     --grid-footer: 20rem repeat(3, auto); /* Pied de page : marque 320 px / 3 colonnes */
     --grid-admin: 15rem minmax(0, 1fr); /* Admin : menu latéral 240 px / contenu */
     --grid-admin-dashboard: minmax(0, 1fr) 21.25rem; /* Tableau de bord : commandes / alertes 340 px */

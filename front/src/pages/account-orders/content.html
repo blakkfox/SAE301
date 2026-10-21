@@ -1,0 +1,11 @@
+<!-- Connecté : filtres par statut, période, puis la liste. -->
+<div class="flex flex-col gap-6">
+  <div class="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+    <slot name="filters"></slot>
+    <slot name="period"></slot>
+  </div>
+  <section aria-labelledby="orders-list-title" class="flex flex-col gap-4">
+    <h2 id="orders-list-title" class="sr-only">Liste de mes commandes</h2>
+    <slot name="list"></slot>
+  </section>
+</div>

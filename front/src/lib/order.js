@@ -1,6 +1,7 @@
 /**
- * Mise en forme des commandes au back-office (US PIL-b) : numéro, client,
- * créneau de retrait, statut. Fonctions pures, sans dépendance.
+ * Mise en forme des commandes au back-office (US PIL-b) et dans l'historique
+ * du client (US SUI-c) : numéro, client, créneau de retrait, statut.
+ * Fonctions pures, sans dépendance.
  */
 
 // Jour d'un retrait au-delà d'hier ou de demain (« lun. 26/10 »). Les dates
@@ -90,4 +91,12 @@ export function formatPickupLong(pickupStart, pickupEnd, dayOffset) {
  */
 export function formatEventTime(datetime) {
   return `${datetime.slice(8, 10)}/${datetime.slice(5, 7)} ${datetime.slice(11, 16)}`;
+}
+
+/**
+ * @param {string} datetime - Date MySQL, « 2026-10-13 14:02:37 ».
+ * @returns {string} « 13/10/2026 ».
+ */
+export function formatOrderDate(datetime) {
+  return `${datetime.slice(8, 10)}/${datetime.slice(5, 7)}/${datetime.slice(0, 4)}`;
 }

@@ -14,9 +14,9 @@ use DateTimeZone;
 
 /**
  * Validation de la commande (US CMD-a) : concession, créneau de retrait et
- * paiement sur place.
+ * paiement sur place. Historique des commandes du client (US SUI-c).
  *
- * Les deux routes exigent un compte connecté (identifiant rangé en session
+ * Les routes exigent un compte connecté (identifiant rangé en session
  * par AuthController). Les créneaux sont calculés ici, côté serveur, et
  * recalculés à l'envoi : un créneau passé ou inventé est refusé. Quantités,
  * stock et prix sont revérifiés par OrderModel, dans une transaction.
@@ -49,6 +49,15 @@ final class OrderController
 
     /** Quantité maximale d'une ligne (comme MAX_QUANTITY dans front/src/data/cart.js). */
     private const MAX_QUANTITY = 10;
+
+    /**
+     * Périodes de l'historique (US SUI-c) : nombre de mois, ou null pour
+     * toutes les commandes. Clés : valeurs acceptées du paramètre period.
+     */
+    private const PERIODS = ['3' => 3, '6' => 6, '12' => 12, 'all' => null];
+
+    /** Période par défaut (maquette : « 6 derniers mois »). */
+    private const DEFAULT_PERIOD = '6';
 
     /** Accès aux comptes. */
     private CustomerModel $customers;
@@ -145,17 +154,56 @@ final class OrderController
     }
 
     /**
+     * GET /api/orders?period=6
+     *
+     * Historique du compte connecté (US SUI-c). Répond { orders, period } :
+     * - orders : ses commandes passées dans la période, des plus récentes aux
+     *   plus anciennes, avec leur concession, leurs lignes, le journal de
+     *   leurs statuts (events, US PIL-b) et dayOffset (jour du créneau par
+     *   rapport à aujourd'hui : 0 aujourd'hui, 1 demain, -1 hier…) ;
+     * - period : la période appliquée (« 3 », « 6 », « 12 » derniers mois ou
+     *   « all »), une valeur invalide étant remplacée par DEFAULT_PERIOD.
+     *
+     * Seules les commandes du compte en session sont lues : aucun identifiant
+     * de client ne vient du navigateur. 401 si personne n'est connecté.
+     *
+     * @param Request $request Requête entrante.
+     */
+    public function history(Request $request): void
+    {
+        $customer = $this->requireCustomer('Connectez-vous pour consulter vos commandes.');
+
+        $period = $request->parametre('period', self::DEFAULT_PERIOD);
+        $period = array_key_exists($period, self::PERIODS) ? $period : self::DEFAULT_PERIOD;
+        $months = self::PERIODS[$period];
+
+        $since  = $months === null ? null : self::now()->modify("-{$months} months");
+        $orders = $this->orders->findCustomerHistory($customer['id'], $since);
+        $today  = self::now()->setTime(0, 0);
+
+        Response::json([
+            'orders' => array_map(
+                static fn (array $order): array => $order + ['dayOffset' => self::dayOffset($order['pickupStart'], $today)],
+                $orders,
+            ),
+            'period' => (string) $period,
+        ]);
+    }
+
+    /**
      * Compte connecté, relu en base. Répond 401 (et s'arrête) s'il n'y en a pas.
+     *
+     * @param string $message Message du refus.
      *
      * @return array{id:int, firstName:string, lastName:string, email:string, phone:string, role:string}
      */
-    private function requireCustomer(): array
+    private function requireCustomer(string $message = 'Connectez-vous pour valider votre commande.'): array
     {
         $id       = $_SESSION['customerId'] ?? null;
         $customer = is_int($id) ? $this->customers->findById($id) : null;
 
         if ($customer === null) {
-            Response::erreur('Connectez-vous pour valider votre commande.', 401);
+            Response::erreur($message, 401);
         }
 
         return $customer;
@@ -285,6 +333,20 @@ final class OrderController
             'startHour' => (int) $slot['start']->format('G'),
             'endHour'   => (int) $slot['end']->format('G'),
         ];
+    }
+
+    /**
+     * @param string            $datetime Début du créneau, « 2026-10-21 16:00:00 ».
+     * @param DateTimeImmutable $today    Aujourd'hui à minuit, à l'heure de Lyon.
+     *
+     * @return int Nombre de jours entre aujourd'hui et le créneau : 0
+     *             aujourd'hui, 1 demain, -1 hier (comme AdminController).
+     */
+    private static function dayOffset(string $datetime, DateTimeImmutable $today): int
+    {
+        $day = new DateTimeImmutable(substr($datetime, 0, 10), $today->getTimezone());
+
+        return (int) $today->diff($day)->format('%r%a');
     }
 
     /**
