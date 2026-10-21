@@ -7,6 +7,7 @@ import { CategoryPage } from "./pages/category/page.js";
 import { CartPage } from "./pages/cart/page.js";
 import { LoginPage } from "./pages/login/page.js";
 import { CheckoutPage } from "./pages/checkout/page.js";
+import { AccountPage } from "./pages/account/page.js";
 import { AccountOrdersPage } from "./pages/account-orders/page.js";
 import { AdminPage } from "./pages/admin/page.js";
 import { AdminOrdersPage } from "./pages/admin-orders/page.js";
@@ -38,6 +39,9 @@ router.addRoute("/connexion", LoginPage);
 
 // CMD-a — Validation de commande (écran Figma n° 6).
 router.addRoute("/commande", CheckoutPage);
+
+// SUI-b — Espace personnel (écran Figma n° 14).
+router.addRoute("/compte", AccountPage);
 
 // SUI-c — Historique des commandes (écran Figma n° 13).
 router.addRoute("/compte/commandes", AccountOrdersPage);

@@ -1,0 +1,11 @@
+<!-- « Ma dernière commande » : résumé, statut et lien vers l'historique (SUI-c). -->
+<section aria-labelledby="last-order-title" class="flex flex-col gap-4 rounded-xl bg-page p-6 md:flex-row md:items-center md:justify-between">
+  <div class="flex min-w-0 flex-col gap-1.5">
+    <h2 id="last-order-title" class="text-lg font-semibold text-ink">Ma dernière commande</h2>
+    <p class="flex flex-wrap items-center gap-x-3 gap-y-2 text-small text-ink-muted">
+      <span>{{summary}}</span>
+      <slot name="status"></slot>
+    </p>
+  </div>
+  <a href="/compte/commandes" data-link class="shrink-0 text-small font-medium whitespace-nowrap text-link underline-offset-4 hover:underline">Toutes mes commandes <span aria-hidden="true">→</span></a>
+</section>

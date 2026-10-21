@@ -1,0 +1,51 @@
+<!-- « Mes informations » (écran 14). novalidate : c'est le serveur qui valide, ses erreurs s'affichent sous les champs. -->
+<section aria-labelledby="profile-title" tabindex="-1" data-focus-key="profile-form" class="flex min-w-0 flex-col gap-4 rounded-xl bg-page p-6 outline-none sm:p-7">
+  <h2 id="profile-title" class="font-display text-2xl leading-none font-bold text-ink">Mes informations</h2>
+
+  <form novalidate class="flex flex-col gap-4">
+    <!-- Prénom et nom côte à côte dès 640 px, l'un sous l'autre sur mobile. -->
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div class="flex flex-col gap-1.5">
+        <label for="profile-first-name" class="text-small font-semibold text-ink">Prénom</label>
+        <input id="profile-first-name" name="firstName" type="text" autocomplete="given-name" required maxlength="60" value="{{firstName}}" aria-describedby="profile-first-name-error" data-focus-key="firstName" class="field" />
+        <p id="profile-first-name-error" data-error-for="firstName" hidden class="text-caption text-accent"></p>
+      </div>
+
+      <div class="flex flex-col gap-1.5">
+        <label for="profile-last-name" class="text-small font-semibold text-ink">Nom</label>
+        <input id="profile-last-name" name="lastName" type="text" autocomplete="family-name" required maxlength="60" value="{{lastName}}" aria-describedby="profile-last-name-error" data-focus-key="lastName" class="field" />
+        <p id="profile-last-name-error" data-error-for="lastName" hidden class="text-caption text-accent"></p>
+      </div>
+    </div>
+
+    <div class="flex flex-col gap-1.5">
+      <label for="profile-email" class="text-small font-semibold text-ink">Adresse e-mail</label>
+      <input id="profile-email" name="email" type="email" autocomplete="email" required maxlength="190" value="{{email}}" aria-describedby="profile-email-error" data-focus-key="email" class="field" />
+      <p id="profile-email-error" data-error-for="email" hidden class="text-caption text-accent"></p>
+    </div>
+
+    <div class="flex flex-col gap-1.5">
+      <label for="profile-phone" class="text-small font-semibold text-ink">Téléphone</label>
+      <input id="profile-phone" name="phone" type="tel" autocomplete="tel" required value="{{phone}}" aria-describedby="profile-phone-error" data-focus-key="phone" class="field" />
+      <p id="profile-phone-error" data-error-for="phone" hidden class="text-caption text-accent"></p>
+    </div>
+
+    <div class="flex flex-col gap-1.5">
+      <label for="profile-dealership" class="text-small font-semibold text-ink">Concession préférée</label>
+      <div class="relative">
+        <!-- Les concessions sont ajoutées dans index.js : un <select> n'accepte que des <option>. -->
+        <select id="profile-dealership" name="preferredDealershipId" aria-describedby="profile-dealership-hint profile-dealership-error" data-focus-key="dealership" class="field appearance-none pr-10">
+          <option value="">Aucune préférence</option>
+        </select>
+        <span aria-hidden="true" class="pointer-events-none absolute top-1/2 right-4 -translate-y-1/2 text-caption text-ink">▾</span>
+      </div>
+      <p id="profile-dealership-hint" class="text-caption text-ink-muted">Proposée d’office à la validation de vos commandes.</p>
+      <p id="profile-dealership-error" data-error-for="preferredDealershipId" hidden class="text-caption text-accent"></p>
+    </div>
+
+    <button type="submit" data-focus-key="save" class="button h-12 self-start px-6 text-small">{{submitLabel}}</button>
+  </form>
+
+  <!-- Résultat de l'envoi (enregistré, serveur injoignable…). -->
+  <div data-form-notice class="empty:hidden"></div>
+</section>

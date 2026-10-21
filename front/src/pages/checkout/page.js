@@ -181,7 +181,8 @@ M.storeLoadError = function (error) {
 
 /**
  * Retient les données de validation, et garde les choix encore possibles :
- * sinon, la première concession et le premier créneau.
+ * sinon, la concession préférée du compte (SUI-b) ou la première, et le
+ * premier créneau.
  *
  * @param {Awaited<ReturnType<typeof OrderData.fetchCheckout>>} checkout
  */
@@ -189,7 +190,8 @@ M.setCheckout = function (checkout) {
   M.checkout = checkout;
 
   if (!checkout.dealerships.some((dealership) => dealership.id === M.dealershipId)) {
-    M.dealershipId = checkout.dealerships[0]?.id ?? null;
+    let preferred = checkout.dealerships.find((dealership) => dealership.id === checkout.customer.preferredDealershipId);
+    M.dealershipId = (preferred ?? checkout.dealerships[0])?.id ?? null;
   }
   if (!checkout.slots.some((slot) => slot.id === M.slotId)) {
     M.slotId = checkout.slots[0]?.id ?? null;

@@ -1,0 +1,33 @@
+<!-- « Mot de passe » (écran 14). novalidate : c'est le serveur qui valide. Les mots de passe ne sont jamais réécrits dans la page. -->
+<section aria-labelledby="password-change-title" tabindex="-1" data-focus-key="password-form" class="flex min-w-0 flex-col gap-4 rounded-xl bg-page p-6 outline-none sm:p-7">
+  <h2 id="password-change-title" class="font-display text-2xl leading-none font-bold text-ink">Mot de passe</h2>
+
+  <form novalidate class="flex flex-col gap-4">
+    <!-- Le gestionnaire de mots de passe sait ainsi à quel compte rattacher la saisie. -->
+    <input type="email" name="username" autocomplete="username" value="{{email}}" hidden />
+
+    <div class="flex flex-col gap-1.5">
+      <label for="password-current" class="text-small font-semibold text-ink">Mot de passe actuel</label>
+      <input id="password-current" name="currentPassword" type="password" autocomplete="current-password" required aria-describedby="password-current-error" data-focus-key="currentPassword" class="field" />
+      <p id="password-current-error" data-error-for="currentPassword" hidden class="text-caption text-accent"></p>
+    </div>
+
+    <div class="flex flex-col gap-1.5">
+      <label for="password-new" class="text-small font-semibold text-ink">Nouveau mot de passe</label>
+      <input id="password-new" name="password" type="password" autocomplete="new-password" required minlength="8" aria-describedby="password-new-hint password-new-error" data-focus-key="password" class="field" />
+      <p id="password-new-hint" class="sr-only">8 caractères minimum.</p>
+      <p id="password-new-error" data-error-for="password" hidden class="text-caption text-accent"></p>
+    </div>
+
+    <div class="flex flex-col gap-1.5">
+      <label for="password-confirm" class="text-small font-semibold text-ink">Confirmer</label>
+      <input id="password-confirm" name="passwordConfirm" type="password" autocomplete="new-password" required aria-describedby="password-confirm-error" data-focus-key="passwordConfirm" class="field" />
+      <p id="password-confirm-error" data-error-for="passwordConfirm" hidden class="text-caption text-accent"></p>
+    </div>
+
+    <button type="submit" data-focus-key="change-password" class="button button--outline h-12 w-full px-6 text-small">{{submitLabel}}</button>
+  </form>
+
+  <!-- Résultat de l'envoi (enregistré, serveur injoignable…). -->
+  <div data-form-notice class="empty:hidden"></div>
+</section>

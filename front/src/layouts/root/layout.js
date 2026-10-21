@@ -1,6 +1,7 @@
+import { AuthData } from "../../data/auth.js";
 import { CartData } from "../../data/cart.js";
 import { CategoryData } from "../../data/category.js";
-import { htmlToFragment } from "../../lib/utils.js";
+import { htmlToFragment, replaceKeepingFocus } from "../../lib/utils.js";
 import { HeaderView } from "../../ui/header/index.js";
 import { FooterView } from "../../ui/footer/index.js";
 import template from "./template.html?raw";
@@ -21,11 +22,22 @@ import template from "./template.html?raw";
  * panier, dans cet onglet (CartData.subscribe) comme dans un autre (événement
  * « storage » du navigateur), sans attendre une navigation.
  *
+ * Le compte (SUI-b) affiche « Mon compte » hors connexion, sinon le prénom,
+ * qui ouvre un menu déroulant : « Mes informations », « Mes commandes »,
+ * « Déconnexion ». Le compte est demandé une seule fois à l'API, puis tenu à
+ * jour par AuthData.subscribe (connexion, déconnexion, prénom modifié). Une
+ * déconnexion depuis ce menu ramène au catalogue : la page affichée pouvait
+ * montrer des données du compte.
+ *
  * Découpage MVC strict, comme une page :
- *   M — catégories du menu, état ouvert / fermé, nombre d'articles du panier ;
+ *   M — catégories du menu, état ouvert / fermé des deux menus, nombre
+ *       d'articles du panier, compte connecté, déconnexion ;
  *   V — construction du DOM, ouverture du panneau, écouteurs ;
  *   C — réaction aux actions de l'utilisateur, seul lien entre M et V.
  */
+
+// Page affichée après une déconnexion depuis le menu du compte.
+const AFTER_LOGOUT_PATH = "/";
 
 // ---------------------------------------------------------------------------
 // M — Modèle
@@ -38,6 +50,102 @@ let M = {
   isMenuOpen: false, // le menu des catégories est ouvert
   cartCount: 0, // nombre d'articles du panier
   isWatchingCart: false, // le modèle est abonné aux modifications du panier
+  customer: null, // compte connecté ({ firstName… }), ou null
+  accountStatus: "idle", // compte : "idle" (à demander), "loading" ou "known"
+  isWatchingAccount: false, // le modèle est abonné aux changements de compte
+  isAccountMenuOpen: false, // le menu du compte est ouvert
+  isLoggingOut: false, // une déconnexion est en cours
+};
+
+/**
+ * Demande à être prévenu de chaque changement du compte connecté.
+ * L'abonnement n'est pris qu'une fois, comme pour le panier.
+ *
+ * @param {(customer: ?Object) => void} listener - Fonction à appeler (un handler de C).
+ */
+M.watchAccount = function (listener) {
+  if (M.isWatchingAccount) return;
+  AuthData.subscribe(listener);
+  M.isWatchingAccount = true;
+};
+
+/**
+ * @returns {boolean} true s'il faut demander à l'API qui est connecté.
+ */
+M.needsAccount = function () {
+  return M.accountStatus === "idle";
+};
+
+/**
+ * Demande qui est connecté. En cas d'échec, le lien reste « Mon compte » et
+ * la navigation suivante redemandera. Une connexion ou une déconnexion
+ * signalée pendant la requête l'emporte sur sa réponse.
+ *
+ * @returns {Promise<void>}
+ */
+M.loadAccount = async function () {
+  M.accountStatus = "loading";
+
+  try {
+    let response = await AuthData.fetchCurrent();
+    if (M.accountStatus !== "loading") return;
+    M.customer = response.customer;
+    M.accountStatus = "known";
+  } catch (error) {
+    if (M.accountStatus === "loading") M.accountStatus = "idle";
+  }
+};
+
+/**
+ * @param {?Object} customer - Le compte connecté, ou null.
+ */
+M.setAccount = function (customer) {
+  M.customer = customer;
+  M.accountStatus = "known";
+  if (customer === null) M.isAccountMenuOpen = false;
+};
+
+/**
+ * Ouvre ou ferme le menu du compte. Un seul menu de l'en-tête est ouvert à
+ * la fois : celui des catégories se ferme.
+ */
+M.toggleAccountMenu = function () {
+  M.isAccountMenuOpen = !M.isAccountMenuOpen;
+  M.isMenuOpen = false;
+};
+
+/**
+ * Déconnexion. Même si l'API échoue, on quitte la page : celle qui s'affiche
+ * ensuite relit l'état de la session (comme le layout de l'administration).
+ * En cas de succès, AuthData prévient l'abonné du compte (C.handler_accountChange).
+ *
+ * @returns {Promise<void>}
+ */
+M.logout = async function () {
+  M.isLoggingOut = true;
+
+  try {
+    await AuthData.logout();
+  } catch (error) {
+    // Rien à afficher ici : la page suivante relit l'état de la session.
+  }
+
+  M.isLoggingOut = false;
+  M.isAccountMenuOpen = false;
+};
+
+/**
+ * @returns {{firstName: ?string, isOpen: boolean, logoutLabel: string, isLoggingOut: boolean}}
+ *   Le compte de l'en-tête : prénom du compte connecté (« Matthias »), ou null
+ *   pour afficher « Mon compte ».
+ */
+M.getAccountData = function () {
+  return {
+    firstName: M.customer === null ? null : M.customer.firstName,
+    isOpen: M.isAccountMenuOpen,
+    logoutLabel: M.isLoggingOut ? "Déconnexion…" : "Déconnexion",
+    isLoggingOut: M.isLoggingOut,
+  };
 };
 
 /**
@@ -131,21 +239,47 @@ M.getMenuData = function () {
 let C = {};
 
 /**
- * Point d'entrée, appelé par le routeur à chaque navigation. Le menu repart
- * fermé : la page a changé.
+ * Point d'entrée, appelé par le routeur à chaque navigation. Les menus
+ * repartent fermés : la page a changé.
  *
  * @returns {DocumentFragment} Le layout, dont le slot sans nom reçoit la page.
  */
 C.init = function () {
   M.isMenuOpen = false;
+  M.isAccountMenuOpen = false;
   M.loadCartCount();
   M.watchCart(C.handler_cartChange);
-  let fragment = V.init(M.getMenuData(), M.cartCount);
+  M.watchAccount(C.handler_accountChange);
+  let fragment = V.init(M.getMenuData(), M.cartCount, M.getAccountData());
 
   if (M.needsCategories()) {
     C.loadMenu();
   }
+  if (M.needsAccount()) {
+    C.loadAccount();
+  }
   return fragment;
+};
+
+/**
+ * Demande qui est connecté, puis met à jour le compte de l'en-tête.
+ *
+ * @returns {Promise<void>}
+ */
+C.loadAccount = async function () {
+  await M.loadAccount();
+  V.renderAccount(M.getAccountData());
+};
+
+/**
+ * Le compte connecté a changé (connexion, déconnexion, prénom modifié) : le
+ * compte de l'en-tête est mis à jour.
+ *
+ * @param {?Object} customer - Le compte connecté, ou null.
+ */
+C.handler_accountChange = function (customer) {
+  M.setAccount(customer);
+  V.renderAccount(M.getAccountData());
 };
 
 /**
@@ -174,34 +308,71 @@ C.handler_cartChange = function () {
  */
 C.handler_toggleMenu = function () {
   M.isMenuOpen = !M.isMenuOpen;
+  M.isAccountMenuOpen = false;
   V.renderMenuState(M.isMenuOpen);
+  V.renderAccount(M.getAccountData());
 };
 
 /**
- * Clic n'importe où dans le document : ferme le menu si le clic a eu lieu en
- * dehors du bouton et du panneau.
+ * Clic sur le prénom : ouvre ou ferme le menu du compte.
+ */
+C.handler_toggleAccountMenu = function () {
+  M.toggleAccountMenu();
+  V.renderMenuState(M.isMenuOpen);
+  V.renderAccount(M.getAccountData());
+};
+
+/**
+ * « Déconnexion » dans le menu du compte : retour au catalogue ensuite.
+ *
+ * @returns {Promise<void>}
+ */
+C.handler_logout = async function () {
+  if (M.isLoggingOut) return;
+
+  let logout = M.logout();
+  V.renderAccount(M.getAccountData());
+  await logout;
+
+  V.renderAccount(M.getAccountData());
+  V.goTo(AFTER_LOGOUT_PATH);
+};
+
+/**
+ * Clic n'importe où dans le document : ferme chaque menu si le clic a eu
+ * lieu en dehors de son bouton et de son panneau.
  *
  * @param {MouseEvent} ev
  */
 C.handler_clickDocument = function (ev) {
-  if (!M.isMenuOpen) return;
-  if (ev.target.closest("[data-category-menu], [data-category-menu-button]") !== null) return;
-
-  M.isMenuOpen = false;
-  V.renderMenuState(false);
+  if (M.isMenuOpen && ev.target.closest("[data-category-menu], [data-category-menu-button]") === null) {
+    M.isMenuOpen = false;
+    V.renderMenuState(false);
+  }
+  if (M.isAccountMenuOpen && ev.target.closest("[data-account-dropdown]") === null) {
+    M.isAccountMenuOpen = false;
+    V.renderAccount(M.getAccountData());
+  }
 };
 
 /**
- * Touche Échap : ferme le menu et rend le focus au bouton « Catégories ».
+ * Touche Échap : ferme le menu ouvert et rend le focus à son bouton.
  *
  * @param {KeyboardEvent} ev
  */
 C.handler_keydown = function (ev) {
-  if (ev.key !== "Escape" || !M.isMenuOpen) return;
+  if (ev.key !== "Escape") return;
 
-  M.isMenuOpen = false;
-  V.renderMenuState(false);
-  V.focusMenuButton();
+  if (M.isMenuOpen) {
+    M.isMenuOpen = false;
+    V.renderMenuState(false);
+    V.focusMenuButton();
+  }
+  if (M.isAccountMenuOpen) {
+    M.isAccountMenuOpen = false;
+    V.renderAccount(M.getAccountData());
+    V.focusAccountButton();
+  }
 };
 
 // ---------------------------------------------------------------------------
@@ -212,6 +383,7 @@ let V = {
   menuButton: null, // bouton « Catégories » de l'en-tête affiché
   menuPanel: null, // panneau du menu de l'en-tête affiché
   cartCount: null, // compteur « Panier (n) » de l'en-tête affiché
+  account: null, // compte de l'en-tête affiché (lien ou menu déroulant)
   hasDocumentListeners: false, // les écouteurs du document sont posés
 };
 
@@ -222,15 +394,21 @@ let V = {
  *
  * @param {ReturnType<typeof M.getMenuData>} menu - Données du menu.
  * @param {number} cartCount - Nombre d'articles du panier.
+ * @param {ReturnType<typeof M.getAccountData>} account - Compte de l'en-tête.
  * @returns {DocumentFragment}
  */
-V.init = function (menu, cartCount) {
+V.init = function (menu, cartCount, account) {
   let layout = htmlToFragment(template);
 
-  let header = HeaderView.dom(menu, cartCount, { onToggleMenu: C.handler_toggleMenu });
+  let header = HeaderView.dom(menu, cartCount, account, {
+    onToggleMenu: C.handler_toggleMenu,
+    onToggleAccount: C.handler_toggleAccountMenu,
+    onLogout: C.handler_logout,
+  });
   V.menuButton = header.querySelector("[data-category-menu-button]");
   V.menuPanel = header.querySelector("[data-category-menu]");
   V.cartCount = header.querySelector("[data-cart-count]");
+  V.account = header.querySelector("[data-account-dropdown]");
   layout.querySelector('slot[name="header"]').replaceWith(header);
 
   layout.querySelector('slot[name="footer"]').replaceWith(FooterView.dom());
@@ -275,6 +453,36 @@ V.renderMenuState = function (isOpen) {
  */
 V.renderCartCount = function (count) {
   V.cartCount.textContent = String(count);
+};
+
+/**
+ * Reconstruit le compte de l'en-tête : « Mon compte », ou le prénom et son
+ * menu, ouvert ou fermé.
+ *
+ * @param {ReturnType<typeof M.getAccountData>} account
+ */
+V.renderAccount = function (account) {
+  V.account = replaceKeepingFocus(
+    V.account,
+    HeaderView.account(account, { onToggleAccount: C.handler_toggleAccountMenu, onLogout: C.handler_logout }),
+  );
+};
+
+/**
+ * Rend le focus au prénom (bouton du menu du compte).
+ */
+V.focusAccountButton = function () {
+  V.account.querySelector('[data-action="toggle"]')?.focus();
+};
+
+/**
+ * Change de page sans recharger, comme V.goTo du layout de l'administration.
+ *
+ * @param {string} path - Chemin de route, par exemple « / ».
+ */
+V.goTo = function (path) {
+  window.history.pushState(null, "", import.meta.env.BASE_URL + path.replace(/^\//, ""));
+  window.dispatchEvent(new PopStateEvent("popstate"));
 };
 
 /**

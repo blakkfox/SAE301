@@ -84,7 +84,8 @@ final class OrderController
      * GET /api/checkout
      *
      * Répond { customer, dealerships, slots } : les coordonnées du compte
-     * connecté, les concessions et les prochains créneaux de retrait.
+     * connecté (avec sa concession préférée, US SUI-b, ou null), les
+     * concessions et les prochains créneaux de retrait.
      * 401 si personne n'est connecté.
      */
     public function checkout(): void
@@ -93,10 +94,11 @@ final class OrderController
 
         Response::json([
             'customer'    => [
-                'firstName' => $customer['firstName'],
-                'lastName'  => $customer['lastName'],
-                'email'     => $customer['email'],
-                'phone'     => $customer['phone'],
+                'firstName'             => $customer['firstName'],
+                'lastName'              => $customer['lastName'],
+                'email'                 => $customer['email'],
+                'phone'                 => $customer['phone'],
+                'preferredDealershipId' => $customer['preferredDealershipId'],
             ],
             'dealerships' => $this->dealerships->findAll(),
             'slots'       => array_map([self::class, 'toPublicSlot'], self::offeredSlots(self::now())),
@@ -191,11 +193,26 @@ final class OrderController
     }
 
     /**
+     * Jour d'un retrait par rapport à aujourd'hui, à l'heure de Lyon. Sert
+     * aussi à la dernière commande de l'espace personnel (AccountController,
+     * US SUI-b).
+     *
+     * @param string $pickupStart Début du créneau, « 2026-10-21 16:00:00 ».
+     *
+     * @return int 0 aujourd'hui, 1 demain, -1 hier…
+     */
+    public static function pickupDayOffset(string $pickupStart): int
+    {
+        return self::dayOffset($pickupStart, self::now()->setTime(0, 0));
+    }
+
+    /**
      * Compte connecté, relu en base. Répond 401 (et s'arrête) s'il n'y en a pas.
      *
      * @param string $message Message du refus.
      *
-     * @return array{id:int, firstName:string, lastName:string, email:string, phone:string, role:string}
+     * @return array{id:int, firstName:string, lastName:string, email:string, phone:string, role:string,
+     *               preferredDealershipId:?int}
      */
     private function requireCustomer(string $message = 'Connectez-vous pour valider votre commande.'): array
     {

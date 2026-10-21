@@ -8,16 +8,43 @@ import { getRequest, postRequest } from "../lib/api-request.js";
  * est connecté, on le demande donc à l'API (fetchCurrent).
  *
  * Un compte renvoyé par l'API a la forme
- * { id, firstName, lastName, email, phone, role }.
+ * { id, firstName, lastName, email, phone, role, preferredDealershipId }.
+ *
+ * Le compte connecté s'affiche dans l'en-tête (son prénom, SUI-b) :
+ * subscribe permet d'être prévenu de chaque connexion, déconnexion ou
+ * modification du compte.
  */
 
+// Fonctions à appeler quand le compte connecté change.
+const listeners = [];
+
 let AuthData = {};
+
+/**
+ * @param {(customer: ?{firstName: string}) => void} listener - Appelée avec le
+ *   compte connecté, ou null après une déconnexion.
+ */
+AuthData.subscribe = function (listener) {
+  listeners.push(listener);
+};
+
+/**
+ * Prévient les abonnés que le compte connecté a changé.
+ *
+ * @param {?{firstName: string}} customer - Le compte connecté, ou null.
+ */
+AuthData.notify = function (customer) {
+  for (const listener of listeners) {
+    listener(customer);
+  }
+};
 
 /**
  * Compte connecté : GET /api/me
  *
  * @returns {Promise<{customer: ?{id: number, firstName: string, lastName: string,
- *   email: string, phone: string, role: string}}>} customer vaut null si personne n'est connecté.
+ *   email: string, phone: string, role: string, preferredDealershipId: ?number}}>}
+ *   customer vaut null si personne n'est connecté.
  * @throws {ErreurApi} Si le serveur répond par une erreur.
  */
 AuthData.fetchCurrent = async function () {
@@ -35,7 +62,9 @@ AuthData.fetchCurrent = async function () {
  * @throws {ErreurApi} 401 si les identifiants sont incorrects.
  */
 AuthData.login = async function (email, password) {
-  return postRequest("login", { email, password });
+  let response = await postRequest("login", { email, password });
+  AuthData.notify(response.customer);
+  return response;
 };
 
 /**
@@ -49,7 +78,9 @@ AuthData.login = async function (email, password) {
  *   avec les erreurs de chaque champ dans champs.
  */
 AuthData.register = async function (account) {
-  return postRequest("register", account);
+  let response = await postRequest("register", account);
+  AuthData.notify(response.customer);
+  return response;
 };
 
 /**
@@ -70,7 +101,9 @@ AuthData.resetPassword = async function (reset) {
  * @returns {Promise<{customer: null}>}
  */
 AuthData.logout = async function () {
-  return postRequest("logout");
+  let response = await postRequest("logout");
+  AuthData.notify(null);
+  return response;
 };
 
 export { AuthData };

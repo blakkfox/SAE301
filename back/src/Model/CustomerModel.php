@@ -56,17 +56,20 @@ final class CustomerModel
 
     /**
      * Compte connecté, sans son empreinte de mot de passe. Le téléphone sert
-     * aux coordonnées de la validation de commande (CMD-a).
+     * aux coordonnées de la validation de commande (CMD-a), la concession
+     * préférée à son choix par défaut (SUI-b).
      *
      * @param int $id Identifiant du compte.
      *
-     * @return array{id:int, firstName:string, lastName:string, email:string, phone:string, role:string}|null
+     * @return array{id:int, firstName:string, lastName:string, email:string, phone:string, role:string,
+     *               preferredDealershipId:?int}|null
      *         null si le compte n'existe plus.
      */
     public function findById(int $id): ?array
     {
         $statement = $this->pdo->prepare(
-            'SELECT id, first_name, last_name, email, phone, role FROM customer WHERE id = :id'
+            'SELECT id, first_name, last_name, email, phone, role, preferred_dealership_id
+               FROM customer WHERE id = :id'
         );
         $statement->execute(['id' => $id]);
         $row = $statement->fetch();
@@ -76,12 +79,15 @@ final class CustomerModel
         }
 
         return [
-            'id'        => (int) $row['id'],
-            'firstName' => $row['first_name'],
-            'lastName'  => $row['last_name'],
-            'email'     => $row['email'],
-            'phone'     => $row['phone'],
-            'role'      => $row['role'],
+            'id'                    => (int) $row['id'],
+            'firstName'             => $row['first_name'],
+            'lastName'              => $row['last_name'],
+            'email'                 => $row['email'],
+            'phone'                 => $row['phone'],
+            'role'                  => $row['role'],
+            'preferredDealershipId' => $row['preferred_dealership_id'] === null
+                ? null
+                : (int) $row['preferred_dealership_id'],
         ];
     }
 
@@ -113,6 +119,69 @@ final class CustomerModel
         ]);
 
         return (int) $this->pdo->lastInsertId();
+    }
+
+    /**
+     * Modifie les informations d'un compte (US SUI-b).
+     *
+     * Comme pour create(), une adresse déjà prise par un autre compte lève une
+     * PDOException de code DUPLICATE.
+     *
+     * @param int $id Identifiant du compte.
+     * @param array{firstName:string, lastName:string, email:string, phone:string,
+     *              preferredDealershipId:?int} $profile Saisies déjà validées.
+     */
+    public function updateProfile(int $id, array $profile): void
+    {
+        $statement = $this->pdo->prepare(
+            'UPDATE customer
+                SET first_name = :firstName, last_name = :lastName, email = :email, phone = :phone,
+                    preferred_dealership_id = :dealershipId
+              WHERE id = :id'
+        );
+        $statement->bindValue(':firstName', $profile['firstName']);
+        $statement->bindValue(':lastName', $profile['lastName']);
+        $statement->bindValue(':email', $profile['email']);
+        $statement->bindValue(':phone', $profile['phone']);
+        $statement->bindValue(
+            ':dealershipId',
+            $profile['preferredDealershipId'],
+            $profile['preferredDealershipId'] === null ? PDO::PARAM_NULL : PDO::PARAM_INT,
+        );
+        $statement->bindValue(':id', $id, PDO::PARAM_INT);
+        $statement->execute();
+    }
+
+    /**
+     * Empreinte du mot de passe d'un compte, pour vérifier le mot de passe
+     * actuel avant d'en changer (US SUI-b).
+     *
+     * @param int $id Identifiant du compte.
+     *
+     * @return string|null null si le compte n'existe plus.
+     */
+    public function findPasswordHash(int $id): ?string
+    {
+        $statement = $this->pdo->prepare('SELECT password_hash FROM customer WHERE id = :id');
+        $statement->bindValue(':id', $id, PDO::PARAM_INT);
+        $statement->execute();
+        $hash = $statement->fetchColumn();
+
+        return $hash === false ? null : $hash;
+    }
+
+    /**
+     * Remplace le mot de passe d'un compte identifié par la session (US SUI-b).
+     *
+     * @param int    $id           Identifiant du compte.
+     * @param string $passwordHash Nouvelle empreinte, produite par password_hash().
+     */
+    public function updatePassword(int $id, string $passwordHash): void
+    {
+        $statement = $this->pdo->prepare('UPDATE customer SET password_hash = :passwordHash WHERE id = :id');
+        $statement->bindValue(':passwordHash', $passwordHash);
+        $statement->bindValue(':id', $id, PDO::PARAM_INT);
+        $statement->execute();
     }
 
     /**
