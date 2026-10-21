@@ -32,6 +32,7 @@
   --color-section: var(--clr-bg-section);
   --color-dark: var(--clr-bg-dark);
   --color-success-soft: var(--clr-bg-success);
+  --color-error-soft: var(--clr-bg-error);
 
   /* Bordures */
   --color-line: var(--clr-border);
@@ -43,6 +44,8 @@
   --color-action: var(--clr-action);
   --color-on-action: var(--clr-on-action);
   --color-success: var(--clr-success);
+  --color-warning: var(--clr-warning);
+  --color-error: var(--clr-error);
 
   /* Tailles de texte : text-small, text-h1… */
   --text-small: var(--size-text-small);

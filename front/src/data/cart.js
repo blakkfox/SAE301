@@ -19,8 +19,9 @@ import { getRequest } from "../lib/api-request.js";
 
 const STORAGE_KEY = "honda-cart";
 
-// Quantité maximale d'une ligne. Les contraintes de stock réelles arrivent
-// avec STK-c ; le serveur revérifiera tout à la validation (CMD-a).
+// Quantité maximale d'une ligne, quel que soit le stock. Le stock réel la
+// réduit encore (remainingFor, page Panier : STK-c) ; le serveur revérifie
+// tout à la validation (CMD-a).
 const MAX_QUANTITY = 10;
 
 // Fonctions à appeler après chaque modification du panier.
@@ -137,6 +138,26 @@ CartData.clear = function () {
 };
 
 /**
+ * @param {number} variantId
+ * @returns {number} Quantité de cette variante déjà dans le panier (0 si absente).
+ */
+CartData.quantityOf = function (variantId) {
+  return CartData.read().find((item) => item.variantId === variantId)?.quantity ?? 0;
+};
+
+/**
+ * Quantité de cette variante qu'on peut encore ajouter (US STK-c) : le stock,
+ * dans la limite de MAX_QUANTITY, moins ce qui est déjà dans le panier.
+ *
+ * @param {number} variantId
+ * @param {number} stock - Stock de la variante, lu dans l'API.
+ * @returns {number} 0 si plus rien ne peut être ajouté.
+ */
+CartData.remainingFor = function (variantId, stock) {
+  return Math.max(0, Math.min(stock, MAX_QUANTITY) - CartData.quantityOf(variantId));
+};
+
+/**
  * @returns {number} Nombre d'articles du panier (somme des quantités).
  */
 CartData.count = function () {
@@ -163,13 +184,13 @@ CartData.notify = function () {
 };
 
 /**
- * Nom, photo et prix des variantes du panier : GET /api/cart?variants=…
+ * Nom, photo, prix et stock des variantes du panier : GET /api/cart?variants=…
  *
  * Une variante absente de la réponse n'est plus au catalogue.
  *
  * @param {number[]} variantIds
  * @returns {Promise<{variants: Array<{variantId: number, label: string, reference: string,
- *   productId: number, name: string, price: number, image: ?string}>}>}
+ *   productId: number, name: string, price: number, image: ?string, stock: number}>}>}
  * @throws {ErreurApi} Si le serveur répond par une erreur.
  */
 CartData.fetchVariants = async function (variantIds) {

@@ -279,13 +279,14 @@ final class ProductModel
      *
      * Seules les variantes d'un produit visible sont renvoyées : une variante
      * inconnue ou retirée du catalogue est simplement absente du résultat.
-     * Le prix vient toujours de la base, jamais du navigateur.
+     * Le prix vient toujours de la base, jamais du navigateur. Le stock sert
+     * aux contraintes du panier (US STK-c) ; il est revérifié à la commande.
      *
      * @param array<int, int> $variantIds Identifiants de variantes, déjà validés
      *                                    par le contrôleur (entiers > 0, sans doublon).
      *
      * @return array<int, array{variantId:int, label:string, reference:string,
-     *                          productId:int, name:string, price:float, image:?string}>
+     *                          productId:int, name:string, price:float, image:?string, stock:int}>
      */
     public function findCartVariants(array $variantIds): array
     {
@@ -300,7 +301,7 @@ final class ProductModel
             array_keys($variantIds),
         );
 
-        $sql = 'SELECT variant.id AS variant_id, variant.label, variant.reference,
+        $sql = 'SELECT variant.id AS variant_id, variant.label, variant.reference, variant.stock,
                        product.id, product.name, product.price, product.image
                   FROM variant
             INNER JOIN product ON product.id = variant.product_id
@@ -324,6 +325,7 @@ final class ProductModel
                 'name'      => $row['name'],
                 'price'     => (float) $row['price'],
                 'image'     => $row['image'],
+                'stock'     => (int) $row['stock'],
             ],
             $statement->fetchAll(),
         );

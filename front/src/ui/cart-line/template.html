@@ -4,25 +4,36 @@
   Mobile : photo 80 px et informations, puis une seconde rangée quantité,
   prix et « Retirer » (sm:contents rend ses enfants à la rangée unique).
 
+  Stocks (écran 8, STK-c) : pastille de stock sous la variante, note si la
+  quantité a été ajustée au stock ; un article épuisé est grisé et
+  « Retirer » passe en rouge (classes : TONES dans index.js).
+
   tabindex="-1" : la ligne peut recevoir le focus quand elle est reconstruite
   et que le bouton qui l'avait ne peut plus le prendre (voir
   replaceKeepingFocus dans lib/utils.js).
 -->
 <li data-variant-id="{{variantId}}" tabindex="-1" class="grid grid-cols-(--grid-cart-line) items-center gap-x-4 gap-y-3 border-b border-line-subtle py-5 outline-none last:border-b-0 sm:flex sm:gap-5">
-  <slot name="visual"></slot>
+  <div class="shrink-0 {{visualClasses}}">
+    <slot name="visual"></slot>
+  </div>
 
-  <div class="flex min-w-0 flex-col gap-1.5 sm:flex-1">
-    <h2 class="text-lg leading-tight font-semibold text-ink">
+  <div class="flex min-w-0 flex-col items-start gap-1.5 sm:flex-1">
+    <h2 class="text-lg leading-tight font-semibold {{nameClasses}}">
       <a href="/produits/{{productId}}" data-link class="transition-colors hover:text-accent">{{name}}</a>
     </h2>
     <p class="text-sm text-ink-muted">{{details}}</p>
+    <!-- La maquette écrit cette note en orange Statut/Avertissement, trop peu
+         contrasté pour un texte de 15 px : l'orange reste sur la bordure du
+         sélecteur de quantité. -->
+    <p data-stock-note class="text-small font-medium text-ink">{{stockNote}}</p>
+    <slot name="stock"></slot>
   </div>
 
   <div class="col-span-2 flex items-center justify-between gap-4 sm:contents">
     <slot name="quantity"></slot>
 
-    <p class="ml-auto text-right text-lg font-bold text-ink sm:ml-0 sm:w-27.5 sm:shrink-0"><span class="sr-only">Total de la ligne : </span>{{total}}</p>
+    <p class="ml-auto text-right text-lg font-bold sm:ml-0 sm:w-27.5 sm:shrink-0 {{priceClasses}}"><span class="sr-only">Total de la ligne : </span>{{total}}</p>
 
-    <button type="button" data-remove data-focus-key="remove" aria-label="Retirer {{name}} ({{label}}) du panier" class="shrink-0 py-2 text-sm text-ink-muted underline-offset-4 transition-colors hover:text-accent hover:underline">Retirer</button>
+    <button type="button" data-remove data-focus-key="remove" aria-label="Retirer {{name}} ({{label}}) du panier" class="shrink-0 py-2 underline-offset-4 transition-colors hover:text-accent hover:underline {{removeClasses}}">Retirer</button>
   </div>
 </li>

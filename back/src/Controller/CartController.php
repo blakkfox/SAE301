@@ -13,8 +13,11 @@ use App\Model\ProductModel;
  *
  * Le panier lui-même est gardé par le navigateur (localStorage) : il ne
  * contient que des identifiants de variantes et des quantités. Cette route
- * fournit, pour ces variantes, le nom, la photo et le PRIX tels qu'ils sont
- * en base : le navigateur ne fait jamais foi pour un prix.
+ * fournit, pour ces variantes, le nom, la photo, le PRIX et le stock tels
+ * qu'ils sont en base : le navigateur ne fait jamais foi pour un prix.
+ *
+ * Le stock permet au panier de plafonner les quantités et de signaler les
+ * articles épuisés (US STK-c).
  *
  * Les quantités, la disponibilité et les prix seront revérifiés à la
  * validation de la commande (CMD-a), dans une transaction.
@@ -39,8 +42,8 @@ final class CartController
      * GET /api/cart?variants=12,4,31
      *
      * Répond { variants } : une entrée par variante encore visible au
-     * catalogue. Une variante absente de la réponse n'est plus disponible.
-     * 400 si la liste est vide, trop longue ou contient une valeur invalide.
+     * catalogue, avec son stock. Une variante absente de la réponse n'est
+     * plus disponible. 400 si la liste est vide, trop longue ou contient une valeur invalide.
      *
      * @param Request $request Requête entrante.
      */

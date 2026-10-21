@@ -145,6 +145,13 @@ M.addToCart = function (productId) {
   let product = (M.catalogue?.products ?? []).find((candidate) => candidate.id === productId);
   if (product === undefined || product.variantId === null || product.stock <= 0) return;
 
+  // Stock (STK-c) : pas plus que le stock de la variante dans le panier.
+  if (CartData.remainingFor(product.variantId, product.stock) === 0) {
+    M.addedProductId = null;
+    M.cartStatus = `Votre panier contient déjà tout le stock disponible de ${product.name}.`;
+    return;
+  }
+
   if (CartData.add(product.variantId, 1)) {
     M.addedProductId = productId;
     M.cartStatus = `${product.name} ajouté au panier.`;
