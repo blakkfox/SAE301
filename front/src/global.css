@@ -81,6 +81,7 @@
     --clr-grey-700: #555555;
     --clr-grey-500: #8c8d91;
     --clr-grey-400: #979797;
+    --clr-grey-300: #c8c9cc;
     --clr-grey-200: #dddddd;
     --clr-grey-150: #efefef;
     --clr-grey-100: #f2f2f2;
@@ -88,6 +89,9 @@
     --clr-black: #000000;
     --clr-green-600: #279639;
     --clr-green-50: #e7f4e9;
+    --clr-orange-600: #d9730d;
+    --clr-orange-50: #fdf0e1;
+    --clr-red-50: #fbe8e8;
     --clr-blue-600: #2b62b3;
 
     /* Tokens sémantiques : ils disent à quoi ils servent (noms Figma). */
@@ -102,6 +106,8 @@
     --clr-bg-section: var(--clr-grey-100); /* Fond/Section */
     --clr-bg-dark: var(--clr-black); /* Fond/Sombre */
     --clr-bg-success: var(--clr-green-50); /* Fond/Succès */
+    --clr-bg-warning: var(--clr-orange-50); /* Fond/Avertissement */
+    --clr-bg-error: var(--clr-red-50); /* Fond/Erreur */
 
     --clr-border: var(--clr-grey-200); /* Bordure/Défaut */
     --clr-border-strong: var(--clr-grey-500); /* Bordure/Forte */
@@ -110,7 +116,10 @@
 
     --clr-action: var(--clr-honda-red); /* Action/Principale */
     --clr-on-action: var(--clr-white); /* Action/Sur principale */
+    --clr-action-disabled: var(--clr-grey-300); /* Action/Désactivée */
     --clr-success: var(--clr-green-600); /* Statut/Succès */
+    --clr-warning: var(--clr-orange-600); /* Statut/Avertissement */
+    --clr-error: var(--clr-honda-red); /* Statut/Erreur */
 
     /* Tailles primitives : valeurs brutes des styles de texte Figma, en rem
        (base 16 px) pour suivre la taille de police choisie par l'utilisateur. */
@@ -203,9 +212,14 @@
       opacity: 0.9;
     }
 
+    /* Bouton Désactivé de la maquette (« Épuisé », STK-b) : gris plein,
+       quelle que soit la variante du bouton. */
     &:disabled {
+      --_bg: var(--clr-action-disabled);
+      --_fg: var(--clr-on-action);
+      --_border: var(--clr-action-disabled);
+
       cursor: not-allowed;
-      opacity: 0.6;
     }
   }
 
@@ -213,6 +227,47 @@
     --_bg: var(--clr-bg-page);
     --_fg: var(--clr-text);
     --_border: var(--clr-border);
+  }
+
+  /*
+    Pastille de stock (US STK-b) : « En stock », « Bientôt épuisé » ou
+    « Épuisé ». Le point de couleur (::before) est décoratif : le libellé seul
+    porte l'information. Les modifiers ne font que réassigner les couleurs.
+  */
+  .stock-badge {
+    --_bg: var(--clr-bg-success);
+    --_dot: var(--clr-success);
+
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.25rem 0.75rem 0.25rem 0.625rem;
+    border-radius: 999px;
+    background-color: var(--_bg);
+    color: var(--clr-text);
+    font-size: var(--size-text-caption);
+    font-weight: 600;
+    line-height: 1.2;
+    white-space: nowrap;
+
+    &::before {
+      content: "";
+      flex-shrink: 0;
+      width: 0.5rem;
+      height: 0.5rem;
+      border-radius: 999px;
+      background-color: var(--_dot);
+    }
+  }
+
+  .stock-badge--low {
+    --_bg: var(--clr-bg-warning);
+    --_dot: var(--clr-warning);
+  }
+
+  .stock-badge--out {
+    --_bg: var(--clr-bg-error);
+    --_dot: var(--clr-error);
   }
 
   /*

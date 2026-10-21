@@ -1,6 +1,7 @@
 import { CartData } from "../../data/cart.js";
 import { ProductData } from "../../data/product.js";
 import { formatPrice } from "../../lib/format.js";
+import { getStockStatus } from "../../lib/stock.js";
 import { genericRenderer, htmlToFragment, replaceKeepingFocus } from "../../lib/utils.js";
 import { MessageView } from "../../ui/message/index.js";
 import { ProductFeaturesView } from "../../ui/product-features/index.js";
@@ -8,6 +9,7 @@ import { ProductCardView } from "../../ui/product-card/index.js";
 import { ProductGalleryView } from "../../ui/product-gallery/index.js";
 import { ProductGridView } from "../../ui/product-grid/index.js";
 import { QuantityStepperView } from "../../ui/quantity-stepper/index.js";
+import { StockBadgeView } from "../../ui/stock-badge/index.js";
 import { VariantPickerView } from "../../ui/variant-picker/index.js";
 import template from "./template.html?raw";
 import templateBreadcrumbParent from "./breadcrumb-parent.html?raw";
@@ -28,6 +30,10 @@ import templateFeedback from "./feedback.html?raw";
  * Ajout au panier (CMD-b) : le choix de la variante et de la quantité ne
  * reconstruit que le bloc d'achat. Le panier lui-même est géré par
  * data/cart.js ; le compteur de l'en-tête se met à jour seul (voir le layout).
+ *
+ * Stocks (STK-b) : la pastille à côté du prix donne le stock de la variante
+ * choisie, ou celui du produit tant qu'aucune ne l'est. Une variante épuisée
+ * est barrée, et le bouton devient « Épuisé », désactivé.
  *
  * Découpage MVC strict :
  *   M — état de la page, appel à l'API, préparation des données affichables ;
@@ -164,11 +170,25 @@ M.getGalleryData = function () {
 };
 
 /**
- * @returns {?{id: number, label: string, reference: string}} La variante
- *   choisie, ou null.
+ * @returns {?{id: number, label: string, reference: string, stock: number}} La
+ *   variante choisie, ou null.
  */
 M.getSelectedVariant = function () {
   return M.product.variants.find((variant) => variant.id === M.selectedVariantId) ?? null;
+};
+
+/**
+ * Statut de stock affiché à côté du prix : celui de la variante choisie, ou
+ * celui du stock total du produit tant qu'aucune variante ne l'est.
+ *
+ * @returns {"in"|"low"|"out"}
+ */
+M.getStockStatus = function () {
+  let selected = M.getSelectedVariant();
+  let stock = selected === null
+    ? M.product.variants.reduce((total, variant) => total + variant.stock, 0)
+    : selected.stock;
+  return getStockStatus(stock);
 };
 
 /**
@@ -204,6 +224,11 @@ M.addToCart = function () {
     return;
   }
 
+  if (variant.stock <= 0) {
+    M.feedback = { type: "erreur", texte: "Cette option est épuisée : choisissez-en une autre." };
+    return;
+  }
+
   if (!CartData.add(variant.id, M.quantity)) {
     M.feedback = { type: "erreur", texte: "Le panier n'a pas pu être enregistré sur cet appareil." };
     return;
@@ -217,13 +242,16 @@ M.addToCart = function () {
 
 /**
  * Données du bloc d'achat : le sélecteur de variante (null s'il n'y a qu'une
- * variante) et le sélecteur de quantité.
+ * variante), le sélecteur de quantité et le bouton, « Épuisé » et désactivé
+ * si la variante choisie, ou le produit entier, est épuisé.
  *
  * @returns {{picker: ?Parameters<typeof VariantPickerView.dom>[0],
- *   quantity: Parameters<typeof QuantityStepperView.dom>[0]}}
+ *   quantity: Parameters<typeof QuantityStepperView.dom>[0],
+ *   addLabel: string, isSoldOut: boolean}}
  */
 M.getPurchaseData = function () {
   let selected = M.getSelectedVariant();
+  let isSoldOut = M.getStockStatus() === "out";
   let picker = null;
 
   if (M.product.variants.length > 1) {
@@ -233,6 +261,7 @@ M.getPurchaseData = function () {
         id: variant.id,
         label: variant.label,
         isSelected: variant.id === M.selectedVariantId,
+        isSoldOut: variant.stock <= 0,
       })),
     };
   }
@@ -246,15 +275,18 @@ M.getPurchaseData = function () {
       label: `Quantité de ${M.product.name}`,
       size: "large",
     },
+    addLabel: isSoldOut ? "Épuisé" : "Ajouter au panier",
+    isSoldOut,
   };
 };
 
 /**
  * Prépare un produit du bloc « Vous aimerez aussi » pour la carte produit.
  *
- * @param {{id: number, name: string, price: number, image: ?string, variantId: ?number}} product
+ * @param {{id: number, name: string, price: number, image: ?string, variantId: ?number,
+ *   stock: number}} product
  * @returns {{id: number, name: string, price: number, imageUrl: ?string,
- *   variantId: ?number, isAdded: boolean}}
+ *   variantId: ?number, stockStatus: "in"|"low"|"out", isAdded: boolean}}
  */
 M.toCardData = function (product) {
   return {
@@ -263,6 +295,7 @@ M.toCardData = function (product) {
     price: product.price,
     imageUrl: ProductData.imageUrl(product.image),
     variantId: product.variantId,
+    stockStatus: getStockStatus(product.stock),
     isAdded: product.id === M.addedProductId,
   };
 };
@@ -276,7 +309,7 @@ M.toCardData = function (product) {
  */
 M.addRelatedToCart = function (productId) {
   let product = M.related.find((candidate) => candidate.id === productId);
-  if (product === undefined || product.variantId === null) return;
+  if (product === undefined || product.variantId === null || product.stock <= 0) return;
 
   if (CartData.add(product.variantId, 1)) {
     M.addedProductId = productId;
@@ -300,7 +333,8 @@ M.getRelatedCard = function (productId) {
  * Rassemble tout ce que la Vue doit afficher, déjà préparé.
  *
  * @returns {{error: ?{title: string, text: string}, page: ?{name: string,
- *   subtitle: string, price: string, categoryName: string, categoryUrl: string},
+ *   subtitle: string, price: string, stockStatus: "in"|"low"|"out",
+ *   categoryName: string, categoryUrl: string},
  *   parent: ?{name: string, url: string}, description: ?string, gallery: ?Object,
  *   purchase: ?ReturnType<typeof M.getPurchaseData>,
  *   features: Array<{label: string, value: string}>,
@@ -328,6 +362,7 @@ M.getViewData = function () {
       name: M.product.name,
       subtitle: M.getSubtitle(),
       price: formatPrice(M.product.price),
+      stockStatus: M.getStockStatus(),
       categoryName: M.product.category.name,
       categoryUrl: `/categories/${M.product.category.slug}`,
     },
@@ -377,6 +412,7 @@ C.handler_selectImage = function (index) {
 C.handler_selectVariant = function (variantId) {
   M.selectVariant(variantId);
   V.renderPurchase(M.getPurchaseData());
+  V.renderStock(M.getStockStatus());
   V.renderFeedback(M.feedback);
 };
 
@@ -425,6 +461,7 @@ let V = {
   gallery: null, // élément racine de la galerie affichée
   purchase: null, // bloc d'achat affiché
   feedback: null, // zone du message d'ajout au panier
+  stock: null, // zone de la pastille de stock, à côté du prix
   related: null, // bloc « Vous aimerez aussi » affiché, ou null
 };
 
@@ -463,6 +500,16 @@ V.renderPurchase = function (purchaseData) {
 };
 
 /**
+ * Affiche la pastille de stock à côté du prix (zone role="status" : le
+ * changement est annoncé).
+ *
+ * @param {"in"|"low"|"out"} status
+ */
+V.renderStock = function (status) {
+  V.stock.replaceChildren(StockBadgeView.dom(status));
+};
+
+/**
  * Affiche le message d'ajout au panier, ou aucun.
  *
  * @param {?{type: "succes"|"erreur", texte: string}} feedback
@@ -480,7 +527,7 @@ V.renderFeedback = function (feedback) {
  * @returns {DocumentFragment} Le bloc d'achat, relié au contrôleur.
  */
 V.createPurchaseFragment = function (purchaseData) {
-  let fragment = htmlToFragment(templatePurchase);
+  let fragment = htmlToFragment(genericRenderer(templatePurchase, { addLabel: purchaseData.addLabel }));
 
   let variantsSlot = fragment.querySelector('slot[name="variants"]');
   if (purchaseData.picker === null) {
@@ -493,7 +540,9 @@ V.createPurchaseFragment = function (purchaseData) {
     .querySelector('slot[name="quantity"]')
     .replaceWith(QuantityStepperView.dom(purchaseData.quantity, { onChange: C.handler_changeQuantity }));
 
-  fragment.querySelector("[data-add-to-cart]").addEventListener("click", C.handler_addToCart);
+  let button = fragment.querySelector("[data-add-to-cart]");
+  button.disabled = purchaseData.isSoldOut;
+  button.addEventListener("click", C.handler_addToCart);
 
   return fragment;
 };
@@ -556,6 +605,9 @@ V.createPageFragment = function (data) {
   V.purchase = purchase.firstElementChild;
   page.querySelector('slot[name="purchase"]').replaceWith(purchase);
   V.feedback = page.querySelector("[data-purchase-feedback]");
+
+  V.stock = page.querySelector("[data-product-stock]");
+  V.renderStock(data.page.stockStatus);
 
   let descriptionSlot = page.querySelector('slot[name="description"]');
   if (data.description === null) {

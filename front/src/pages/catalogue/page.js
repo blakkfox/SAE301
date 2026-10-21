@@ -1,13 +1,18 @@
 import { CartData } from "../../data/cart.js";
 import { ProductData } from "../../data/product.js";
+import { LOW_STOCK_MAX, getStockStatus } from "../../lib/stock.js";
 import { genericRenderer, htmlToFragment, replaceKeepingFocus } from "../../lib/utils.js";
 import { MessageView } from "../../ui/message/index.js";
 import { PaginationView } from "../../ui/pagination/index.js";
 import { ProductCardView } from "../../ui/product-card/index.js";
 import { ProductGridView } from "../../ui/product-grid/index.js";
+import { SoldOutToggleView } from "../../ui/sold-out-toggle/index.js";
 import { SortSelectView } from "../../ui/sort-select/index.js";
+import { StockBadgeView } from "../../ui/stock-badge/index.js";
 import template from "./template.html?raw";
 import templateSummary from "./summary.html?raw";
+import templateLegend from "./legend.html?raw";
+import templateEmptyInStock from "./empty-in-stock.html?raw";
 
 /**
  * Page « Catalogue » — US DEC-b (écran Figma n° 1).
@@ -15,6 +20,11 @@ import templateSummary from "./summary.html?raw";
  * Au premier affichage, aucun tri n'est précisé : le serveur applique le tri
  * mémorisé dans son cookie, ou « Prix croissant ». Ensuite, le tri choisi
  * accompagne chaque requête.
+ *
+ * Stocks (US STK-b, écran Figma n° 7) : chaque carte porte une pastille
+ * « En stock », « Bientôt épuisé » ou « Épuisé », expliquée par la légende
+ * sous la grille. « Masquer les produits épuisés » est filtré par le serveur,
+ * pour que le nombre de produits et la pagination restent justes.
  *
  * Découpage MVC strict :
  *   M — état de la page, appel à l'API, préparation des données affichables ;
@@ -38,6 +48,7 @@ let M = {
   lastRequest: 0, // numéro de la dernière requête lancée
   addedProductId: null, // produit de la dernière carte ajoutée au panier, ou null
   cartStatus: null, // confirmation d'ajout à annoncer, ou null
+  hideSoldOut: false, // « Masquer les produits épuisés » est coché
 };
 
 /**
@@ -52,6 +63,16 @@ M.reset = function () {
   M.isLoading = false;
   M.addedProductId = null;
   M.cartStatus = null;
+  M.hideSoldOut = false;
+};
+
+/**
+ * Coche ou décoche « Masquer les produits épuisés ».
+ *
+ * @param {boolean} hideSoldOut
+ */
+M.setHideSoldOut = function (hideSoldOut) {
+  M.hideSoldOut = hideSoldOut;
 };
 
 /**
@@ -79,7 +100,7 @@ M.loadPage = async function (page, sort) {
   }
 
   try {
-    let response = await ProductData.fetchPage(page, sort);
+    let response = await ProductData.fetchPage(page, sort, undefined, M.hideSoldOut);
     if (request !== M.lastRequest) return false;
     M.catalogue = response;
     M.sort = response.sort;
@@ -96,9 +117,10 @@ M.loadPage = async function (page, sort) {
 /**
  * Prépare un produit de l'API pour la carte produit.
  *
- * @param {{id: number, name: string, price: number, image: ?string, variantId: ?number}} product
+ * @param {{id: number, name: string, price: number, image: ?string, variantId: ?number,
+ *   stock: number}} product
  * @returns {{id: number, name: string, price: number, imageUrl: ?string,
- *   variantId: ?number, isAdded: boolean}}
+ *   variantId: ?number, stockStatus: "in"|"low"|"out", isAdded: boolean}}
  */
 M.toCardData = function (product) {
   return {
@@ -107,20 +129,21 @@ M.toCardData = function (product) {
     price: product.price,
     imageUrl: ProductData.imageUrl(product.image),
     variantId: product.variantId,
+    stockStatus: getStockStatus(product.stock),
     isAdded: product.id === M.addedProductId,
   };
 };
 
 /**
  * Ajoute au panier le produit d'une carte. Seuls les produits à variante
- * unique ont un bouton d'ajout : la variante est lue dans le modèle, jamais
- * dans la page. Prépare la confirmation à annoncer.
+ * unique et en stock ont un bouton d'ajout : la variante est lue dans le
+ * modèle, jamais dans la page. Prépare la confirmation à annoncer.
  *
  * @param {number} productId - Produit de la carte cliquée.
  */
 M.addToCart = function (productId) {
   let product = (M.catalogue?.products ?? []).find((candidate) => candidate.id === productId);
-  if (product === undefined || product.variantId === null) return;
+  if (product === undefined || product.variantId === null || product.stock <= 0) return;
 
   if (CartData.add(product.variantId, 1)) {
     M.addedProductId = productId;
@@ -145,11 +168,25 @@ M.getCard = function (productId) {
  * Phrase d'accroche sous le titre, avec le nombre de produits accordé.
  *
  * @param {number} total - Nombre de produits du catalogue.
- * @returns {string} Par exemple « 18 produits · retrait gratuit en concession sous 2 h ».
+ * @returns {string} Par exemple « 18 produits · stock en temps réel de la concession Lyon Centre ».
  */
 M.formatSummary = function (total) {
   let label = total > 1 ? "produits" : "produit";
-  return `${total} ${label} · retrait gratuit en concession sous 2 h`;
+  let inStock = M.hideSoldOut ? " en stock" : "";
+  return `${total} ${label}${inStock} · stock en temps réel de la concession Lyon Centre`;
+};
+
+/**
+ * Textes de la légende des pastilles, d'après le seuil de lib/stock.js.
+ *
+ * @returns {{inText: string, lowText: string, outText: string}}
+ */
+M.getLegendData = function () {
+  return {
+    inText: `plus de ${LOW_STOCK_MAX} unités`,
+    lowText: `${LOW_STOCK_MAX} unités ou moins`,
+    outText: "0 unité, ajout au panier impossible",
+  };
 };
 
 /**
@@ -165,9 +202,10 @@ M.getPageNumbers = function (pageCount) {
 /**
  * Rassemble tout ce que la Vue doit afficher, déjà préparé.
  *
- * @returns {{isLoading: boolean, summary: ?string, sort: string,
+ * @returns {{isLoading: boolean, summary: ?string, sort: string, hideSoldOut: boolean,
  *   message: ?{type: string, texte: string},
  *   products: Array<ReturnType<typeof M.toCardData>>,
+ *   legend: ReturnType<typeof M.getLegendData>,
  *   pagination: ?{page: number, pagesTotal: number, pages: number[]}}}
  */
 M.getViewData = function () {
@@ -177,6 +215,8 @@ M.getViewData = function () {
     isLoading: M.isLoading,
     summary: catalogue === null ? null : M.formatSummary(catalogue.total),
     sort: M.sort ?? DEFAULT_SORT,
+    hideSoldOut: M.hideSoldOut,
+    legend: M.getLegendData(),
     message: M.error === null ? null : { type: "erreur", texte: M.error },
     products: catalogue === null ? [] : catalogue.products.map(M.toCardData),
     pagination:
@@ -267,6 +307,17 @@ C.handler_changeSort = function (sort) {
 };
 
 /**
+ * Clic sur « Masquer les produits épuisés » : la liste filtrée repart de la
+ * première page, avec le tri en cours.
+ *
+ * @param {boolean} hideSoldOut - Nouvel état de la case.
+ */
+C.handler_toggleSoldOut = function (hideSoldOut) {
+  M.setHideSoldOut(hideSoldOut);
+  C.load(1, M.sort ?? DEFAULT_SORT);
+};
+
+/**
  * Affiche une autre page, avec le tri en cours, et remonte en haut de liste.
  *
  * @param {number} page - Numéro de page cliqué.
@@ -299,15 +350,13 @@ V.init = function (data) {
 /**
  * Reconstruit toute la page à partir des données reçues, et remplace
  * l'ancienne : l'affichage se déduit de l'état, on ne le retouche pas
- * morceau par morceau.
+ * morceau par morceau. Le focus est rendu à la case « Masquer les produits
+ * épuisés » si c'est elle qui l'avait.
  *
  * @param {ReturnType<typeof M.getViewData>} data - Données préparées par le modèle.
  */
 V.render = function (data) {
-  let fragment = V.createPageFragment(data);
-  let newRoot = fragment.firstElementChild;
-  V.root.replaceWith(fragment);
-  V.root = newRoot;
+  V.root = replaceKeepingFocus(V.root, V.createPageFragment(data));
 };
 
 /**
@@ -352,6 +401,18 @@ V.scrollToTop = function () {
 };
 
 /**
+ * @param {ReturnType<typeof M.getLegendData>} legend
+ * @returns {DocumentFragment} La légende, avec une pastille par statut.
+ */
+V.createLegendFragment = function (legend) {
+  let fragment = htmlToFragment(genericRenderer(templateLegend, legend));
+  fragment.querySelector('slot[name="in"]').replaceWith(StockBadgeView.dom("in"));
+  fragment.querySelector('slot[name="low"]').replaceWith(StockBadgeView.dom("low"));
+  fragment.querySelector('slot[name="out"]').replaceWith(StockBadgeView.dom("out"));
+  return fragment;
+};
+
+/**
  * Construit le fragment de la page : chaque slot reçoit son composant, ou
  * disparaît s'il n'a rien à afficher.
  *
@@ -369,6 +430,10 @@ V.createPageFragment = function (data) {
   }
 
   page
+    .querySelector('slot[name="stock-filter"]')
+    .replaceWith(SoldOutToggleView.dom({ checked: data.hideSoldOut }, { onToggle: C.handler_toggleSoldOut }));
+
+  page
     .querySelector('slot[name="sort"]')
     .replaceWith(SortSelectView.dom({ sort: data.sort, disabled: data.isLoading }, { onSort: C.handler_changeSort }));
 
@@ -379,8 +444,17 @@ V.createPageFragment = function (data) {
     gridSlot.replaceWith(ProductGridView.loading());
   } else if (data.message !== null) {
     gridSlot.remove();
+  } else if (data.products.length === 0 && data.hideSoldOut) {
+    gridSlot.replaceWith(htmlToFragment(templateEmptyInStock));
   } else {
     gridSlot.replaceWith(ProductGridView.dom(data.products, 2, { onAdd: C.handler_addToCart }));
+  }
+
+  let legendSlot = page.querySelector('slot[name="legend"]');
+  if (data.isLoading || data.products.length === 0) {
+    legendSlot.remove();
+  } else {
+    legendSlot.replaceWith(V.createLegendFragment(data.legend));
   }
 
   let paginationSlot = page.querySelector('slot[name="pagination"]');

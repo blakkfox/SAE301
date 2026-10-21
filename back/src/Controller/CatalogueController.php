@@ -61,13 +61,15 @@ final class CatalogueController
     }
 
     /**
-     * GET /api/products?page=2&sort=price_asc&category=collection-honda
+     * GET /api/products?page=2&sort=price_asc&category=collection-honda&inStock=1
      *
      * Répond { products, sort, page, pageCount, total, perPage }.
      * Le front n'a jamais besoin de lire le cookie (HttpOnly) : l'API lui
      * rappelle le tri effectivement appliqué.
      * category est facultatif : sans lui, tout le catalogue. Une catégorie
      * parente renvoie aussi les produits de ses sous-catégories.
+     * inStock=1 masque les produits épuisés (US STK-b) : total et pagination
+     * ne comptent alors que les produits en stock. Toute autre valeur est ignorée.
      * 404 si la catégorie demandée n'existe pas.
      *
      * @param Request $request Requête entrante.
@@ -100,7 +102,9 @@ final class CatalogueController
             setcookie('sort', $sort, $this->cookieOptions());
         }
 
-        $total     = $this->products->countVisible($categoryId);
+        $inStockOnly = $request->parametre('inStock') === '1';
+
+        $total     = $this->products->countVisible($categoryId, $inStockOnly);
         $pageCount = max(1, (int) ceil($total / self::PER_PAGE));
 
         // filter_var refuse « 2abc » ou « -1 », que (int) aurait acceptés.
@@ -112,6 +116,7 @@ final class CatalogueController
             self::PER_PAGE,
             ($page - 1) * self::PER_PAGE,
             $categoryId,
+            $inStockOnly,
         );
 
         Response::json([
