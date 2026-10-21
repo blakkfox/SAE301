@@ -1,0 +1,28 @@
+<!--
+  Connecté en administrateur : filtres, recherche, liste et détail. Mobile
+  First : le détail passe sous la liste ; à partir de xl, la colonne de
+  380 px de la maquette.
+-->
+<div class="flex flex-col gap-6">
+  <header class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <h1 tabindex="-1" class="font-display text-h1-mobile leading-none text-ink">Commandes</h1>
+    <p class="text-caption text-ink-muted">{{adminLabel}}</p>
+  </header>
+
+  <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <slot name="filters"></slot>
+    <form role="search" data-search class="flex gap-2 lg:w-80">
+      <label for="orders-search" class="sr-only">Rechercher une commande par numéro ou client</label>
+      <input id="orders-search" name="q" type="search" value="{{search}}" placeholder="N° ou client" maxlength="60" data-focus-key="search" class="field h-10" />
+      <button type="submit" data-focus-key="search-submit" class="button button--outline h-10 shrink-0 px-4 text-caption">Rechercher</button>
+    </form>
+  </div>
+
+  <div class="grid gap-6 xl:grid-cols-(--grid-admin-orders) xl:items-start">
+    <section aria-labelledby="orders-list-title" class="flex min-w-0 flex-col gap-4">
+      <h2 id="orders-list-title" tabindex="-1" class="sr-only">Liste des commandes</h2>
+      <slot name="list"></slot>
+    </section>
+    <slot name="detail"></slot>
+  </div>
+</div>

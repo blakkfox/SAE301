@@ -159,6 +159,10 @@ Une page dynamique suit le découpage Modèle / Contrôleur / Vue :
 | `POST /api/logout` | déconnexion |
 | `POST /api/admin/login` | connexion du back-office (US GOF-b), corps JSON `{"email": …, "password": …}`. 401 si identifiants incorrects **ou compte client** |
 | `GET /api/admin/dashboard` | tableau de bord : indicateurs (`stats`), prochaines commandes (`upcomingOrders`), alertes stock (`stockAlerts`, `stockAlertCount`). 401 sans session, 403 pour un compte client |
+| `GET /api/admin/orders?status=en_cours&q=dupont&sort=total_desc&page=2` | gestion des commandes (US PIL-b) : une page de 20 commandes (`orders`), nombre par statut (`counts`, avec `all`) selon la recherche, réglages appliqués. Tris : `pickup_desc` (défaut), `pickup_asc`, `customer_asc`, `customer_desc`, `total_desc`, `total_asc`, `status_asc`, `status_desc`. 401, 403 comme le tableau de bord |
+| `GET /api/admin/order?id=142` | détail d'une commande : lignes, client, concession, journal des statuts (`events`). 400 si `id` invalide, 404 si introuvable |
+| `POST /api/admin/orders/status` | corps JSON `{"ids": [142, 141], "status": "disponible" \| "retiree"}` : passage en lot, seulement depuis le statut précédent du cycle. Répond `updated` et `skipped` |
+| `POST /api/admin/orders/cancel` | corps JSON `{"id": 142}` : annulation et recrédit du stock (STK-a), dans une transaction. 409 si la commande est retirée ou déjà annulée |
 
 Tris acceptés : `price_asc` (défaut), `price_desc`, `name_asc`, `newest`.
 `sort` est facultatif : sans lui, le serveur applique le tri mémorisé dans le

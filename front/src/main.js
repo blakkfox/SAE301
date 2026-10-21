@@ -8,6 +8,7 @@ import { CartPage } from "./pages/cart/page.js";
 import { LoginPage } from "./pages/login/page.js";
 import { CheckoutPage } from "./pages/checkout/page.js";
 import { AdminPage } from "./pages/admin/page.js";
+import { AdminOrdersPage } from "./pages/admin-orders/page.js";
 import { The404Page } from "./pages/404/page.js";
 
 // base : chemin du projet sur le serveur (BASE dans vite.config.js).
@@ -38,6 +39,9 @@ router.addRoute("/commande", CheckoutPage);
 
 // GOF-b — Back-office, tableau de bord (écran Figma n° 10).
 router.addRoute("/admin", AdminPage);
+
+// PIL-b — Gestion des commandes (écran Figma n° 11).
+router.addRoute("/admin/commandes", AdminOrdersPage);
 
 // En dernier : toute adresse qui ne correspond à aucune route.
 router.addRoute("*", The404Page);

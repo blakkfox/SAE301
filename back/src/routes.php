@@ -34,4 +34,8 @@ return [
     'POST /api/orders'         => [OrderController::class,     'create'],
     'POST /api/admin/login'    => [AuthController::class,      'adminLogin'],
     'GET  /api/admin/dashboard' => [AdminController::class,    'dashboard'],
+    'GET  /api/admin/orders'         => [AdminController::class, 'orders'],
+    'GET  /api/admin/order'          => [AdminController::class, 'order'],
+    'POST /api/admin/orders/status'  => [AdminController::class, 'updateStatus'],
+    'POST /api/admin/orders/cancel'  => [AdminController::class, 'cancelOrder'],
 ];

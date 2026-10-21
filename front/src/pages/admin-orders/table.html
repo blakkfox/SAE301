@@ -1,0 +1,19 @@
+<!-- Défile horizontalement sur petit écran plutôt que de casser ses colonnes. -->
+<div class="overflow-x-auto rounded-xl bg-page">
+  <table class="w-full min-w-(--size-admin-orders-table-min) text-left text-small text-ink">
+    <caption class="sr-only">{{caption}}</caption>
+    <thead class="bg-section text-caption font-semibold text-ink-muted">
+      <tr>
+        <th scope="col" class="w-14 px-5 py-3">
+          <input type="checkbox" data-action="toggle-all" data-focus-key="toggle-all" aria-label="Sélectionner toutes les commandes affichées" class="size-4.5 accent-action" />
+        </th>
+        <th scope="col" class="px-3 py-3">N°</th>
+        <slot name="sort-customer"></slot>
+        <slot name="sort-pickup"></slot>
+        <slot name="sort-total"></slot>
+        <slot name="sort-status"></slot>
+      </tr>
+    </thead>
+    <tbody data-order-rows class="divide-y divide-line-subtle"></tbody>
+  </table>
+</div>

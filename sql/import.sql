@@ -16,6 +16,7 @@
 --     dealership 1 ── n customer_order          (US CMD-a)
 --
 --     variant 1 ── n stock_movement n ── 0..1 customer_order   (US STK-a)
+--     customer_order 1 ── n order_event n ── 0..1 customer      (US PIL-b)
 --
 -- Chaque produit a AU MOINS une variante (taille, coloris, garniture… ou
 -- « Unique »). C'est la variante qui porte la référence et le stock : le
@@ -38,6 +39,7 @@ SET NAMES utf8mb4;
 -- Ordre de suppression : d'abord les tables qui dépendent des autres.
 DROP TABLE IF EXISTS film;
 DROP TABLE IF EXISTS genre;
+DROP TABLE IF EXISTS order_event;
 DROP TABLE IF EXISTS stock_movement;
 DROP TABLE IF EXISTS order_line;
 DROP TABLE IF EXISTS customer_order;
@@ -305,6 +307,35 @@ CREATE TABLE stock_movement (
         FOREIGN KEY (order_id) REFERENCES customer_order (id)
         ON DELETE SET NULL,
     CONSTRAINT chk_movement_quantity CHECK (quantity <> 0)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- Journal des statuts de commande (US PIL-b)
+--
+-- Une ligne à la création de la commande (« en_cours », admin_id NULL : c'est
+-- le client qui commande), puis une à chaque changement de statut fait au
+-- back-office, écrite dans la même transaction que ce changement. admin_id
+-- est l'administrateur qui l'a fait ; il passe à NULL si son compte est
+-- supprimé, le journal reste.
+-- ---------------------------------------------------------------------------
+CREATE TABLE order_event (
+    id         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    order_id   INT UNSIGNED NOT NULL,
+    status     ENUM('en_cours', 'disponible', 'retiree', 'annulee') NOT NULL,
+    admin_id   INT UNSIGNED     NULL,
+    created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+    KEY idx_event_order (order_id, created_at),
+
+    CONSTRAINT fk_event_order
+        FOREIGN KEY (order_id) REFERENCES customer_order (id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_event_admin
+        FOREIGN KEY (admin_id) REFERENCES customer (id)
+        ON DELETE SET NULL
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;

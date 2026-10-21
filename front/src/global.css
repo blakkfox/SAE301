@@ -177,6 +177,8 @@
     --grid-admin-dashboard: minmax(0, 1fr) 21.25rem; /* Tableau de bord : commandes / alertes 340 px */
     --grid-admin-login: minmax(0, 1fr) minmax(0, 1fr) auto; /* Connexion admin : 2 champs / bouton */
     --size-admin-table-min: 36rem; /* Tableau des commandes : défile en dessous */
+    --grid-admin-orders: minmax(0, 1fr) 23.75rem; /* Gestion des commandes : liste / détail 380 px */
+    --size-admin-orders-table-min: 40rem; /* Liste des commandes (6 colonnes) : défile en dessous */
   }
 
   .theme-dark {
