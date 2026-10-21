@@ -59,6 +59,10 @@ DROP TABLE IF EXISTS category;
 -- Un produit est rangé dans la catégorie la plus précise ; une catégorie
 -- parente affiche aussi les produits de ses sous-catégories.
 -- description est la phrase affichée sous le titre de la page catégorie.
+-- is_visible (US GOF-c) : une catégorie masquée, ou dont la parente est
+-- masquée, disparaît de la boutique avec ses produits.
+-- Deux catégories ne portent jamais le même nom (comparaison sans casse ni
+-- accents, selon la collation).
 -- ---------------------------------------------------------------------------
 CREATE TABLE category (
     id          TINYINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -67,9 +71,11 @@ CREATE TABLE category (
     slug        VARCHAR(60)      NOT NULL,
     description VARCHAR(160)         NULL,
     position    TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    is_visible  TINYINT(1)       NOT NULL DEFAULT 1,
 
     PRIMARY KEY (id),
     UNIQUE KEY uq_category_slug (slug),
+    UNIQUE KEY uq_category_name (name),
     KEY idx_category_parent (parent_id),
 
     CONSTRAINT fk_category_parent
@@ -374,6 +380,11 @@ INSERT INTO category (id, parent_id, name, slug, description, position) VALUES
       'Huiles moteur et filtres d''origine pour la vidange.',                        1),
     (14,   3, 'Liquides et lubrifiants', 'liquides-lubrifiants',
       'Liquide de refroidissement et entretien de la chaîne.',                       2);
+
+-- Catégorie de saison, vide et masquée en attendant ses produits (maquette
+-- de la gestion des catégories, écran 12, US GOF-c).
+INSERT INTO category (id, parent_id, name, slug, description, position, is_visible) VALUES
+    (15, NULL, 'Hiver', 'hiver', 'Équipement grand froid pour rouler tout l''hiver.', 5, 0);
 
 -- Les dates de création sont échelonnées pour que le tri « Nouveautés » soit
 -- visible. Les produits 15, 17 et 18 n'ont pas encore de photo (image NULL).

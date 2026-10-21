@@ -31,7 +31,8 @@ final class StockModel
 
     /**
      * Baisse le stock de chaque variante commandée et journalise la baisse,
-     * si le stock suffit et si le produit est toujours au catalogue.
+     * si le stock suffit et si le produit est toujours au catalogue : actif,
+     * et rangé dans une catégorie visible, parente comprise (US GOF-c).
      *
      * La condition « stock >= quantité » est vérifiée par MySQL, ligne
      * verrouillée : deux commandes simultanées ne peuvent pas vendre la même
@@ -58,10 +59,14 @@ final class StockModel
         $update = $this->pdo->prepare(
             'UPDATE variant
          INNER JOIN product ON product.id = variant.product_id
+         INNER JOIN category AS shown ON shown.id = product.category_id
+          LEFT JOIN category AS shown_parent ON shown_parent.id = shown.parent_id
                 SET variant.stock = variant.stock - :quantity
               WHERE variant.id = :variant
                 AND variant.stock >= :needed
-                AND product.is_active = 1'
+                AND product.is_active = 1
+                AND shown.is_visible = 1
+                AND (shown_parent.id IS NULL OR shown_parent.is_visible = 1)'
         );
 
         // Le stock relu ici est déjà baissé : la ligne est verrouillée par

@@ -1,0 +1,43 @@
+<!--
+  Formulaire « Nouvelle catégorie » / « Modifier la catégorie » (écran 12,
+  colonne de droite). novalidate : c'est le serveur qui valide, et ses
+  erreurs s'affichent sous leur champ (applyFieldErrors).
+-->
+<form novalidate class="flex flex-col gap-5">
+  <h2 id="category-form-title" tabindex="-1" class="font-display text-h4 leading-none text-ink">{{title}}</h2>
+
+  <div class="flex flex-col gap-2">
+    <label for="category-name" class="text-small font-semibold text-ink">Nom</label>
+    <input id="category-name" name="name" type="text" maxlength="60" required value="{{name}}" aria-describedby="category-name-error" data-focus-key="category-name" class="field" />
+    <p id="category-name-error" data-error-for="name" hidden class="text-caption text-accent"></p>
+  </div>
+
+  <div class="flex flex-col gap-2">
+    <label for="category-description" class="text-small font-semibold text-ink">Description (facultatif)</label>
+    <input id="category-description" name="description" type="text" maxlength="160" value="{{description}}" aria-describedby="category-description-error" data-focus-key="category-description" class="field" />
+    <p id="category-description-error" data-error-for="description" hidden class="text-caption text-accent"></p>
+  </div>
+
+  <div class="flex flex-col gap-2">
+    <label for="category-parent" class="text-small font-semibold text-ink">Catégorie parente</label>
+    <select id="category-parent" name="parentId" aria-describedby="category-parent-hint category-parent-error" data-focus-key="category-parent" class="field">
+      <option value="">Aucune (premier niveau)</option>
+      <slot name="parents"></slot>
+    </select>
+    <p id="category-parent-hint" data-parent-hint class="text-caption text-ink-muted">{{parentHint}}</p>
+    <p id="category-parent-error" data-error-for="parentId" hidden class="text-caption text-accent"></p>
+  </div>
+
+  <div class="flex flex-col gap-2">
+    <label class="flex items-center gap-3 text-small text-ink">
+      <input name="isVisible" type="checkbox" role="switch" aria-describedby="category-visible-error" data-focus-key="category-visible" class="switch" />
+      Visible dans le catalogue
+    </label>
+    <p id="category-visible-error" data-error-for="isVisible" hidden class="text-caption text-accent"></p>
+  </div>
+
+  <div class="flex flex-wrap gap-3">
+    <button type="submit" data-focus-key="category-submit" class="button h-12 px-6 text-small">{{submitLabel}}</button>
+    <button type="button" data-action="cancel" data-focus-key="category-cancel" class="button button--outline h-12 px-6 text-small">Annuler</button>
+  </div>
+</form>

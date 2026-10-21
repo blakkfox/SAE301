@@ -14,8 +14,8 @@ use DateTimeImmutable;
 use DateTimeZone;
 
 /**
- * Back-office : tableau de bord (US GOF-b) et gestion des commandes
- * (US PIL-b).
+ * Back-office : tableau de bord (US GOF-b), gestion des commandes (US PIL-b)
+ * et gestion des catégories (US GOF-c).
  *
  * Le rôle n'est jamais lu dans la requête ni dans un cookie : le compte
  * connecté (identifiant rangé en session par AuthController) est relu en
@@ -72,6 +72,19 @@ final class AdminController
 
     /** Nombre maximal de commandes changées en une fois. */
     private const BULK_MAX = 100;
+
+    /** Longueur maximale du nom d'une catégorie (colonne category.name). */
+    private const CATEGORY_NAME_MAX = 60;
+
+    /** Longueur maximale de la description d'une catégorie (colonne category.description). */
+    private const CATEGORY_DESCRIPTION_MAX = 160;
+
+    /** Lettres accentuées et ligatures, pour calculer un slug sans l'extension intl. */
+    private const SLUG_LETTERS = [
+        'à' => 'a', 'â' => 'a', 'ä' => 'a', 'ç' => 'c', 'é' => 'e', 'è' => 'e', 'ê' => 'e', 'ë' => 'e',
+        'î' => 'i', 'ï' => 'i', 'ô' => 'o', 'ö' => 'o', 'ù' => 'u', 'û' => 'u', 'ü' => 'u', 'ÿ' => 'y',
+        'æ' => 'ae', 'œ' => 'oe',
+    ];
 
     /** Accès aux comptes. */
     private CustomerModel $customers;
@@ -303,6 +316,285 @@ final class AdminController
         }
 
         Response::json(['order' => $this->findDetailOrFail($id)]);
+    }
+
+    /**
+     * GET /api/admin/categories
+     *
+     * Répond { admin, categories } : toutes les catégories, masquées
+     * comprises, en arbre (children), avec isVisible et productCount (tous
+     * les produits, sous-catégories comprises).
+     *
+     * 401 si personne n'est connecté, 403 si le compte n'est pas administrateur.
+     */
+    public function categories(): void
+    {
+        $admin = $this->requireAdmin();
+
+        Response::json([
+            'admin'      => ['firstName' => $admin['firstName'], 'lastName' => $admin['lastName']],
+            'categories' => $this->categories->findAdminTree(),
+        ]);
+    }
+
+    /**
+     * POST /api/admin/categories, corps JSON
+     * { name, description, isVisible, parentId }.
+     *
+     * Crée la catégorie (slug calculé depuis le nom) et répond { category },
+     * en 201. 422 (clé « champs ») si la saisie est invalide ; 409 (clé
+     * « champs ») si une catégorie porte déjà ce nom ; 401, 403 comme
+     * categories().
+     *
+     * @param Request $request Requête entrante.
+     */
+    public function createCategory(Request $request): void
+    {
+        $this->requireAdmin();
+
+        $category = $this->validateCategory($request->corps(), null);
+        $id       = $this->categories->create($category, $this->freeSlug($category['name']));
+
+        if ($id === null) {
+            self::duplicateName();
+        }
+
+        Response::json(['category' => $this->categories->findById($id)], 201);
+    }
+
+    /**
+     * POST /api/admin/categories/update, corps JSON
+     * { id, name, description, isVisible, parentId }.
+     *
+     * Modifie la catégorie (son slug ne change pas) et répond { category }.
+     * 400 si id est invalide, 404 si la catégorie n'existe pas ; 422, 409,
+     * 401, 403 comme createCategory().
+     *
+     * @param Request $request Requête entrante.
+     */
+    public function updateCategory(Request $request): void
+    {
+        $this->requireAdmin();
+
+        $body    = $request->corps();
+        $current = $this->findCategoryOrFail($body['id'] ?? null);
+
+        $category = $this->validateCategory($body, $current);
+
+        if (!$this->categories->update($current['id'], $category, $category['parentId'] !== $current['parentId'])) {
+            self::duplicateName();
+        }
+
+        Response::json(['category' => $this->categories->findById($current['id'])]);
+    }
+
+    /**
+     * POST /api/admin/categories/delete, corps JSON { id }.
+     *
+     * Supprime une catégorie vide et répond { deleted: { id, name } }.
+     * 400 si id est invalide, 404 si la catégorie n'existe pas ; 409 si elle
+     * contient encore des produits ou des sous-catégories ; 401, 403 comme
+     * categories().
+     *
+     * @param Request $request Requête entrante.
+     */
+    public function deleteCategory(Request $request): void
+    {
+        $this->requireAdmin();
+
+        $category = $this->findCategoryOrFail($request->corps()['id'] ?? null);
+        $name     = $category['name'];
+
+        if ($category['productCount'] > 0) {
+            Response::erreur(
+                'Suppression impossible : ' . self::countLabel($category['productCount'], 'produit est encore rangé', 'produits sont encore rangés')
+                . " dans {$name}.",
+                409,
+            );
+        }
+        if ($category['childCount'] > 0) {
+            Response::erreur(
+                "Suppression impossible : {$name} contient encore "
+                . self::countLabel($category['childCount'], 'sous-catégorie', 'sous-catégories') . '.',
+                409,
+            );
+        }
+        if (!$this->categories->delete($category['id'])) {
+            Response::erreur("Suppression impossible : {$name} n'est plus vide.", 409);
+        }
+
+        Response::json(['deleted' => ['id' => $category['id'], 'name' => $name]]);
+    }
+
+    /**
+     * Catégorie désignée par $id. Répond 400 (identifiant invalide) ou 404
+     * (catégorie introuvable), et s'arrête, sinon.
+     *
+     * @param mixed $id Valeur « id » du corps JSON.
+     *
+     * @return array{id:int, parentId:?int, name:string, slug:string, description:?string,
+     *               isVisible:bool, productCount:int, childCount:int}
+     */
+    private function findCategoryOrFail(mixed $id): array
+    {
+        $id = filter_var($id, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+
+        if ($id === false) {
+            Response::erreur('Identifiant de catégorie invalide', 400);
+        }
+
+        $category = $this->categories->findById($id);
+
+        if ($category === null) {
+            Response::erreur('Catégorie introuvable', 404);
+        }
+
+        return $category;
+    }
+
+    /**
+     * Valide la saisie d'une catégorie. Répond 422 (erreurs par champ) ou
+     * 409 (nom déjà pris), et s'arrête, si elle est refusée.
+     *
+     * - name : obligatoire, au plus CATEGORY_NAME_MAX caractères, unique ;
+     * - description : facultative, au plus CATEGORY_DESCRIPTION_MAX caractères ;
+     * - isVisible : booléen ;
+     * - parentId : null, ou une catégorie de premier niveau autre qu'elle-même.
+     *   Un seul niveau de sous-catégorie : une catégorie qui a des
+     *   sous-catégories reste au premier niveau.
+     *
+     * @param array<string, mixed> $body    Corps JSON reçu.
+     * @param array<string, mixed>|null $current Catégorie modifiée (findById), ou null à la création.
+     *
+     * @return array{parentId:?int, name:string, description:?string, isVisible:bool}
+     */
+    private function validateCategory(array $body, ?array $current): array
+    {
+        $errors = [];
+
+        $name = self::cleanText($body['name'] ?? null);
+        if ($name === null || $name === '') {
+            $errors['name'] = 'Donnez un nom à la catégorie.';
+        } elseif (mb_strlen($name) > self::CATEGORY_NAME_MAX) {
+            $errors['name'] = 'Le nom ne doit pas dépasser ' . self::CATEGORY_NAME_MAX . ' caractères.';
+        }
+
+        $description = self::cleanText($body['description'] ?? '');
+        if ($description === null) {
+            $errors['description'] = 'Description invalide.';
+        } elseif (mb_strlen($description) > self::CATEGORY_DESCRIPTION_MAX) {
+            $errors['description'] = 'La description ne doit pas dépasser ' . self::CATEGORY_DESCRIPTION_MAX . ' caractères.';
+        }
+
+        $isVisible = $body['isVisible'] ?? null;
+        if (!is_bool($isVisible)) {
+            $errors['isVisible'] = 'Indiquez si la catégorie est visible.';
+        }
+
+        $parentId = $this->validateParent($body['parentId'] ?? null, $current);
+        if (is_string($parentId)) {
+            $errors['parentId'] = $parentId;
+        }
+
+        if ($errors !== []) {
+            Response::json(['erreur' => 'Certains champs sont à corriger.', 'champs' => $errors], 422);
+        }
+
+        if ($this->categories->nameExists($name, $current['id'] ?? null)) {
+            self::duplicateName();
+        }
+
+        return [
+            'parentId'    => $parentId,
+            'name'        => $name,
+            'description' => $description === '' ? null : $description,
+            'isVisible'   => $isVisible,
+        ];
+    }
+
+    /**
+     * @param mixed                     $parentId Valeur « parentId » du corps JSON.
+     * @param array<string, mixed>|null $current  Catégorie modifiée, ou null.
+     *
+     * @return int|string|null La parente validée (null : premier niveau), ou
+     *                         le message d'erreur du champ.
+     */
+    private function validateParent(mixed $parentId, ?array $current): int|string|null
+    {
+        if ($parentId === null) {
+            return null;
+        }
+
+        $parentId = filter_var($parentId, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        $parent   = $parentId === false ? null : $this->categories->findById($parentId);
+
+        if ($parent === null || $parent['parentId'] !== null) {
+            return 'Choisissez une catégorie de premier niveau.';
+        }
+        if ($current !== null && $parent['id'] === $current['id']) {
+            return 'Une catégorie ne peut pas être sa propre parente.';
+        }
+        if ($current !== null && $current['childCount'] > 0) {
+            return 'Cette catégorie a des sous-catégories : elle reste au premier niveau.';
+        }
+
+        return $parent['id'];
+    }
+
+    /**
+     * Répond 409 (nom déjà pris) et s'arrête.
+     */
+    private static function duplicateName(): void
+    {
+        Response::json([
+            'erreur' => 'Une catégorie porte déjà ce nom.',
+            'champs' => ['name' => 'Une catégorie porte déjà ce nom.'],
+        ], 409);
+    }
+
+    /**
+     * Slug libre calculé depuis le nom : « Équipement et confort » donne
+     * « equipement-et-confort », puis « equipement-et-confort-2 » s'il est pris.
+     *
+     * @param string $name Nom déjà validé.
+     *
+     * @return string
+     */
+    private function freeSlug(string $name): string
+    {
+        $base = strtr(mb_strtolower($name), self::SLUG_LETTERS);
+        $base = trim(preg_replace('/[^a-z0-9]+/', '-', $base) ?? '', '-');
+        $base = $base === '' ? 'categorie' : substr($base, 0, self::CATEGORY_NAME_MAX - 4);
+
+        $slug = $base;
+        for ($suffix = 2; $this->categories->slugExists($slug); $suffix++) {
+            $slug = "{$base}-{$suffix}";
+        }
+
+        return $slug;
+    }
+
+    /**
+     * @param mixed $text Valeur reçue.
+     *
+     * @return string|null Le texte sans espaces superflus, ou null si ce
+     *                     n'est pas une chaîne.
+     */
+    private static function cleanText(mixed $text): ?string
+    {
+        return is_string($text) ? trim(preg_replace('/\s+/u', ' ', $text) ?? '') : null;
+    }
+
+    /**
+     * @param int    $count
+     * @param string $singular
+     * @param string $plural
+     *
+     * @return string « 1 produit est encore rangé », « 6 produits sont encore rangés »…
+     */
+    private static function countLabel(int $count, string $singular, string $plural): string
+    {
+        return $count . ' ' . ($count > 1 ? $plural : $singular);
     }
 
     /**

@@ -1,0 +1,9 @@
+<!-- Confirmation de la suppression d'une catégorie vide : rien n'est supprimé sans ce second clic. -->
+<section aria-labelledby="category-delete-title" class="flex flex-col gap-4 border-t border-line-subtle pt-5">
+  <h3 id="category-delete-title" tabindex="-1" class="text-base font-semibold text-ink">Supprimer la catégorie {{name}} ?</h3>
+  <p class="text-caption text-ink-muted">Elle ne contient ni produit ni sous-catégorie. La suppression est définitive.</p>
+  <div class="flex flex-wrap items-center gap-4">
+    <button type="button" data-action="confirm-delete" data-focus-key="confirm-delete" class="button h-12 px-6 text-small">{{confirmLabel}}</button>
+    <button type="button" data-action="close-delete" data-focus-key="close-delete" class="text-small font-semibold text-link underline-offset-4 hover:underline">Annuler</button>
+  </div>
+</section>
