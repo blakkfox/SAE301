@@ -128,6 +128,15 @@ CartData.remove = function (variantIds) {
 };
 
 /**
+ * Vide le panier (commande enregistrée, CMD-a).
+ *
+ * @returns {boolean} false si le panier n'a pas pu être enregistré.
+ */
+CartData.clear = function () {
+  return CartData.write([]);
+};
+
+/**
  * @returns {number} Nombre d'articles du panier (somme des quantités).
  */
 CartData.count = function () {

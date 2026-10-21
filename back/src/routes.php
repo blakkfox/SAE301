@@ -6,6 +6,7 @@ use App\Controller\AuthController;
 use App\Controller\CartController;
 use App\Controller\CatalogueController;
 use App\Controller\CategoryController;
+use App\Controller\OrderController;
 use App\Controller\ProductController;
 
 /**
@@ -28,4 +29,6 @@ return [
     'POST /api/register'       => [AuthController::class,      'register'],
     'POST /api/password-reset' => [AuthController::class,      'resetPassword'],
     'POST /api/logout'         => [AuthController::class,      'logout'],
+    'GET  /api/checkout'       => [OrderController::class,     'checkout'],
+    'POST /api/orders'         => [OrderController::class,     'create'],
 ];

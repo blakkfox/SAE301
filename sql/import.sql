@@ -12,6 +12,9 @@
 --
 --     customer : comptes clients et administrateurs (US CMD-c)
 --
+--     customer 1 ── n customer_order 1 ── n order_line n ── 1 variant
+--     dealership 1 ── n customer_order          (US CMD-a)
+--
 -- Chaque produit a AU MOINS une variante (taille, coloris, garniture… ou
 -- « Unique »). C'est la variante qui porte la référence et le stock : le
 -- panier, les commandes et les stocks s'appuieront sur variant.id, et l'arrivée
@@ -33,6 +36,9 @@ SET NAMES utf8mb4;
 -- Ordre de suppression : d'abord les tables qui dépendent des autres.
 DROP TABLE IF EXISTS film;
 DROP TABLE IF EXISTS genre;
+DROP TABLE IF EXISTS order_line;
+DROP TABLE IF EXISTS customer_order;
+DROP TABLE IF EXISTS dealership;
 DROP TABLE IF EXISTS customer;
 DROP TABLE IF EXISTS product_feature;
 DROP TABLE IF EXISTS variant;
@@ -175,6 +181,93 @@ CREATE TABLE customer (
 
     PRIMARY KEY (id),
     UNIQUE KEY uq_customer_email (email)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- Concessions de retrait (US CMD-a)
+--
+-- short_name sert au récapitulatif (« Retrait à Lyon Centre ») ;
+-- hours_label est la mention affichée sous l'adresse.
+-- ---------------------------------------------------------------------------
+CREATE TABLE dealership (
+    id          TINYINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    name        VARCHAR(80)      NOT NULL,
+    short_name  VARCHAR(40)      NOT NULL,
+    address     VARCHAR(160)     NOT NULL,
+    hours_label VARCHAR(60)      NOT NULL,
+    position    TINYINT UNSIGNED NOT NULL DEFAULT 0,
+
+    PRIMARY KEY (id)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- Commandes (US CMD-a)
+--
+-- « order » est un mot réservé de SQL : la table s'appelle customer_order.
+-- Le paiement se fait toujours sur place, au retrait : aucune colonne ne le
+-- décrit. Le créneau de retrait est enregistré par son début et sa fin.
+-- status suit le cycle en_cours → disponible → retiree, ou annulee.
+-- total est figé à la commande : un prix modifié ensuite ne le change pas.
+-- ---------------------------------------------------------------------------
+CREATE TABLE customer_order (
+    id            INT UNSIGNED     NOT NULL AUTO_INCREMENT,
+    customer_id   INT UNSIGNED     NOT NULL,
+    dealership_id TINYINT UNSIGNED NOT NULL,
+    pickup_start  DATETIME         NOT NULL,
+    pickup_end    DATETIME         NOT NULL,
+    status        ENUM('en_cours', 'disponible', 'retiree', 'annulee') NOT NULL DEFAULT 'en_cours',
+    total         DECIMAL(10,2)    NOT NULL DEFAULT 0,
+    created_at    DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+    KEY idx_order_customer (customer_id, created_at),
+    KEY idx_order_status (status),
+
+    CONSTRAINT fk_order_customer
+        FOREIGN KEY (customer_id) REFERENCES customer (id)
+        ON DELETE RESTRICT,
+    CONSTRAINT fk_order_dealership
+        FOREIGN KEY (dealership_id) REFERENCES dealership (id)
+        ON DELETE RESTRICT,
+    CONSTRAINT chk_order_total CHECK (total >= 0),
+    CONSTRAINT chk_order_pickup CHECK (pickup_end > pickup_start)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- Lignes de commande (US CMD-a)
+--
+-- Nom, variante, référence et prix unitaire sont COPIÉS au moment de la
+-- commande : la commande reste lisible et juste même si le produit change de
+-- prix ou disparaît. variant_id passe alors à NULL (ON DELETE SET NULL).
+-- ---------------------------------------------------------------------------
+CREATE TABLE order_line (
+    id            INT UNSIGNED      NOT NULL AUTO_INCREMENT,
+    order_id      INT UNSIGNED      NOT NULL,
+    variant_id    SMALLINT UNSIGNED     NULL,
+    product_name  VARCHAR(120)      NOT NULL,
+    variant_label VARCHAR(60)       NOT NULL,
+    reference     VARCHAR(40)       NOT NULL,
+    unit_price    DECIMAL(8,2)      NOT NULL,
+    quantity      SMALLINT UNSIGNED NOT NULL,
+
+    PRIMARY KEY (id),
+    KEY idx_line_order (order_id),
+    KEY idx_line_variant (variant_id),
+
+    CONSTRAINT fk_line_order
+        FOREIGN KEY (order_id) REFERENCES customer_order (id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_line_variant
+        FOREIGN KEY (variant_id) REFERENCES variant (id)
+        ON DELETE SET NULL,
+    CONSTRAINT chk_line_price CHECK (unit_price >= 0),
+    CONSTRAINT chk_line_quantity CHECK (quantity > 0)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
@@ -348,3 +441,10 @@ INSERT INTO customer (id, first_name, last_name, email, phone, password_hash, ro
       '$2y$12$KhZok8GMkFs9fnyzIr.e4epTlmI4nqEg44GokNMrW4EiMJf.8NH7K', 'customer'),
     (2, 'Honda', 'Lyon',   'admin@honda-lyon.fr', '0478000000',
       '$2y$12$EXfknxoF6Jj9XfazOLOsduOJAV7VXRAQHDMNT/D2am1QrYnV3mwxC', 'admin');
+
+-- Concessions de la maquette de validation de commande (écran 6).
+INSERT INTO dealership (id, name, short_name, address, hours_label, position) VALUES
+    (1, 'Honda Moto Lyon Centre',  'Lyon Centre',  '12 rue de la République, 69002 Lyon',
+      'ouvert jusqu''à 19 h',    1),
+    (2, 'Honda Moto Villeurbanne', 'Villeurbanne', '45 cours Émile Zola, 69100 Villeurbanne',
+      'ouvert jusqu''à 18 h 30', 2);

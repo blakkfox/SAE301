@@ -1,4 +1,5 @@
 import { AuthData } from "../../data/auth.js";
+import { CartData } from "../../data/cart.js";
 import { genericRenderer, htmlToFragment } from "../../lib/utils.js";
 import { FormulaireConnexionView } from "../../ui/formulaire-connexion/index.js";
 import { MessageView } from "../../ui/message/index.js";
@@ -13,8 +14,8 @@ import templateConnected from "./connected.html?raw";
  *
  * Deux colonnes : « J'ai déjà un compte » (ou, à sa place, « Mot de passe
  * oublié ») et « Créer un compte ». Une connexion ou une création de compte
- * réussie ramène au panier : c'est de là que partira la validation de la
- * commande (CMD-a). Si l'utilisateur est déjà connecté, la page le dit au lieu
+ * réussie mène à la validation de la commande (CMD-a), ou au panier s'il est
+ * vide. Si l'utilisateur est déjà connecté, la page le dit au lieu
  * d'afficher les formulaires.
  *
  * C'est le serveur qui valide toutes les saisies : la page affiche ses
@@ -27,8 +28,10 @@ import templateConnected from "./connected.html?raw";
  *   C — réaction aux actions de l'utilisateur, seul lien entre M et V.
  */
 
-// Page affichée après une connexion ou une création de compte réussie.
-const AFTER_LOGIN_PATH = "/panier";
+// Pages affichées après une connexion ou une création de compte réussie :
+// la suite de la commande (étape « Retrait »), ou le panier s'il est vide.
+const CHECKOUT_PATH = "/commande";
+const CART_PATH = "/panier";
 
 // ---------------------------------------------------------------------------
 // M — Modèle
@@ -212,6 +215,13 @@ M.logout = async function () {
 };
 
 /**
+ * @returns {string} Chemin de route où mener l'utilisateur une fois connecté.
+ */
+M.getAfterLoginPath = function () {
+  return CartData.count() > 0 ? CHECKOUT_PATH : CART_PATH;
+};
+
+/**
  * Affiche « Mot de passe oublié » à la place de la connexion, en reprenant
  * l'adresse déjà saisie.
  *
@@ -314,7 +324,7 @@ C.handler_login = async function (email, password) {
   V.renderLeft(M.getViewData());
 
   if (await M.submitLogin(email, password)) {
-    V.goTo(AFTER_LOGIN_PATH);
+    V.goTo(M.getAfterLoginPath());
     return;
   }
 
@@ -334,7 +344,7 @@ C.handler_register = async function (account) {
   V.renderRegister(M.getViewData());
 
   if (await M.submitRegister(account)) {
-    V.goTo(AFTER_LOGIN_PATH);
+    V.goTo(M.getAfterLoginPath());
     return;
   }
 

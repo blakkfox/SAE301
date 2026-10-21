@@ -8,7 +8,7 @@ import { getRequest, postRequest } from "../lib/api-request.js";
  * est connecté, on le demande donc à l'API (fetchCurrent).
  *
  * Un compte renvoyé par l'API a la forme
- * { id, firstName, lastName, email, role }.
+ * { id, firstName, lastName, email, phone, role }.
  */
 
 let AuthData = {};
@@ -17,7 +17,7 @@ let AuthData = {};
  * Compte connecté : GET /api/me
  *
  * @returns {Promise<{customer: ?{id: number, firstName: string, lastName: string,
- *   email: string, role: string}}>} customer vaut null si personne n'est connecté.
+ *   email: string, phone: string, role: string}}>} customer vaut null si personne n'est connecté.
  * @throws {ErreurApi} Si le serveur répond par une erreur.
  */
 AuthData.fetchCurrent = async function () {

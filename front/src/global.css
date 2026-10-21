@@ -156,6 +156,7 @@
     --grid-product: minmax(0, 620fr) minmax(0, 524fr); /* Fiche : galerie 620 / infos 524 */
     --grid-category: 16.25rem minmax(0, 1fr); /* Catégorie : colonne 260 px / produits */
     --grid-cart: minmax(0, 1fr) 25rem; /* Panier : articles / récapitulatif 400 px */
+    --grid-checkout: minmax(0, 1fr) 26.25rem; /* Validation : étapes / récapitulatif 420 px */
     --grid-cart-line: 5rem minmax(0, 1fr); /* Ligne du panier sur mobile : photo 80 px / infos */
     --grid-footer: 20rem repeat(3, auto); /* Pied de page : marque 320 px / 3 colonnes */
   }

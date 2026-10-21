@@ -54,17 +54,18 @@ final class CustomerModel
     }
 
     /**
-     * Compte connecté, sans son empreinte de mot de passe.
+     * Compte connecté, sans son empreinte de mot de passe. Le téléphone sert
+     * aux coordonnées de la validation de commande (CMD-a).
      *
      * @param int $id Identifiant du compte.
      *
-     * @return array{id:int, firstName:string, lastName:string, email:string, role:string}|null
+     * @return array{id:int, firstName:string, lastName:string, email:string, phone:string, role:string}|null
      *         null si le compte n'existe plus.
      */
     public function findById(int $id): ?array
     {
         $statement = $this->pdo->prepare(
-            'SELECT id, first_name, last_name, email, role FROM customer WHERE id = :id'
+            'SELECT id, first_name, last_name, email, phone, role FROM customer WHERE id = :id'
         );
         $statement->execute(['id' => $id]);
         $row = $statement->fetch();
@@ -78,6 +79,7 @@ final class CustomerModel
             'firstName' => $row['first_name'],
             'lastName'  => $row['last_name'],
             'email'     => $row['email'],
+            'phone'     => $row['phone'],
             'role'      => $row['role'],
         ];
     }

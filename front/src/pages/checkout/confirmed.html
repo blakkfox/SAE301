@@ -1,0 +1,31 @@
+<!--
+  Étape 4 : commande enregistrée (pas de maquette, même charte que les
+  autres cartes). tabindex="-1" : la carte reçoit le focus après l'envoi.
+-->
+<section tabindex="-1" aria-labelledby="checkout-confirmed-title" class="flex max-w-180 flex-col gap-5 rounded-xl border border-line bg-page p-6 outline-none sm:p-7">
+  <div class="flex flex-col gap-2">
+    <h2 id="checkout-confirmed-title" class="font-display text-h3 leading-none text-ink">Commande {{number}}</h2>
+    <p role="status" class="text-small text-ink">Merci {{firstName}}, votre commande est enregistrée. Nous la préparons pour votre créneau de retrait.</p>
+  </div>
+
+  <dl class="flex flex-col gap-3 text-small">
+    <div class="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
+      <dt class="text-ink-muted">Concession</dt>
+      <dd class="font-semibold text-ink sm:text-right">{{dealershipName}}</dd>
+    </div>
+    <div class="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
+      <dt class="text-ink-muted">Créneau de retrait</dt>
+      <dd class="font-semibold text-ink sm:text-right">{{pickup}}</dd>
+    </div>
+    <div class="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
+      <dt class="text-ink-muted">Articles</dt>
+      <dd class="font-semibold text-ink sm:text-right">{{countLabel}}</dd>
+    </div>
+    <div class="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
+      <dt class="text-ink-muted">Total à régler sur place</dt>
+      <dd class="text-xl font-bold text-ink sm:text-right">{{total}}</dd>
+    </div>
+  </dl>
+
+  <a href="/" data-link class="button h-12 self-start px-6 text-base">Retour au catalogue</a>
+</section>

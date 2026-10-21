@@ -1,0 +1,17 @@
+<!--
+  Mobile et tablette : choix du retrait puis récapitulatif. Dès 1024 px :
+  deux colonnes comme la maquette (choix, écart 32 px, récapitulatif 420 px).
+  tabindex="-1" : la zone reçoit le focus après un envoi refusé.
+-->
+<div tabindex="-1" class="grid grid-cols-1 items-start gap-6 outline-none lg:grid-cols-(--grid-checkout) lg:gap-8">
+  <div class="flex min-w-0 flex-col gap-6">
+    <slot name="details"></slot>
+
+    <section aria-labelledby="checkout-contact-title" class="flex flex-col gap-2 rounded-xl border border-line bg-page p-6 sm:p-7">
+      <h2 id="checkout-contact-title" class="font-display text-2xl leading-none font-bold text-ink">3. Vos coordonnées</h2>
+      <p class="text-small break-words text-ink">{{contact}}</p>
+    </section>
+  </div>
+
+  <slot name="summary"></slot>
+</div>

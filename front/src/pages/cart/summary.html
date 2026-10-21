@@ -22,8 +22,9 @@
 
   <p class="flex justify-between gap-4 text-xl font-bold text-ink"><span>Total</span><span>{{total}}</span></p>
 
-  <!-- La validation de la commande arrive avec CMD-a (écran 6). -->
-  <button type="button" disabled aria-describedby="cart-summary-note" class="button h-12 w-full px-6 text-base">Valider la commande</button>
+  <!-- Validation de la commande (CMD-a, écran 6) : la page /commande demande
+       la connexion si besoin. -->
+  <a href="/commande" data-link aria-describedby="cart-summary-note" class="button h-12 w-full px-6 text-base">Valider la commande</a>
 
   <p id="cart-summary-note" class="text-caption text-ink-muted">Paiement sur place au moment du retrait. Vos articles sont réservés 48 h.</p>
 </section>
