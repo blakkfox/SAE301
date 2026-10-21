@@ -1,0 +1,9 @@
+<!-- Confirmation de l'annulation : rien n'est annulé sans ce second clic. -->
+<section aria-labelledby="cancel-confirm-title" class="flex flex-col gap-4 rounded-xl border border-line p-5 shadow-lg">
+  <h3 id="cancel-confirm-title" tabindex="-1" class="text-base font-semibold text-ink">Annuler la commande {{number}} ?</h3>
+  <p class="text-caption text-ink-muted">{{restockText}} Une commande retirée ne peut plus être annulée.</p>
+  <div class="flex flex-wrap items-center gap-4">
+    <button type="button" data-action="confirm-cancel" data-focus-key="confirm-cancel" class="button h-12 px-6 text-small">{{confirmLabel}}</button>
+    <button type="button" data-action="back-cancel" data-focus-key="back-cancel" class="text-small font-semibold text-link underline-offset-4 hover:underline">Retour</button>
+  </div>
+</section>

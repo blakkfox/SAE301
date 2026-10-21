@@ -34,4 +34,12 @@ return [
     'POST /api/orders'         => [OrderController::class,     'create'],
     'POST /api/admin/login'    => [AuthController::class,      'adminLogin'],
     'GET  /api/admin/dashboard' => [AdminController::class,    'dashboard'],
+    'GET  /api/admin/orders'         => [AdminController::class, 'orders'],
+    'GET  /api/admin/order'          => [AdminController::class, 'order'],
+    'POST /api/admin/orders/status'  => [AdminController::class, 'updateStatus'],
+    'POST /api/admin/orders/cancel'  => [AdminController::class, 'cancelOrder'],
+    'GET  /api/admin/categories'        => [AdminController::class, 'categories'],
+    'POST /api/admin/categories'        => [AdminController::class, 'createCategory'],
+    'POST /api/admin/categories/update' => [AdminController::class, 'updateCategory'],
+    'POST /api/admin/categories/delete' => [AdminController::class, 'deleteCategory'],
 ];

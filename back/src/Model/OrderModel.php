@@ -6,14 +6,17 @@ namespace App\Model;
 
 use DateTimeImmutable;
 use PDO;
+use PDOStatement;
 use Throwable;
 
 /**
- * Accès aux commandes (US CMD-a).
+ * Accès aux commandes (US CMD-a) et à leur gestion au back-office (US PIL-b).
  *
  * L'enregistrement d'une commande, la baisse des stocks et leur journal
  * (US STK-a, StockModel) se font dans UNE transaction : si un seul article
- * manque, rien n'est enregistré.
+ * manque, rien n'est enregistré. De même, un changement de statut et sa
+ * ligne du journal order_event, et une annulation et son recrédit, sont
+ * écrits ensemble ou pas du tout.
  */
 final class OrderModel
 {
@@ -84,6 +87,7 @@ final class OrderModel
 
             $this->insertLines($orderId, $items);
             $this->updateTotal($orderId);
+            $this->insertEvent($orderId, 'en_cours', null);
 
             $this->pdo->commit();
         } catch (Throwable $e) {
@@ -143,17 +147,29 @@ final class OrderModel
 
     /**
      * Nombre de commandes de chaque statut, pour le tableau de bord du
-     * back-office (US GOF-b). Un statut sans commande vaut 0.
+     * back-office (US GOF-b) et les pastilles de filtre de la gestion des
+     * commandes (US PIL-b). Un statut sans commande vaut 0.
+     *
+     * @param string|null $search Numéro ou nom du client (voir searchFilter),
+     *                            ou null pour compter toutes les commandes.
      *
      * @return array{en_cours:int, disponible:int, retiree:int, annulee:int}
      */
-    public function countByStatus(): array
+    public function countByStatus(?string $search = null): array
     {
         $counts = ['en_cours' => 0, 'disponible' => 0, 'retiree' => 0, 'annulee' => 0];
 
-        $rows = $this->pdo->query(
-            'SELECT status, COUNT(*) AS order_count FROM customer_order GROUP BY status'
-        )->fetchAll();
+        $statement = $this->pdo->prepare(
+            'SELECT customer_order.status, COUNT(*) AS order_count
+               FROM customer_order
+         INNER JOIN customer ON customer.id = customer_order.customer_id
+              WHERE 1 = 1' . self::searchFilter($search) . '
+           GROUP BY customer_order.status'
+        );
+        self::bindSearch($statement, $search);
+        $statement->execute();
+
+        $rows = $statement->fetchAll();
 
         for ($i = 0; $i < count($rows); $i++) {
             $counts[$rows[$i]['status']] = (int) $rows[$i]['order_count'];
@@ -199,6 +215,186 @@ final class OrderModel
             ],
             $statement->fetchAll(),
         );
+    }
+
+    /**
+     * Une page de la liste des commandes du back-office (US PIL-b).
+     *
+     * @param string      $orderBy Fragment SQL de tri, par exemple « customer_order.total DESC ».
+     *                             ATTENTION : ce fragment est inséré tel quel dans la
+     *                             requête. Il ne doit JAMAIS provenir directement de
+     *                             l'utilisateur — voir la liste blanche du contrôleur.
+     * @param int         $limit   Nombre de commandes à renvoyer.
+     * @param int         $offset  Nombre de commandes à sauter (pagination).
+     * @param string|null $status  Statut à garder, déjà validé, ou null pour tous.
+     * @param string|null $search  Numéro ou nom du client (voir searchFilter), ou null.
+     *
+     * @return array<int, array{id:int, status:string, total:float, pickupStart:string,
+     *                          customer:array{firstName:string, lastName:string}}>
+     */
+    public function findAdminPage(string $orderBy, int $limit, int $offset, ?string $status, ?string $search): array
+    {
+        // customer_order.id en dernier critère : deux commandes au même total
+        // gardent toujours le même ordre d'une page à l'autre.
+        $statement = $this->pdo->prepare(
+            'SELECT customer_order.id, customer_order.status, customer_order.total, customer_order.pickup_start,
+                    customer.first_name, customer.last_name
+               FROM customer_order
+         INNER JOIN customer ON customer.id = customer_order.customer_id
+              WHERE 1 = 1' . self::statusFilter($status) . self::searchFilter($search) . "
+           ORDER BY {$orderBy}, customer_order.id DESC
+              LIMIT :limit OFFSET :offset"
+        );
+        self::bindStatus($statement, $status);
+        self::bindSearch($statement, $search);
+        $statement->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $statement->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $statement->execute();
+
+        return array_map(
+            static fn (array $row): array => [
+                'id'          => (int) $row['id'],
+                'status'      => $row['status'],
+                'total'       => (float) $row['total'],
+                'pickupStart' => $row['pickup_start'],
+                'customer'    => [
+                    'firstName' => $row['first_name'],
+                    'lastName'  => $row['last_name'],
+                ],
+            ],
+            $statement->fetchAll(),
+        );
+    }
+
+    /**
+     * Une commande telle que le back-office la détaille (US PIL-b) : celle de
+     * findById, avec le client et le journal de ses statuts.
+     *
+     * @param int $id Identifiant de la commande.
+     *
+     * @return array{id:int, status:string, total:float, pickupStart:string, pickupEnd:string,
+     *               createdAt:string, dealership:array{id:int, name:string, shortName:string},
+     *               lines:array<int, array{variantId:?int, name:string, label:string,
+     *                                      reference:string, unitPrice:float, quantity:int}>,
+     *               customer:array{firstName:string, lastName:string, phone:string},
+     *               events:array<int, array{status:string, createdAt:string,
+     *                                       admin:?array{firstName:string, lastName:string}}>}|null
+     *         null si la commande n'existe pas.
+     */
+    public function findAdminDetail(int $id): ?array
+    {
+        $order = $this->findById($id);
+
+        if ($order === null) {
+            return null;
+        }
+
+        $statement = $this->pdo->prepare(
+            'SELECT customer.first_name, customer.last_name, customer.phone
+               FROM customer_order
+         INNER JOIN customer ON customer.id = customer_order.customer_id
+              WHERE customer_order.id = :id'
+        );
+        $statement->bindValue(':id', $id, PDO::PARAM_INT);
+        $statement->execute();
+        $row = $statement->fetch();
+
+        return $order + [
+            'customer' => [
+                'firstName' => $row['first_name'],
+                'lastName'  => $row['last_name'],
+                'phone'     => $row['phone'],
+            ],
+            'events'   => $this->findEvents($id),
+        ];
+    }
+
+    /**
+     * Fait passer des commandes de $from à $to, et journalise chaque passage
+     * (US PIL-b). Seules les commandes encore au statut $from changent : la
+     * condition est vérifiée par MySQL, ligne verrouillée, si bien que deux
+     * administrateurs ne peuvent pas faire le même passage deux fois.
+     *
+     * @param array<int, int> $ids     Commandes demandées, sans doublon.
+     * @param string          $from    Statut requis, déjà validé.
+     * @param string          $to      Nouveau statut, déjà validé.
+     * @param int             $adminId Administrateur connecté.
+     *
+     * @return array<int, int> Les commandes qui ont changé de statut.
+     */
+    public function advanceStatus(array $ids, string $from, string $to, int $adminId): array
+    {
+        $update = $this->pdo->prepare(
+            'UPDATE customer_order SET status = :to WHERE id = :id AND status = :from'
+        );
+
+        $updated = [];
+
+        $this->pdo->beginTransaction();
+
+        try {
+            for ($i = 0; $i < count($ids); $i++) {
+                $update->bindValue(':to', $to);
+                $update->bindValue(':id', $ids[$i], PDO::PARAM_INT);
+                $update->bindValue(':from', $from);
+                $update->execute();
+
+                if ($update->rowCount() === 0) {
+                    continue;
+                }
+
+                $this->insertEvent($ids[$i], $to, $adminId);
+                $updated[] = $ids[$i];
+            }
+
+            $this->pdo->commit();
+        } catch (Throwable $e) {
+            $this->pdo->rollBack();
+            throw $e;
+        }
+
+        return $updated;
+    }
+
+    /**
+     * Annule une commande « en_cours » ou « disponible », journalise
+     * l'annulation et recrédite le stock de ses variantes
+     * (StockModel::restockOrder), dans une transaction (US PIL-b). Une
+     * commande retirée, ou déjà annulée, ne change pas.
+     *
+     * @param int $id      Commande à annuler.
+     * @param int $adminId Administrateur connecté.
+     *
+     * @return bool true si la commande a été annulée.
+     */
+    public function cancel(int $id, int $adminId): bool
+    {
+        $this->pdo->beginTransaction();
+
+        try {
+            $update = $this->pdo->prepare(
+                'UPDATE customer_order SET status = \'annulee\'
+                  WHERE id = :id AND status IN (\'en_cours\', \'disponible\')'
+            );
+            $update->bindValue(':id', $id, PDO::PARAM_INT);
+            $update->execute();
+
+            if ($update->rowCount() === 0) {
+                $this->pdo->rollBack();
+
+                return false;
+            }
+
+            $this->insertEvent($id, 'annulee', $adminId);
+            $this->stock->restockOrder($id);
+
+            $this->pdo->commit();
+        } catch (Throwable $e) {
+            $this->pdo->rollBack();
+            throw $e;
+        }
+
+        return true;
     }
 
     /**
@@ -300,5 +496,122 @@ final class OrderModel
             ],
             $statement->fetchAll(),
         );
+    }
+
+    /**
+     * Inscrit un statut dans le journal order_event (US PIL-b).
+     *
+     * @param int      $orderId
+     * @param string   $status  Statut atteint.
+     * @param int|null $adminId Administrateur qui l'a fait, ou null à la
+     *                          création de la commande par le client.
+     */
+    private function insertEvent(int $orderId, string $status, ?int $adminId): void
+    {
+        $statement = $this->pdo->prepare(
+            'INSERT INTO order_event (order_id, status, admin_id) VALUES (:order, :status, :admin)'
+        );
+        $statement->bindValue(':order', $orderId, PDO::PARAM_INT);
+        $statement->bindValue(':status', $status);
+        $statement->bindValue(':admin', $adminId, $adminId === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
+        $statement->execute();
+    }
+
+    /**
+     * Journal des statuts d'une commande, du plus ancien au plus récent.
+     *
+     * @param int $orderId
+     *
+     * @return array<int, array{status:string, createdAt:string,
+     *                          admin:?array{firstName:string, lastName:string}}>
+     *         admin vaut null pour la création par le client.
+     */
+    private function findEvents(int $orderId): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT order_event.status, order_event.created_at,
+                    customer.first_name, customer.last_name
+               FROM order_event
+          LEFT JOIN customer ON customer.id = order_event.admin_id
+              WHERE order_event.order_id = :order
+           ORDER BY order_event.created_at, order_event.id'
+        );
+        $statement->bindValue(':order', $orderId, PDO::PARAM_INT);
+        $statement->execute();
+
+        return array_map(
+            static fn (array $row): array => [
+                'status'    => $row['status'],
+                'createdAt' => $row['created_at'],
+                'admin'     => $row['first_name'] === null
+                    ? null
+                    : ['firstName' => $row['first_name'], 'lastName' => $row['last_name']],
+            ],
+            $statement->fetchAll(),
+        );
+    }
+
+    /**
+     * @param string|null $status Statut déjà validé, ou null.
+     *
+     * @return string Condition SQL à ajouter au WHERE (vide sans statut).
+     */
+    private static function statusFilter(?string $status): string
+    {
+        return $status === null ? '' : ' AND customer_order.status = :status';
+    }
+
+    /**
+     * Lie le marqueur :status de statusFilter, s'il est présent.
+     *
+     * @param PDOStatement $statement
+     * @param string|null  $status
+     */
+    private static function bindStatus(PDOStatement $statement, ?string $status): void
+    {
+        if ($status !== null) {
+            $statement->bindValue(':status', $status);
+        }
+    }
+
+    /**
+     * Recherche « N° ou client » : le numéro de la commande (« 142 »,
+     * « CMD-0142 »), ou une partie du nom du client, prénom avant ou après le
+     * nom. La requête doit joindre la table customer.
+     *
+     * @param string|null $search Saisie déjà nettoyée, ou null.
+     *
+     * @return string Condition SQL à ajouter au WHERE (vide sans recherche).
+     */
+    private static function searchFilter(?string $search): string
+    {
+        return $search === null
+            ? ''
+            : ' AND (customer_order.id = :searchId
+                     OR CONCAT_WS(\' \', customer.first_name, customer.last_name) LIKE :searchName
+                     OR CONCAT_WS(\' \', customer.last_name, customer.first_name) LIKE :searchReverse)';
+    }
+
+    /**
+     * Lie les marqueurs de searchFilter, s'ils sont présents. Une saisie qui
+     * n'est pas un numéro est cherchée sous l'identifiant 0, qu'aucune
+     * commande ne porte.
+     *
+     * @param PDOStatement $statement
+     * @param string|null  $search
+     */
+    private static function bindSearch(PDOStatement $statement, ?string $search): void
+    {
+        if ($search === null) {
+            return;
+        }
+
+        $id = preg_match('/^(?:CMD-?)?0*(\d{1,9})$/i', $search, $matches) === 1 ? (int) $matches[1] : 0;
+        // % et _ saisis sont cherchés tels quels, pas comme jokers de LIKE.
+        $like = '%' . addcslashes($search, '%_\\') . '%';
+
+        $statement->bindValue(':searchId', $id, PDO::PARAM_INT);
+        $statement->bindValue(':searchName', $like);
+        $statement->bindValue(':searchReverse', $like);
     }
 }

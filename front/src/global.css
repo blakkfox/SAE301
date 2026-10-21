@@ -177,6 +177,10 @@
     --grid-admin-dashboard: minmax(0, 1fr) 21.25rem; /* Tableau de bord : commandes / alertes 340 px */
     --grid-admin-login: minmax(0, 1fr) minmax(0, 1fr) auto; /* Connexion admin : 2 champs / bouton */
     --size-admin-table-min: 36rem; /* Tableau des commandes : défile en dessous */
+    --grid-admin-orders: minmax(0, 1fr) 23.75rem; /* Gestion des commandes : liste / détail 380 px */
+    --size-admin-orders-table-min: 40rem; /* Liste des commandes (6 colonnes) : défile en dessous */
+    --grid-admin-categories: minmax(0, 1fr) 23.75rem; /* Catégories : liste / formulaire 380 px */
+    --size-admin-categories-table-min: 34rem; /* Liste des catégories (4 colonnes) : défile en dessous */
   }
 
   .theme-dark {
@@ -323,6 +327,50 @@
   .status-badge--error {
     --_bg: var(--clr-bg-error);
     --_dot: var(--clr-error);
+  }
+
+  /*
+    Interrupteur « Visible dans le catalogue » (US GOF-c) : une case à cocher
+    native (role="switch"), dessinée en piste et en pastille. Cochée, la
+    piste prend le rouge des actions ; seule la variable privée change.
+  */
+  .switch {
+    --_track: var(--clr-border-strong);
+
+    appearance: none;
+    position: relative;
+    flex-shrink: 0;
+    width: 2.75rem;
+    height: 1.5rem;
+    border-radius: 999px;
+    background-color: var(--_track);
+    transition: background-color 150ms ease;
+
+    &::before {
+      content: "";
+      position: absolute;
+      top: 0.1875rem;
+      left: 0.1875rem;
+      width: 1.125rem;
+      height: 1.125rem;
+      border-radius: 999px;
+      background-color: var(--clr-bg-page);
+      transition: transform 150ms ease;
+    }
+
+    &:checked {
+      --_track: var(--clr-action);
+
+      &::before {
+        transform: translateX(1.25rem);
+      }
+    }
+
+    &:disabled {
+      --_track: var(--clr-action-disabled);
+
+      cursor: not-allowed;
+    }
   }
 
   /*

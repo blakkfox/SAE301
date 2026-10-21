@@ -1,0 +1,15 @@
+<!-- {{nameClass}} : catégorie de premier niveau en gras, sous-catégorie en
+     retrait. Le rattachement à la parente n'est lu que par les lecteurs
+     d'écran ; il est retiré (page.js) pour une catégorie de premier niveau.
+     aria-current (catégorie en cours de modification) est réglé dans page.js. -->
+<tr class="aria-[current=true]:bg-section">
+  <th scope="row" class="py-4 pr-3 {{nameClass}}">{{name}}<span data-parent-label class="sr-only">, sous-catégorie de {{parentName}}</span></th>
+  <td class="px-3 py-4">{{productCount}}</td>
+  <td class="px-3 py-4">
+    <span class="inline-flex rounded-full px-2.5 py-1 text-caption font-semibold whitespace-nowrap text-ink {{badgeClass}}">{{visibility}}</span>
+  </td>
+  <td class="px-3 py-4 whitespace-nowrap">
+    <button type="button" data-action="edit" data-id="{{id}}" data-focus-key="edit-{{id}}" class="mr-4 text-small text-link underline-offset-4 hover:underline">Modifier<span class="sr-only"> {{name}}</span></button>
+    <button type="button" data-action="delete" data-id="{{id}}" data-focus-key="delete-{{id}}" class="text-small text-accent underline-offset-4 hover:underline">Supprimer<span class="sr-only"> {{name}}</span></button>
+  </td>
+</tr>

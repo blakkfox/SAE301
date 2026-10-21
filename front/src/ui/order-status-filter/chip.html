@@ -1,0 +1,9 @@
+<!-- Pastille de statut. Celle du filtre appliqué reçoit aria-pressed="true"
+     (voir index.js) : fond gris anthracite, texte blanc. -->
+<li>
+  <button type="button" data-status="{{status}}" data-focus-key="filter-{{status}}" class="inline-flex h-9 items-center gap-2 rounded-full border border-line-strong bg-page px-4 text-small font-semibold text-ink transition-colors hover:border-ink aria-pressed:border-ink aria-pressed:bg-ink aria-pressed:text-ink-inverse">
+    <span>{{label}}</span>
+    <span aria-hidden="true" class="text-caption font-normal">{{count}}</span>
+    <span class="sr-only">, {{countLabel}}</span>
+  </button>
+</li>

@@ -16,14 +16,22 @@ use PDOStatement;
 final class ProductModel
 {
     /**
-     * Condition SQL d'un produit visible : actif, et doté d'au moins une
-     * variante (sans variante, il n'aurait ni référence ni stock).
+     * Condition SQL d'un produit visible : actif, doté d'au moins une
+     * variante (sans variante, il n'aurait ni référence ni stock), et rangé
+     * dans une catégorie visible dont la parente, s'il y en a une, est
+     * visible aussi (US GOF-c).
      * Écrite une seule fois pour que la liste, la fiche, les suggestions et
      * les compteurs de catégories (CategoryModel) montrent toujours les mêmes
-     * produits.
+     * produits. Les alias shown et shown_parent évitent toute confusion avec
+     * la table category d'une requête appelante.
      */
     public const VISIBLE = 'product.is_active = 1
-        AND EXISTS (SELECT 1 FROM variant WHERE variant.product_id = product.id)';
+        AND EXISTS (SELECT 1 FROM variant WHERE variant.product_id = product.id)
+        AND EXISTS (SELECT 1 FROM category AS shown
+                 LEFT JOIN category AS shown_parent ON shown_parent.id = shown.parent_id
+                     WHERE shown.id = product.category_id
+                       AND shown.is_visible = 1
+                       AND (shown_parent.id IS NULL OR shown_parent.is_visible = 1))';
 
     /**
      * Colonne SQL single_variant_id d'une carte produit : l'identifiant de la

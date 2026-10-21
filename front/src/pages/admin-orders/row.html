@@ -1,0 +1,13 @@
+<!-- data-checked (cochée) et aria-current (détail affiché) sont réglés dans page.js. -->
+<tr data-checked="false" class="data-[checked=true]:bg-section aria-[current=true]:bg-section">
+  <td class="px-5 py-4">
+    <input type="checkbox" data-action="toggle" data-id="{{id}}" data-focus-key="toggle-{{id}}" aria-label="Sélectionner la commande {{number}}" class="size-4.5 accent-action" />
+  </td>
+  <th scope="row" class="px-3 py-4 font-semibold whitespace-nowrap">
+    <button type="button" data-action="open" data-id="{{id}}" data-focus-key="open-{{id}}" class="underline-offset-4 hover:underline">{{number}}<span class="sr-only"> : afficher le détail</span></button>
+  </th>
+  <td class="px-3 py-4">{{customer}}</td>
+  <td class="px-3 py-4 whitespace-nowrap">{{pickup}}</td>
+  <td class="px-3 py-4 whitespace-nowrap">{{total}}</td>
+  <td class="px-3 py-4"><slot name="status"></slot></td>
+</tr>

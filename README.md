@@ -150,7 +150,7 @@ Une page dynamique suit le découpage Modèle / Contrôleur / Vue :
 |---|---|
 | `GET /api/products?page=2&sort=price_asc` | une page du catalogue (12 produits) |
 | `GET /api/products?category=collection-honda` | une page des produits d'une catégorie, sous-catégories comprises. 404 si la catégorie n'existe pas |
-| `GET /api/categories` | arbre des catégories (`children` : sous-catégories) avec leur nombre de produits (`productCount`), et `total` du catalogue |
+| `GET /api/categories` | arbre des catégories visibles (une catégorie masquée, ou dont la parente est masquée, en est absente avec ses produits) (`children` : sous-catégories) avec leur nombre de produits (`productCount`), et `total` du catalogue |
 | `GET /api/product?id=13` | fiche d'un produit : catégorie, variantes, caractéristiques, et 4 suggestions (`related`). 400 si `id` invalide, 404 si produit introuvable |
 | `GET /api/me` | compte connecté (`customer`), ou `null` |
 | `POST /api/login` | connexion, corps JSON `{"email": …, "password": …}`. 401 si identifiants incorrects |
@@ -159,6 +159,14 @@ Une page dynamique suit le découpage Modèle / Contrôleur / Vue :
 | `POST /api/logout` | déconnexion |
 | `POST /api/admin/login` | connexion du back-office (US GOF-b), corps JSON `{"email": …, "password": …}`. 401 si identifiants incorrects **ou compte client** |
 | `GET /api/admin/dashboard` | tableau de bord : indicateurs (`stats`), prochaines commandes (`upcomingOrders`), alertes stock (`stockAlerts`, `stockAlertCount`). 401 sans session, 403 pour un compte client |
+| `GET /api/admin/orders?status=en_cours&q=dupont&sort=total_desc&page=2` | gestion des commandes (US PIL-b) : une page de 20 commandes (`orders`), nombre par statut (`counts`, avec `all`) selon la recherche, réglages appliqués. Tris : `pickup_desc` (défaut), `pickup_asc`, `customer_asc`, `customer_desc`, `total_desc`, `total_asc`, `status_asc`, `status_desc`. 401, 403 comme le tableau de bord |
+| `GET /api/admin/order?id=142` | détail d'une commande : lignes, client, concession, journal des statuts (`events`). 400 si `id` invalide, 404 si introuvable |
+| `POST /api/admin/orders/status` | corps JSON `{"ids": [142, 141], "status": "disponible" \| "retiree"}` : passage en lot, seulement depuis le statut précédent du cycle. Répond `updated` et `skipped` |
+| `POST /api/admin/orders/cancel` | corps JSON `{"id": 142}` : annulation et recrédit du stock (STK-a), dans une transaction. 409 si la commande est retirée ou déjà annulée |
+| `GET /api/admin/categories` | gestion des catégories (US GOF-c) : toutes les catégories, masquées comprises, en arbre, avec `isVisible` et `productCount` (tous les produits, sous-catégories comprises). 401, 403 comme le tableau de bord |
+| `POST /api/admin/categories` | création, corps JSON `{name, description, isVisible, parentId}` (slug calculé depuis le nom). 422 si saisie invalide, 409 si le nom est déjà pris (erreurs par champ dans `champs`) |
+| `POST /api/admin/categories/update` | modification, même corps avec `id` (le slug ne change pas). Une catégorie qui a des sous-catégories reste au premier niveau. 404 si introuvable |
+| `POST /api/admin/categories/delete` | suppression, corps JSON `{"id": 15}`. 409 si la catégorie contient encore des produits ou des sous-catégories |
 
 Tris acceptés : `price_asc` (défaut), `price_desc`, `name_asc`, `newest`.
 `sort` est facultatif : sans lui, le serveur applique le tri mémorisé dans le

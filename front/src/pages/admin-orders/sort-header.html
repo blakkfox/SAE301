@@ -1,0 +1,6 @@
+<!-- En-tête triable. aria-sort n'est posé que sur la colonne du tri appliqué (voir page.js). -->
+<th scope="col" class="px-3 py-3">
+  <button type="button" data-action="sort" data-column="{{column}}" data-focus-key="sort-{{column}}" class="inline-flex items-center gap-1 font-semibold transition-colors hover:text-ink">
+    {{label}}<span aria-hidden="true">{{arrow}}</span>
+  </button>
+</th>
