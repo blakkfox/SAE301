@@ -1,0 +1,26 @@
+<!--
+  « Connexion administrateur » (écran 10, bas de page) : deux champs et le
+  bouton sur une ligne à partir de lg, empilés en dessous. novalidate : c'est
+  le serveur qui valide, et son refus s'affiche sous le mot de passe.
+-->
+<section aria-labelledby="admin-login-title" class="flex flex-col gap-4 rounded-xl bg-page p-6">
+  <h2 id="admin-login-title" class="font-display text-h3 leading-none text-ink">Connexion administrateur</h2>
+  <p class="text-small text-ink-muted">Les comptes d’administration sont séparés des comptes clients.</p>
+
+  <form novalidate class="grid gap-4 lg:grid-cols-(--grid-admin-login) lg:items-start">
+    <div class="flex flex-col gap-2">
+      <label for="admin-login-email" class="text-small font-semibold text-ink">Identifiant</label>
+      <input id="admin-login-email" name="email" type="email" autocomplete="username" required value="{{email}}" placeholder="admin@honda-lyon.fr" aria-describedby="admin-login-email-error" class="field" />
+      <p id="admin-login-email-error" data-error-for="email" hidden class="text-caption text-accent"></p>
+    </div>
+
+    <div class="flex flex-col gap-2">
+      <label for="admin-login-password" class="text-small font-semibold text-ink">Mot de passe</label>
+      <input id="admin-login-password" name="password" type="password" autocomplete="current-password" required aria-describedby="admin-login-password-error" class="field" />
+      <p id="admin-login-password-error" data-error-for="password" hidden class="text-caption text-accent"></p>
+    </div>
+
+    <!-- lg:mt-7 : aligne le bouton sur les champs, sous la hauteur des libellés. -->
+    <button type="submit" class="button h-12 w-full px-6 text-small lg:mt-7 lg:w-auto">{{submitLabel}}</button>
+  </form>
+</section>

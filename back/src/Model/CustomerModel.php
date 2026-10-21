@@ -31,17 +31,18 @@ final class CustomerModel
     }
 
     /**
-     * Compte d'une adresse e-mail, avec l'empreinte de son mot de passe : de
-     * quoi vérifier une connexion.
+     * Compte d'une adresse e-mail, avec l'empreinte de son mot de passe et
+     * son rôle : de quoi vérifier une connexion, client ou administrateur
+     * (GOF-b).
      *
      * @param string $email Adresse e-mail, en minuscules.
      *
-     * @return array{id:int, passwordHash:string}|null null si aucun compte.
+     * @return array{id:int, passwordHash:string, role:string}|null null si aucun compte.
      */
     public function findCredentials(string $email): ?array
     {
         $statement = $this->pdo->prepare(
-            'SELECT id, password_hash FROM customer WHERE email = :email'
+            'SELECT id, password_hash, role FROM customer WHERE email = :email'
         );
         $statement->execute(['email' => $email]);
         $row = $statement->fetch();
@@ -50,7 +51,7 @@ final class CustomerModel
             return null;
         }
 
-        return ['id' => (int) $row['id'], 'passwordHash' => $row['password_hash']];
+        return ['id' => (int) $row['id'], 'passwordHash' => $row['password_hash'], 'role' => $row['role']];
     }
 
     /**

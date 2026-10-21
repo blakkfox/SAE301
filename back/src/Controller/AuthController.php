@@ -11,7 +11,7 @@ use PDOException;
 
 /**
  * Authentification (US CMD-c) : connexion, création de compte, mot de passe
- * oublié, compte connecté et déconnexion.
+ * oublié, compte connecté et déconnexion ; connexion du back-office (US GOF-b).
  *
  * L'identifiant et le rôle du compte connecté sont rangés en session, côté
  * serveur. Le client ne détient que l'identifiant de session, dans le cookie
@@ -36,6 +36,9 @@ final class AuthController
 
     /** Message unique, que l'e-mail existe ou non : on ne révèle pas quels comptes existent. */
     private const LOGIN_FAILED = 'Adresse e-mail ou mot de passe incorrect.';
+
+    /** Refus de la connexion du back-office : mêmes raisons, même discrétion. */
+    private const ADMIN_LOGIN_FAILED = 'Identifiant ou mot de passe incorrect.';
 
     /**
      * Empreinte d'un mot de passe aléatoire, vérifiée quand l'e-mail est
@@ -76,6 +79,34 @@ final class AuthController
 
         if ($credentials === null || !$isValid) {
             Response::erreur(self::LOGIN_FAILED, 401);
+        }
+
+        $this->openSession($credentials['id']);
+    }
+
+    /**
+     * POST /api/admin/login, corps JSON { email, password } (US GOF-b).
+     *
+     * Connexion du back-office, séparée de celle des clients : un compte
+     * client y est refusé avec le même message qu'un mauvais mot de passe,
+     * pour ne pas révéler quelles adresses sont des comptes d'administration.
+     * Répond { customer } et ouvre la session. 401 sinon.
+     *
+     * @param Request $request Requête entrante.
+     */
+    public function adminLogin(Request $request): void
+    {
+        $body     = $request->corps();
+        $email    = self::normalizeEmail(self::text($body, 'email'));
+        $password = self::text($body, 'password');
+
+        $credentials = $this->customers->findCredentials($email);
+
+        // password_verify est appelé dans tous les cas, voir DUMMY_HASH.
+        $isValid = password_verify($password, $credentials['passwordHash'] ?? self::DUMMY_HASH);
+
+        if ($credentials === null || !$isValid || $credentials['role'] !== 'admin') {
+            Response::erreur(self::ADMIN_LOGIN_FAILED, 401);
         }
 
         $this->openSession($credentials['id']);

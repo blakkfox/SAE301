@@ -332,6 +332,59 @@ final class ProductModel
     }
 
     /**
+     * Produits visibles épuisés dans toutes leurs variantes, pour le tableau
+     * de bord du back-office (US GOF-b).
+     *
+     * @return array<int, array{id:int, name:string}> Par ordre alphabétique.
+     */
+    public function findSoldOut(): array
+    {
+        $sql = 'SELECT product.id, product.name
+                  FROM product
+                 WHERE ' . self::VISIBLE . '
+                   AND NOT ' . self::IN_STOCK . '
+              ORDER BY product.name, product.id';
+
+        return array_map(
+            static fn (array $row): array => ['id' => (int) $row['id'], 'name' => $row['name']],
+            $this->pdo->query($sql)->fetchAll(),
+        );
+    }
+
+    /**
+     * Variantes de produits visibles dont le stock est au plus $maxStock :
+     * les « Alertes stock » du back-office (US GOF-b). Les épuisées d'abord.
+     *
+     * @param int $maxStock Seuil d'alerte, compris.
+     *
+     * @return array<int, array{variantId:int, productId:int, name:string, label:string, stock:int}>
+     */
+    public function findLowStockVariants(int $maxStock): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT variant.id AS variant_id, variant.label, variant.stock, product.id, product.name
+               FROM variant
+         INNER JOIN product ON product.id = variant.product_id
+              WHERE variant.stock <= :maxStock
+                AND ' . self::VISIBLE . '
+           ORDER BY variant.stock, product.name, variant.position, variant.id'
+        );
+        $statement->bindValue(':maxStock', $maxStock, PDO::PARAM_INT);
+        $statement->execute();
+
+        return array_map(
+            static fn (array $row): array => [
+                'variantId' => (int) $row['variant_id'],
+                'productId' => (int) $row['id'],
+                'name'      => $row['name'],
+                'label'     => $row['label'],
+                'stock'     => (int) $row['stock'],
+            ],
+            $statement->fetchAll(),
+        );
+    }
+
+    /**
      * Fragment SQL à ajouter après self::VISIBLE pour filtrer par catégorie.
      *
      * @param int|null $categoryId Catégorie, ou null pour ne pas filtrer.
