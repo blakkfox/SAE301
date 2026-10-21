@@ -11,8 +11,9 @@ use Throwable;
 /**
  * Accès aux commandes (US CMD-a).
  *
- * L'enregistrement d'une commande et la baisse des stocks se font dans UNE
- * transaction : si un seul article manque, rien n'est enregistré.
+ * L'enregistrement d'une commande, la baisse des stocks et leur journal
+ * (US STK-a, StockModel) se font dans UNE transaction : si un seul article
+ * manque, rien n'est enregistré.
  */
 final class OrderModel
 {
@@ -22,23 +23,29 @@ final class OrderModel
     /** Connexion à la base, fournie à la construction. */
     private PDO $pdo;
 
+    /** Mouvements de stock, écrits dans la transaction de la commande. */
+    private StockModel $stock;
+
     /**
-     * @param PDO $pdo Connexion ouverte par Database::connexion().
+     * @param PDO        $pdo   Connexion ouverte par Database::connexion().
+     * @param StockModel $stock Mouvements de stock, sur la même connexion.
      */
-    public function __construct(PDO $pdo)
+    public function __construct(PDO $pdo, StockModel $stock)
     {
-        $this->pdo = $pdo;
+        $this->pdo   = $pdo;
+        $this->stock = $stock;
     }
 
     /**
-     * Enregistre une commande « en cours » et baisse le stock de ses variantes.
+     * Enregistre une commande « en cours », baisse le stock de ses variantes
+     * et journalise chaque baisse (StockModel::decrementForOrder).
      *
      * Chaque baisse n'a lieu que si le stock suffit (« stock >= quantité »),
      * et c'est MySQL qui le vérifie, ligne verrouillée : deux commandes
      * simultanées ne peuvent pas vendre la même dernière unité. Les variantes
      * dont le stock ne suffit pas, ou dont le produit a été retiré du
      * catalogue, sont toutes relevées ; s'il y en a une seule, la transaction
-     * est annulée.
+     * est annulée : ni commande, ni baisse, ni journal.
      *
      * Nom, variante, référence et prix sont copiés depuis la base dans les
      * lignes de commande : le prix ne vient jamais du navigateur.
@@ -64,7 +71,10 @@ final class OrderModel
         $this->pdo->beginTransaction();
 
         try {
-            $unavailable = $this->decrementStocks($items);
+            // La commande est créée d'abord : le journal des mouvements la
+            // référence. Elle disparaît avec le rollBack si un article manque.
+            $orderId     = $this->insertOrder($customerId, $dealershipId, $pickupStart, $pickupEnd);
+            $unavailable = $this->stock->decrementForOrder($orderId, $items);
 
             if ($unavailable !== []) {
                 $this->pdo->rollBack();
@@ -72,7 +82,6 @@ final class OrderModel
                 return ['orderId' => null, 'unavailable' => $unavailable];
             }
 
-            $orderId = $this->insertOrder($customerId, $dealershipId, $pickupStart, $pickupEnd);
             $this->insertLines($orderId, $items);
             $this->updateTotal($orderId);
 
@@ -130,47 +139,6 @@ final class OrderModel
             ],
             'lines'       => $this->findLines($id),
         ];
-    }
-
-    /**
-     * Baisse le stock de chaque variante commandée, si le stock suffit et si
-     * le produit est toujours au catalogue.
-     *
-     * Pas de EXISTS sur variant (voir ProductModel::VISIBLE) : MySQL refuse
-     * qu'une sous-requête lise la table modifiée. La variante existe, puisque
-     * la ligne est mise à jour.
-     *
-     * @param array<int, array{variantId:int, quantity:int}> $items
-     *
-     * @return array<int, int> Les variantes qui n'ont pas pu être servies.
-     */
-    private function decrementStocks(array $items): array
-    {
-        // Un marqueur ne peut pas apparaître deux fois (préparation réelle) :
-        // la quantité est donc liée à :quantity et à :needed.
-        $statement = $this->pdo->prepare(
-            'UPDATE variant
-         INNER JOIN product ON product.id = variant.product_id
-                SET variant.stock = variant.stock - :quantity
-              WHERE variant.id = :variant
-                AND variant.stock >= :needed
-                AND product.is_active = 1'
-        );
-
-        $unavailable = [];
-
-        for ($i = 0; $i < count($items); $i++) {
-            $statement->bindValue(':quantity', $items[$i]['quantity'], PDO::PARAM_INT);
-            $statement->bindValue(':needed', $items[$i]['quantity'], PDO::PARAM_INT);
-            $statement->bindValue(':variant', $items[$i]['variantId'], PDO::PARAM_INT);
-            $statement->execute();
-
-            if ($statement->rowCount() === 0) {
-                $unavailable[] = $items[$i]['variantId'];
-            }
-        }
-
-        return $unavailable;
     }
 
     /**

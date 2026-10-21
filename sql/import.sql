@@ -15,6 +15,8 @@
 --     customer 1 ── n customer_order 1 ── n order_line n ── 1 variant
 --     dealership 1 ── n customer_order          (US CMD-a)
 --
+--     variant 1 ── n stock_movement n ── 0..1 customer_order   (US STK-a)
+--
 -- Chaque produit a AU MOINS une variante (taille, coloris, garniture… ou
 -- « Unique »). C'est la variante qui porte la référence et le stock : le
 -- panier, les commandes et les stocks s'appuieront sur variant.id, et l'arrivée
@@ -36,6 +38,7 @@ SET NAMES utf8mb4;
 -- Ordre de suppression : d'abord les tables qui dépendent des autres.
 DROP TABLE IF EXISTS film;
 DROP TABLE IF EXISTS genre;
+DROP TABLE IF EXISTS stock_movement;
 DROP TABLE IF EXISTS order_line;
 DROP TABLE IF EXISTS customer_order;
 DROP TABLE IF EXISTS dealership;
@@ -268,6 +271,40 @@ CREATE TABLE order_line (
         ON DELETE SET NULL,
     CONSTRAINT chk_line_price CHECK (unit_price >= 0),
     CONSTRAINT chk_line_quantity CHECK (quantity > 0)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- Journal des mouvements de stock (US STK-a)
+--
+-- Une ligne par variante et par mouvement, écrite dans la même transaction
+-- que la baisse (commande) ou le recrédit (annulation, PIL-b) : le journal
+-- ne peut pas contredire le stock. quantity est signée : -2 pour 2 unités
+-- vendues, +2 pour 2 unités recréditées. stock_after est le stock de la
+-- variante juste après le mouvement, pour retracer son évolution.
+-- Le journal survit à la suppression de la commande (order_id à NULL).
+-- ---------------------------------------------------------------------------
+CREATE TABLE stock_movement (
+    id          INT UNSIGNED                      NOT NULL AUTO_INCREMENT,
+    variant_id  SMALLINT UNSIGNED                 NOT NULL,
+    order_id    INT UNSIGNED                          NULL,
+    reason      ENUM('commande', 'annulation')    NOT NULL,
+    quantity    INT                               NOT NULL,
+    stock_after INT UNSIGNED                      NOT NULL,
+    created_at  DATETIME                          NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+    KEY idx_movement_variant (variant_id, created_at),
+    KEY idx_movement_order (order_id),
+
+    CONSTRAINT fk_movement_variant
+        FOREIGN KEY (variant_id) REFERENCES variant (id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_movement_order
+        FOREIGN KEY (order_id) REFERENCES customer_order (id)
+        ON DELETE SET NULL,
+    CONSTRAINT chk_movement_quantity CHECK (quantity <> 0)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;

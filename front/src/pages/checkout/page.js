@@ -13,6 +13,7 @@ import templateNoSlot from "./no-slot.html?raw";
 import templateSummary from "./summary.html?raw";
 import templateSummaryLine from "./summary-line.html?raw";
 import templateConfirmed from "./confirmed.html?raw";
+import templateUnavailable from "./unavailable.html?raw";
 import templateLogin from "./login.html?raw";
 import templateEmpty from "./empty.html?raw";
 import templateError from "./error.html?raw";
@@ -26,8 +27,9 @@ import templateError from "./error.html?raw";
  *
  * Les créneaux viennent du serveur, qui les recalcule à l'envoi ; il y
  * revérifie aussi les quantités, le stock et les prix, dans une transaction.
- * Si un article manque, rien n'est enregistré et la page le dit. Une fois la
- * commande enregistrée, le panier est vidé et la page passe à l'étape 4.
+ * Si un article a été pris entre-temps, rien n'est enregistré et la page le
+ * dit (écran 9, STK-a). Une fois la commande enregistrée, le stock est baissé
+ * (STK-a), le panier est vidé et la page passe à l'étape 4.
  *
  * Découpage MVC strict :
  *   M — panier, données de validation, choix, envoi, textes et montants ;
@@ -39,7 +41,7 @@ import templateError from "./error.html?raw";
 const STEP_LABELS = ["Panier", "Connexion", "Retrait", "Confirmation"];
 
 // Étape en cours selon l'état de la page.
-const CURRENT_STEP = { empty: 1, login: 2, error: 3, form: 3, confirmed: 4 };
+const CURRENT_STEP = { empty: 1, login: 2, error: 3, form: 3, unavailable: 3, confirmed: 4 };
 
 // Titre de la page selon son état.
 const TITLES = {
@@ -47,8 +49,12 @@ const TITLES = {
   login: "Retrait de la commande",
   error: "Retrait de la commande",
   form: "Retrait de la commande",
+  unavailable: "Commande non passée",
   confirmed: "Commande confirmée",
 };
+
+// Libellé du statut d'une commande (colonne customer_order.status).
+const STATUS_LABELS = { en_cours: "en cours", disponible: "disponible", retiree: "retirée", annulee: "annulée" };
 
 // Jour d'un créneau au-delà de demain (« lun. 26 ») et date du créneau
 // confirmé (« mardi 21 octobre »). Les dates sont lues en UTC : ce sont des
@@ -75,6 +81,7 @@ let M = {
   isSubmitting: false, // envoi de la commande en cours
   error: null, // texte de l'erreur de chargement, ou null
   notice: null, // { type, texte } à afficher au-dessus de la page, ou null
+  unavailable: null, // texte de l'alerte « stock pris entre-temps » (409), ou null
   order: null, // commande enregistrée, ou null
 };
 
@@ -91,6 +98,7 @@ M.reset = function () {
   M.isSubmitting = false;
   M.error = null;
   M.notice = null;
+  M.unavailable = null;
   M.order = null;
 };
 
@@ -261,7 +269,7 @@ M.storeSubmitError = async function (error) {
   if (error.statut === 401) {
     M.isLoggedOut = true;
   } else if (error.statut === 409) {
-    M.notice = { type: "erreur", texte: M.formatUnavailable(error.donnees?.indisponibles ?? []) };
+    M.unavailable = M.formatUnavailable(error.donnees?.indisponibles ?? []);
   } else if (error.statut === 422) {
     M.notice = { type: "erreur", texte: Object.values(error.champs).join(" ") || error.message };
     try {
@@ -277,7 +285,9 @@ M.storeSubmitError = async function (error) {
 };
 
 /**
- * Message d'un stock insuffisant (409), avec le nom des articles en cause.
+ * Message d'un stock pris entre-temps (409, écran 9), avec le nom des
+ * articles en cause. « Le stock de… » évite d'accorder un participe au
+ * genre du produit, que l'API ne donne pas.
  *
  * @param {number[]} variantIds - Variantes indisponibles, selon l'API.
  * @returns {string}
@@ -286,10 +296,15 @@ M.formatUnavailable = function (variantIds) {
   let names = variantIds
     .map((id) => M.findVariant(id))
     .filter((variant) => variant !== undefined)
-    .map((variant) => M.formatArticle(variant));
+    .map((variant) => `« ${M.formatArticle(variant)} »`);
 
-  let list = names.length > 0 ? ` : ${names.join(", ")}` : "";
-  return `Stock insuffisant${list}. Rien n'a été enregistré : modifiez votre panier, puis validez de nouveau.`;
+  let cause = "Désolé, un article vient d'être acheté par un autre client.";
+  if (names.length === 1) {
+    cause = `Désolé, le stock de ${names[0]} vient d'être pris par un autre client.`;
+  } else if (names.length > 1) {
+    cause = `Désolé, le stock de ${names.slice(0, -1).join(", ")} et ${names.at(-1)} vient d'être pris par d'autres clients.`;
+  }
+  return `${cause} Votre commande n'a pas été passée et rien n'a été débité.`;
 };
 
 /**
@@ -406,10 +421,11 @@ M.getSteps = function () {
 };
 
 /**
- * @returns {"empty"|"login"|"error"|"form"|"confirmed"} L'état de la page.
+ * @returns {"empty"|"login"|"error"|"form"|"unavailable"|"confirmed"} L'état de la page.
  */
 M.getState = function () {
   if (M.order !== null) return "confirmed";
+  if (M.unavailable !== null) return "unavailable";
   if (M.isLoggedOut) return "login";
   if (M.error !== null) return "error";
   if (M.items.length === 0 || M.checkout === null) return "empty";
@@ -472,15 +488,15 @@ M.getSummaryData = function () {
 };
 
 /**
- * @returns {{firstName: string, number: string, dealershipName: string, pickup: string,
+ * @returns {{number: string, statusLabel: string, dealershipName: string, pickup: string,
  *   countLabel: string, total: string}} Données de la commande enregistrée.
  */
 M.getConfirmedData = function () {
   return {
-    firstName: M.checkout.customer.firstName,
-    number: `n° ${String(M.order.id).padStart(6, "0")}`,
+    number: `CMD-${String(M.order.id).padStart(4, "0")}`,
+    statusLabel: STATUS_LABELS[M.order.status] ?? M.order.status,
     dealershipName: M.order.dealership.name,
-    pickup: M.formatPickup(M.order.pickupStart, M.order.pickupEnd),
+    pickup: M.formatPickup(M.order.pickupStart, M.order.pickupEnd).toLowerCase(),
     countLabel: M.formatCount(M.order.lines.reduce((total, line) => total + line.quantity, 0)),
     total: formatPrice(M.order.total),
   };
@@ -491,7 +507,7 @@ M.getConfirmedData = function () {
  *
  * @returns {{state: ReturnType<typeof M.getState>, title: string,
  *   steps: ReturnType<typeof M.getSteps>, notice: ?{type: string, texte: string},
- *   error: ?string, contact: ?string, details: ?ReturnType<typeof M.getDetailsData>,
+ *   error: ?string, unavailable: ?string, contact: ?string, details: ?ReturnType<typeof M.getDetailsData>,
  *   summary: ?ReturnType<typeof M.getSummaryData>, confirmed: ?ReturnType<typeof M.getConfirmedData>}}
  */
 M.getViewData = function () {
@@ -504,6 +520,7 @@ M.getViewData = function () {
     steps: M.getSteps(),
     notice: M.notice,
     error: M.error,
+    unavailable: M.unavailable,
     contact:
       state === "form"
         ? `${customer.firstName} ${customer.lastName} · ${customer.email} · ${M.formatPhone(customer.phone)}`
@@ -690,6 +707,9 @@ V.createContentFragment = function (data) {
 
   if (data.state === "confirmed") {
     return htmlToFragment(genericRenderer(templateConfirmed, data.confirmed));
+  }
+  if (data.state === "unavailable") {
+    return htmlToFragment(genericRenderer(templateUnavailable, { text: data.unavailable }));
   }
   if (data.state === "login") {
     return htmlToFragment(templateLogin);
