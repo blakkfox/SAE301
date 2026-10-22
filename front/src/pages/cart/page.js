@@ -347,7 +347,9 @@ M.toCents = function (price) {
  * Sous le nom : la variante (ou la référence pour une variante « Unique »),
  * puis le prix unitaire dès que la quantité dépasse 1, comme sur la maquette
  * du panier, ou dès qu'une option est cochée, comme sur celle des options :
- * le prix de la ligne comprend leurs suppléments (OPT-a).
+ * le prix de la ligne comprend leurs suppléments (OPT-a). Le produit en
+ * promotion automatique (PRO-c) ajoute « promo −20 % », et son prix avant
+ * remise est rappelé sous celui de la ligne (originalTotal, null sinon).
  * « + » s'arrête au stock (au moins 1, pour une ligne épuisée, désactivée).
  *
  * @param {number} variantId
@@ -368,6 +370,9 @@ M.getLine = function (variantId) {
   } else if (optionsCents > 0) {
     details.push(formatPrice(variant.price));
   }
+  if (variant.discountRate !== null) {
+    details.push(`promo −${variant.discountRate} %`);
+  }
 
   return {
     variantId: variant.variantId,
@@ -379,6 +384,10 @@ M.getLine = function (variantId) {
     quantity: item.quantity,
     maxQuantity: Math.max(1, Math.min(variant.stock, CartData.MAX_QUANTITY)),
     total: formatPrice(((M.toCents(variant.price) + optionsCents) * item.quantity) / 100),
+    originalTotal:
+      variant.originalPrice === null
+        ? null
+        : formatPrice(((M.toCents(variant.originalPrice) + optionsCents) * item.quantity) / 100),
     stockStatus: getStockStatus(variant.stock, variant.lowStockThreshold),
     isSoldOut: M.isSoldOut(variant),
     stockNote: M.adjusted.includes(variantId)
@@ -444,8 +453,12 @@ M.getLines = function () {
 };
 
 /**
- * Totaux du récapitulatif. Sans frais ni promotion pour l'instant (PRO-a,
- * PRO-c) : le total est la somme des produits et des options.
+ * Totaux du récapitulatif. Sans frais ni code promo pour l'instant (PRO-a) :
+ * le total est la somme des produits et des options.
+ *
+ * Promotion automatique (PRO-c) : les produits sont comptés à leur prix
+ * remisé ; la ligne « Dont promotion −20 % » donne, à titre d'information,
+ * la remise déjà déduite. Elle est retirée sans produit en promotion.
  *
  * Les articles épuisés (STK-c) comptent à côté du titre, mais pas dans le
  * sous-total ; tant qu'il y en a, la validation est bloquée et la note dit
@@ -456,14 +469,16 @@ M.getLines = function () {
  * comme sur la maquette (écran 17).
  *
  * @returns {{countLabel: string, subtotalTitle: string, subtotalLabel: string, subtotal: string,
- *   options: string, hasOptions: boolean, total: string, canCheckout: boolean, note: string,
- *   optionsNote: string}}
+ *   options: string, hasOptions: boolean, promoLabel: string, promo: string, hasPromo: boolean,
+ *   total: string, canCheckout: boolean, note: string, optionsNote: string}}
  */
 M.getSummary = function () {
   let count = 0;
   let availableCount = 0;
   let cents = 0;
   let optionsCents = 0;
+  let promoCents = 0;
+  let promoRate = null;
 
   for (const item of M.items) {
     let variant = M.findVariant(item.variantId);
@@ -474,6 +489,10 @@ M.getSummary = function () {
       availableCount += item.quantity;
       cents += M.toCents(variant.price) * item.quantity;
       optionsCents += M.getOptionsCents(item, variant) * item.quantity;
+      if (variant.originalPrice !== null) {
+        promoCents += (M.toCents(variant.originalPrice) - M.toCents(variant.price)) * item.quantity;
+        promoRate = variant.discountRate;
+      }
     }
   }
 
@@ -496,6 +515,9 @@ M.getSummary = function () {
     subtotal: formatPrice(cents / 100),
     options: formatPrice(optionsCents / 100),
     hasOptions: optionsCents > 0,
+    promoLabel: promoRate === null ? "Dont promotion" : `Dont promotion −${promoRate} %`,
+    promo: `−${formatPrice(promoCents / 100)}`,
+    hasPromo: promoCents > 0,
     total: formatPrice((cents + optionsCents) / 100),
     canCheckout: soldOut.length === 0,
     note,
@@ -767,6 +789,9 @@ V.createSummaryFragment = function (summary) {
   let unused = summary.canCheckout ? "[data-checkout-blocked]" : "[data-checkout-link]";
   fragment.querySelector(unused).remove();
 
+  if (!summary.hasPromo) {
+    fragment.querySelector("[data-summary-promo]").remove();
+  }
   if (!summary.hasOptions) {
     fragment.querySelector("[data-summary-options]").remove();
     fragment.querySelector("[data-summary-options-note]").remove();

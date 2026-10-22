@@ -270,11 +270,15 @@ CartData.notify = function () {
  * Nom, photo, prix et stock des variantes du panier, et options proposées
  * pour leur produit (US OPT-a) : GET /api/cart?variants=…
  *
- * Une variante absente de la réponse n'est plus au catalogue.
+ * Une variante absente de la réponse n'est plus au catalogue. price est le
+ * prix à payer : remisé pour le produit en promotion automatique (PRO-c),
+ * dont originalPrice et discountRate donnent le prix avant remise et la
+ * réduction en pour cent (null sinon).
  *
  * @param {number[]} variantIds
  * @returns {Promise<{variants: Array<{variantId: number, label: string, reference: string,
- *   productId: number, name: string, price: number, image: ?string, stock: number,
+ *   productId: number, name: string, price: number, originalPrice: ?number,
+ *   discountRate: ?number, image: ?string, stock: number,
  *   lowStockThreshold: number,
  *   options: Array<{id: number, label: string, description: ?string, price: number}>}>}>}
  * @throws {ErreurApi} Si le serveur répond par une erreur.

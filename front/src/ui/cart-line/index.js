@@ -27,16 +27,20 @@ const TONES = {
   },
 };
 
+// Prix d'une ligne disponible en promotion (PRO-c) : rouge des promotions.
+const PROMO_PRICE_CLASSES = "text-accent";
+
 // Ligne du panier, telle que la prépare le modèle de la page : les prix sont
 // déjà mis en forme, le statut de stock déjà calculé. stockNote vaut le texte
-// « Quantité ajustée… » ou null. options (OPT-a) vaut null si le produit n'en
+// « Quantité ajustée… » ou null. originalTotal est le total avant remise du
+// produit en promotion (PRO-c), ou null. options (OPT-a) vaut null si le produit n'en
 // propose aucune. Le composant signale le changement de quantité, le retrait
 // de la ligne et les actions sur les options par les fonctions de actions.
 let CartLineView = {
   /**
    * @param {{variantId: number, productId: number, name: string, label: string,
    *   details: string, imageUrl: ?string, quantity: number, maxQuantity: number,
-   *   total: string, stockStatus: "in"|"low"|"out", isSoldOut: boolean,
+   *   total: string, originalTotal: ?string, stockStatus: "in"|"low"|"out", isSoldOut: boolean,
    *   stockNote: ?string, options: ?{isEditing: boolean,
    *     selected: Array<{label: string, price: string}>,
    *     actionLabel: ?string, quickAddId: ?number,
@@ -54,7 +58,21 @@ let CartLineView = {
    */
   dom: function (line, actions) {
     let tone = line.isSoldOut ? TONES.soldOut : TONES.available;
-    let fragment = htmlToFragment(genericRenderer(template, { ...line, ...tone, stockNote: line.stockNote ?? "" }));
+    if (!line.isSoldOut && line.originalTotal !== null) {
+      tone = { ...tone, priceClasses: PROMO_PRICE_CLASSES };
+    }
+    let fragment = htmlToFragment(
+      genericRenderer(template, {
+        ...line,
+        ...tone,
+        stockNote: line.stockNote ?? "",
+        originalTotal: line.originalTotal ?? "",
+      })
+    );
+
+    if (line.originalTotal === null) {
+      fragment.querySelector("[data-original-total]").remove();
+    }
 
     fragment.querySelector('slot[name="visual"]').replaceWith(CartLineView.visual(line.imageUrl));
     fragment.querySelector('slot[name="stock"]').replaceWith(StockBadgeView.dom(line.stockStatus));

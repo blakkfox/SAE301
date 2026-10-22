@@ -1,5 +1,8 @@
 <div class="flex min-h-screen flex-col">
   <slot name="header"></slot>
+  <!-- Bandeau de la promotion automatique (PRO-c), rempli dès que l'API
+       répond ; vide s'il n'y a pas de promotion. -->
+  <div data-promo-banner></div>
   <!-- flex-1 : le pied de page reste en bas même sur une page courte. -->
   <main class="flex-1">
     <!-- Le slot sans nom reçoit la page affichée (voir lib/router.js). -->

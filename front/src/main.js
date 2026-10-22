@@ -15,6 +15,7 @@ import { AdminOrdersPage } from "./pages/admin-orders/page.js";
 import { AdminCategoriesPage } from "./pages/admin-categories/page.js";
 import { AdminProductsPage } from "./pages/admin-products/page.js";
 import { AdminProductPage } from "./pages/admin-product/page.js";
+import { AdminStatsPage } from "./pages/admin-stats/page.js";
 import { The404Page } from "./pages/404/page.js";
 
 // base : chemin du projet sur le serveur (BASE dans vite.config.js).
@@ -65,6 +66,9 @@ router.addRoute("/admin/categories", AdminCategoriesPage);
 // Figma n° 19). params.id dans la page : un identifiant, ou « nouveau ».
 router.addRoute("/admin/produits", AdminProductsPage);
 router.addRoute("/admin/produits/:id", AdminProductPage);
+
+// PIL-a — Statistiques (écran Figma n° 20).
+router.addRoute("/admin/statistiques", AdminStatsPage);
 
 // En dernier : toute adresse qui ne correspond à aucune route.
 router.addRoute("*", The404Page);

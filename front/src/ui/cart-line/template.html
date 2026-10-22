@@ -36,7 +36,12 @@
   <div class="col-span-2 flex items-center justify-between gap-4 sm:contents">
     <slot name="quantity"></slot>
 
-    <p class="ml-auto text-right text-lg font-bold sm:ml-0 sm:w-27.5 sm:shrink-0 {{priceClasses}}"><span class="sr-only">Total de la ligne : </span>{{total}}</p>
+    <!-- Produit en promotion (PRO-c) : total en rouge, total avant remise
+         barré dessous ; [data-original-total] est retiré sinon. -->
+    <p class="ml-auto flex flex-col items-end text-right sm:ml-0 sm:w-27.5 sm:shrink-0">
+      <span class="text-lg font-bold {{priceClasses}}"><span class="sr-only">Total de la ligne : </span>{{total}}</span>
+      <s data-original-total class="text-caption text-ink-muted"><span class="sr-only">au lieu de </span>{{originalTotal}}</s>
+    </p>
 
     <button type="button" data-remove data-focus-key="remove" aria-label="Retirer {{name}} ({{label}}) du panier" class="shrink-0 py-2 underline-offset-4 transition-colors hover:text-accent hover:underline {{removeClasses}}">Retirer</button>
   </div>

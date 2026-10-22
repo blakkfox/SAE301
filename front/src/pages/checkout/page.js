@@ -484,12 +484,17 @@ M.getDetailsData = function () {
 /**
  * Données du récapitulatif. Le prix d'une ligne comprend les suppléments de
  * ses options (OPT-a), listées sous l'article (texte vide sans option).
+ * Le produit en promotion automatique (PRO-c) compte à son prix remisé ; la
+ * ligne « Dont promotion −20 % » rappelle la remise, comme sur le panier.
  *
  * @returns {{lines: Array<{text: string, options: string, total: string}>, dealershipShortName: string,
+ *   promoLabel: string, promo: string, hasPromo: boolean,
  *   total: string, confirmLabel: string, isDisabled: boolean}}
  */
 M.getSummaryData = function () {
   let cents = 0;
+  let promoCents = 0;
+  let promoRate = null;
   let lines = [];
 
   for (const item of M.items) {
@@ -499,6 +504,10 @@ M.getSummaryData = function () {
       let unitCents = options.reduce((total, option) => total + M.toCents(option.price), M.toCents(variant.price));
       let lineCents = unitCents * item.quantity;
       cents += lineCents;
+      if (variant.originalPrice !== null) {
+        promoCents += (M.toCents(variant.originalPrice) - M.toCents(variant.price)) * item.quantity;
+        promoRate = variant.discountRate;
+      }
       lines.push({
         text: `${M.formatArticle(variant)} × ${item.quantity}`,
         options: options.map((option) => `+ ${option.label} (${formatPrice(option.price)})`).join(" · "),
@@ -512,6 +521,9 @@ M.getSummaryData = function () {
   return {
     lines,
     dealershipShortName: dealership?.shortName ?? "la concession",
+    promoLabel: promoRate === null ? "Dont promotion" : `Dont promotion −${promoRate} %`,
+    promo: `−${formatPrice(promoCents / 100)}`,
+    hasPromo: promoCents > 0,
     total: formatPrice(cents / 100),
     confirmLabel: M.isSubmitting ? "Envoi de la commande…" : "Confirmer la commande",
     isDisabled: M.isSubmitting || M.dealershipId === null || M.slotId === null,
@@ -817,6 +829,10 @@ V.createSummaryFragment = function (summary) {
   fragment
     .querySelector('slot[name="lines"]')
     .replaceWith(...summary.lines.map((line) => htmlToFragment(genericRenderer(templateSummaryLine, line))));
+
+  if (!summary.hasPromo) {
+    fragment.querySelector("[data-summary-promo]").remove();
+  }
 
   let button = fragment.querySelector("[data-confirm]");
   button.disabled = summary.isDisabled;

@@ -1,9 +1,11 @@
 import { AuthData } from "../../data/auth.js";
 import { CartData } from "../../data/cart.js";
 import { CategoryData } from "../../data/category.js";
+import { ProductData } from "../../data/product.js";
 import { htmlToFragment, replaceKeepingFocus } from "../../lib/utils.js";
 import { HeaderView } from "../../ui/header/index.js";
 import { FooterView } from "../../ui/footer/index.js";
+import { PromoBannerView } from "../../ui/promo-banner/index.js";
 import template from "./template.html?raw";
 
 /**
@@ -29,9 +31,14 @@ import template from "./template.html?raw";
  * déconnexion depuis ce menu ramène au catalogue : la page affichée pouvait
  * montrer des données du compte.
  *
+ * Le bandeau de la promotion automatique (PRO-c), sous l'en-tête, est
+ * redemandé à chaque navigation : la promotion suit les stocks, une commande
+ * peut la faire changer. La dernière promotion connue s'affiche tout de
+ * suite, puis le bandeau est mis à jour dès que l'API répond.
+ *
  * Découpage MVC strict, comme une page :
  *   M — catégories du menu, état ouvert / fermé des deux menus, nombre
- *       d'articles du panier, compte connecté, déconnexion ;
+ *       d'articles du panier, compte connecté, déconnexion, promotion ;
  *   V — construction du DOM, ouverture du panneau, écouteurs ;
  *   C — réaction aux actions de l'utilisateur, seul lien entre M et V.
  */
@@ -55,6 +62,48 @@ let M = {
   isWatchingAccount: false, // le modèle est abonné aux changements de compte
   isAccountMenuOpen: false, // le menu du compte est ouvert
   isLoggingOut: false, // une déconnexion est en cours
+  promotion: null, // produit en promotion automatique ({ id, name, discountRate… }), ou null
+  isLoadingPromotion: false, // un chargement de la promotion est en cours
+};
+
+/**
+ * @returns {boolean} true s'il faut redemander la promotion : à chaque
+ *   navigation, sauf si une demande est déjà en cours.
+ */
+M.needsPromotion = function () {
+  return !M.isLoadingPromotion;
+};
+
+/**
+ * Demande la promotion du moment. En cas d'échec, la dernière promotion
+ * connue reste affichée : la navigation suivante redemandera.
+ *
+ * @returns {Promise<void>}
+ */
+M.loadPromotion = async function () {
+  M.isLoadingPromotion = true;
+
+  try {
+    let response = await ProductData.fetchPromotion();
+    M.promotion = response.promotion;
+  } catch (error) {
+    // Rien à afficher : le bandeau est un complément, pas un contenu de la page.
+  }
+
+  M.isLoadingPromotion = false;
+};
+
+/**
+ * @returns {?{text: string, url: string}} Le bandeau : la phrase de la
+ *   maquette et la fiche du produit, ou null sans promotion.
+ */
+M.getPromotionData = function () {
+  if (M.promotion === null) return null;
+
+  return {
+    text: `Promo du moment : −${M.promotion.discountRate} % sur ${M.promotion.name}, notre produit le plus en stock`,
+    url: `/produits/${M.promotion.id}`,
+  };
 };
 
 /**
@@ -250,8 +299,11 @@ C.init = function () {
   M.loadCartCount();
   M.watchCart(C.handler_cartChange);
   M.watchAccount(C.handler_accountChange);
-  let fragment = V.init(M.getMenuData(), M.cartCount, M.getAccountData());
+  let fragment = V.init(M.getMenuData(), M.cartCount, M.getAccountData(), M.getPromotionData());
 
+  if (M.needsPromotion()) {
+    C.loadPromotion();
+  }
   if (M.needsCategories()) {
     C.loadMenu();
   }
@@ -259,6 +311,16 @@ C.init = function () {
     C.loadAccount();
   }
   return fragment;
+};
+
+/**
+ * Demande la promotion du moment, puis met à jour le bandeau.
+ *
+ * @returns {Promise<void>}
+ */
+C.loadPromotion = async function () {
+  await M.loadPromotion();
+  V.renderPromotion(M.getPromotionData());
 };
 
 /**
@@ -384,6 +446,7 @@ let V = {
   menuPanel: null, // panneau du menu de l'en-tête affiché
   cartCount: null, // compteur « Panier (n) » de l'en-tête affiché
   account: null, // compte de l'en-tête affiché (lien ou menu déroulant)
+  promoBanner: null, // conteneur du bandeau de la promotion affiché
   hasDocumentListeners: false, // les écouteurs du document sont posés
 };
 
@@ -395,9 +458,10 @@ let V = {
  * @param {ReturnType<typeof M.getMenuData>} menu - Données du menu.
  * @param {number} cartCount - Nombre d'articles du panier.
  * @param {ReturnType<typeof M.getAccountData>} account - Compte de l'en-tête.
+ * @param {ReturnType<typeof M.getPromotionData>} promotion - Bandeau de la promotion.
  * @returns {DocumentFragment}
  */
-V.init = function (menu, cartCount, account) {
+V.init = function (menu, cartCount, account, promotion) {
   let layout = htmlToFragment(template);
 
   let header = HeaderView.dom(menu, cartCount, account, {
@@ -413,6 +477,9 @@ V.init = function (menu, cartCount, account) {
 
   layout.querySelector('slot[name="footer"]').replaceWith(FooterView.dom());
 
+  V.promoBanner = layout.querySelector("[data-promo-banner]");
+  V.renderPromotion(promotion);
+
   if (!V.hasDocumentListeners) {
     document.addEventListener("click", C.handler_clickDocument);
     document.addEventListener("keydown", C.handler_keydown);
@@ -422,6 +489,19 @@ V.init = function (menu, cartCount, account) {
   }
 
   return layout;
+};
+
+/**
+ * Affiche le bandeau de la promotion, ou le vide s'il n'y en a pas.
+ *
+ * @param {ReturnType<typeof M.getPromotionData>} promotion
+ */
+V.renderPromotion = function (promotion) {
+  if (promotion === null) {
+    V.promoBanner.replaceChildren();
+    return;
+  }
+  V.promoBanner.replaceChildren(PromoBannerView.dom(promotion));
 };
 
 /**

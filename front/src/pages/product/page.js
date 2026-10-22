@@ -61,6 +61,13 @@ import templateFeedback from "./feedback.html?raw";
 // affichent « Photo à venir ».
 const GALLERY_SLOTS = 4;
 
+// Classes du prix, écrites en entier : rouge des promotions pour le produit
+// en promotion automatique (PRO-c).
+const PRICE_CLASSES = {
+  promo: "text-accent",
+  regular: "text-ink",
+};
+
 // ---------------------------------------------------------------------------
 // M — Modèle
 // ---------------------------------------------------------------------------
@@ -494,16 +501,19 @@ M.getPurchaseData = function () {
 /**
  * Prépare un produit du bloc « Vous aimerez aussi » pour la carte produit.
  *
- * @param {{id: number, name: string, price: number, image: ?string, variantId: ?number,
- *   stock: number, lowStockThreshold: number}} product
- * @returns {{id: number, name: string, price: number, imageUrl: ?string,
- *   variantId: ?number, stockStatus: "in"|"low"|"out", isAdded: boolean}}
+ * @param {{id: number, name: string, price: number, originalPrice: ?number,
+ *   discountRate: ?number, image: ?string, variantId: ?number, stock: number, lowStockThreshold: number}} product
+ * @returns {{id: number, name: string, price: number, originalPrice: ?number,
+ *   discountRate: ?number, imageUrl: ?string, variantId: ?number,
+ *   stockStatus: "in"|"low"|"out", isAdded: boolean}}
  */
 M.toCardData = function (product) {
   return {
     id: product.id,
     name: product.name,
     price: product.price,
+    originalPrice: product.originalPrice,
+    discountRate: product.discountRate,
     imageUrl: ProductData.imageUrl(product.image),
     variantId: product.variantId,
     stockStatus: getStockStatus(product.stock, product.lowStockThreshold),
@@ -550,7 +560,8 @@ M.getRelatedCard = function (productId) {
  * Rassemble tout ce que la Vue doit afficher, déjà préparé.
  *
  * @returns {{error: ?{title: string, text: string}, page: ?{name: string,
- *   subtitle: string, price: string, stockStatus: "in"|"low"|"out",
+ *   subtitle: string, price: string, isPromo: boolean, originalPrice: string,
+ *   discountRate: string, stockStatus: "in"|"low"|"out",
  *   categoryName: string, categoryUrl: string},
  *   parent: ?{name: string, url: string}, description: ?string, gallery: ?Object,
  *   purchase: ?ReturnType<typeof M.getPurchaseData>,
@@ -579,6 +590,9 @@ M.getViewData = function () {
       name: M.product.name,
       subtitle: M.getSubtitle(),
       price: formatPrice(M.product.price),
+      isPromo: M.product.originalPrice !== null,
+      originalPrice: M.product.originalPrice === null ? "" : formatPrice(M.product.originalPrice),
+      discountRate: M.product.discountRate === null ? "" : String(M.product.discountRate),
       stockStatus: M.getStockStatus(),
       categoryName: M.product.category.name,
       categoryUrl: `/categories/${M.product.category.slug}`,
@@ -831,7 +845,15 @@ V.createGalleryFragment = function (galleryData) {
  * @returns {DocumentFragment}
  */
 V.createPageFragment = function (data) {
-  let page = htmlToFragment(genericRenderer(template, data.page));
+  let priceClasses = data.page.isPromo ? PRICE_CLASSES.promo : PRICE_CLASSES.regular;
+  let page = htmlToFragment(genericRenderer(template, { ...data.page, priceClasses }));
+
+  // Un template n'a pas de condition : la promotion (PRO-c) se retire ici.
+  if (!data.page.isPromo) {
+    for (const element of page.querySelectorAll("[data-promo]")) {
+      element.remove();
+    }
+  }
 
   let parentSlot = page.querySelector('slot[name="breadcrumb-parent"]');
   if (data.parent === null) {

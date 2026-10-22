@@ -10,8 +10,8 @@ use PDOStatement;
 use Throwable;
 
 /**
- * Accès aux commandes (US CMD-a), à leur gestion au back-office (US PIL-b) et
- * à l'historique du client (US SUI-c).
+ * Accès aux commandes (US CMD-a), à leur gestion au back-office (US PIL-b), à
+ * leurs statistiques (US PIL-a) et à l'historique du client (US SUI-c).
  *
  * L'enregistrement d'une commande, la baisse des stocks et leur journal
  * (US STK-a, StockModel) se font dans UNE transaction : si un seul article
@@ -52,7 +52,8 @@ final class OrderModel
      * est annulée : ni commande, ni baisse, ni journal.
      *
      * Nom, variante, référence et prix sont copiés depuis la base dans les
-     * lignes de commande : le prix ne vient jamais du navigateur. Il en va de
+     * lignes de commande : le prix ne vient jamais du navigateur. Le produit
+     * en promotion automatique (US PRO-c) est copié à son prix remisé. Il en va de
      * même des options cochées (US OPT-a) : libellé et supplément sont copiés
      * depuis product_option, et une option qui n'appartient pas au produit de
      * sa ligne annule toute la commande.
@@ -79,6 +80,10 @@ final class OrderModel
         $this->pdo->beginTransaction();
 
         try {
+            // Lu avant la baisse du stock (US PRO-c) : cette commande ne doit
+            // pas changer la promotion du prix qu'elle fige.
+            $promotedId = $this->findPromotedId();
+
             // La commande est créée d'abord : le journal des mouvements la
             // référence. Elle disparaît avec le rollBack si un article manque.
             $orderId     = $this->insertOrder($customerId, $dealershipId, $pickupStart, $pickupEnd);
@@ -90,7 +95,7 @@ final class OrderModel
                 return ['orderId' => null, 'unavailable' => $unavailable, 'refusedOptions' => []];
             }
 
-            $refusedOptions = $this->insertLines($orderId, $items);
+            $refusedOptions = $this->insertLines($orderId, $items, $promotedId);
 
             if ($refusedOptions !== []) {
                 $this->pdo->rollBack();
@@ -544,6 +549,106 @@ final class OrderModel
     }
 
     /**
+     * Revenus encaissés de chaque jour d'une période (US PIL-a). Le paiement
+     * se fait sur place, au retrait : une commande compte le jour où elle est
+     * passée à « retirée » (ligne « retiree » de order_event, une seule par
+     * commande puisque le cycle est strict). Un jour sans retrait est absent.
+     *
+     * @param DateTimeImmutable $from Début de la période, inclus.
+     * @param DateTimeImmutable $to   Fin de la période, exclue.
+     *
+     * @return array<string, float> Revenus de chaque jour, clé « 2026-10-21 ».
+     */
+    public function findDailyRevenue(DateTimeImmutable $from, DateTimeImmutable $to): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT DATE(order_event.created_at) AS day, SUM(customer_order.total) AS revenue
+               FROM customer_order
+         INNER JOIN order_event ON order_event.order_id = customer_order.id
+                                AND order_event.status = \'retiree\'
+              WHERE customer_order.status = \'retiree\'
+                AND order_event.created_at >= :from
+                AND order_event.created_at < :to
+           GROUP BY DATE(order_event.created_at)'
+        );
+        $statement->bindValue(':from', $from->format(self::DATETIME));
+        $statement->bindValue(':to', $to->format(self::DATETIME));
+        $statement->execute();
+
+        $rows    = $statement->fetchAll();
+        $revenue = [];
+
+        for ($i = 0; $i < count($rows); $i++) {
+            $revenue[$rows[$i]['day']] = (float) $rows[$i]['revenue'];
+        }
+
+        return $revenue;
+    }
+
+    /**
+     * Commandes passées pendant une période, annulées exclues (US PIL-a).
+     *
+     * @param DateTimeImmutable $from Début de la période, inclus.
+     * @param DateTimeImmutable $to   Fin de la période, exclue.
+     *
+     * @return int
+     */
+    public function countPlaced(DateTimeImmutable $from, DateTimeImmutable $to): int
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT COUNT(*)
+               FROM customer_order
+              WHERE customer_order.status <> \'annulee\'
+                AND customer_order.created_at >= :from
+                AND customer_order.created_at < :to'
+        );
+        $statement->bindValue(':from', $from->format(self::DATETIME));
+        $statement->bindValue(':to', $to->format(self::DATETIME));
+        $statement->execute();
+
+        return (int) $statement->fetchColumn();
+    }
+
+    /**
+     * Produits les plus vendus pendant une période (US PIL-a) : quantités des
+     * lignes des commandes passées, annulées exclues. Les lignes sont
+     * regroupées par le nom copié à la commande : un produit supprimé depuis
+     * reste compté.
+     *
+     * @param DateTimeImmutable $from  Début de la période, inclus.
+     * @param DateTimeImmutable $to    Fin de la période, exclue.
+     * @param int               $limit Nombre de produits.
+     *
+     * @return array<int, array{name:string, quantity:int}> Les plus vendus d'abord.
+     */
+    public function findBestSellers(DateTimeImmutable $from, DateTimeImmutable $to, int $limit): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT order_line.product_name, SUM(order_line.quantity) AS quantity
+               FROM order_line
+         INNER JOIN customer_order ON customer_order.id = order_line.order_id
+              WHERE customer_order.status <> \'annulee\'
+                AND customer_order.created_at >= :from
+                AND customer_order.created_at < :to
+           GROUP BY order_line.product_name
+           ORDER BY quantity DESC, order_line.product_name
+              LIMIT :limit'
+        );
+        $statement->bindValue(':from', $from->format(self::DATETIME));
+        $statement->bindValue(':to', $to->format(self::DATETIME));
+        $statement->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $statement->execute();
+
+        return array_map(
+            static fn (array $row): array => [
+                'name'     => $row['product_name'],
+                'quantity' => (int) $row['quantity'],
+            ],
+            $statement->fetchAll(),
+        );
+    }
+
+    /**
      * @param int               $customerId
      * @param int               $dealershipId
      * @param DateTimeImmutable $pickupStart
@@ -571,10 +676,24 @@ final class OrderModel
     }
 
     /**
+     * Identifiant du produit en promotion automatique (US PRO-c), lu dans la
+     * transaction de la commande.
+     *
+     * @return int|null null si aucun produit n'est en promotion.
+     */
+    private function findPromotedId(): ?int
+    {
+        $id = $this->pdo->query('SELECT ' . ProductModel::PROMOTED_ID)->fetchColumn();
+
+        return $id === null || $id === false ? null : (int) $id;
+    }
+
+    /**
      * Copie, pour chaque ligne, le nom, la variante (libellé complet,
      * « Taille M », US OPT-b), la référence et le prix tels qu'ils sont en
-     * base, puis ses options (US OPT-a) : leur libellé et leur supplément,
-     * ajouté au prix unitaire de la ligne.
+     * base, remisé pour le produit en promotion (US PRO-c), puis ses options
+     * (US OPT-a) : leur libellé et leur supplément, ajouté au prix unitaire
+     * de la ligne. La remise ne porte pas sur les suppléments.
      *
      * Une option n'est copiée que si elle appartient au produit de la
      * variante : MySQL le vérifie par la jointure, si bien qu'un identifiant
@@ -582,15 +701,17 @@ final class OrderModel
      *
      * @param int                                                                    $orderId
      * @param array<int, array{variantId:int, quantity:int, optionIds:array<int, int>}> $items
+     * @param int|null                                                               $promotedId Produit en
+     *                                                                                           promotion, ou null.
      *
      * @return array<int, int> Variantes dont une option est refusée (vide si tout va bien).
      */
-    private function insertLines(int $orderId, array $items): array
+    private function insertLines(int $orderId, array $items, ?int $promotedId): array
     {
         $line = $this->pdo->prepare(
             'INSERT INTO order_line (order_id, variant_id, product_name, variant_label, reference, unit_price, quantity)
              SELECT :order, variant.id, product.name, ' . ProductModel::VARIANT_LABEL . ',
-                    variant.reference, product.price, :quantity
+                    variant.reference, ' . ProductModel::salePrice(':promoted') . ', :quantity
                FROM variant
          INNER JOIN product ON product.id = variant.product_id
               WHERE variant.id = :variant'
@@ -617,6 +738,7 @@ final class OrderModel
             $line->bindValue(':order', $orderId, PDO::PARAM_INT);
             $line->bindValue(':quantity', $items[$i]['quantity'], PDO::PARAM_INT);
             $line->bindValue(':variant', $items[$i]['variantId'], PDO::PARAM_INT);
+            $line->bindValue(':promoted', $promotedId, $promotedId === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
             $line->execute();
 
             $optionIds = $items[$i]['optionIds'];

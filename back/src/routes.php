@@ -24,6 +24,7 @@ use App\Controller\ProductController;
 return [
     'GET  /api/products'   => [CatalogueController::class, 'index'],
     'GET  /api/product'    => [ProductController::class,   'show'],
+    'GET  /api/promotion'  => [ProductController::class,   'promotion'],
     'GET  /api/categories' => [CategoryController::class,  'index'],
     'GET  /api/cart'       => [CartController::class,      'show'],
     'GET  /api/me'             => [AuthController::class,      'me'],
@@ -53,4 +54,5 @@ return [
     'POST /api/admin/products'        => [AdminController::class, 'createProduct'],
     'POST /api/admin/products/update' => [AdminController::class, 'updateProduct'],
     'POST /api/admin/products/delete' => [AdminController::class, 'deleteProduct'],
+    'GET  /api/admin/stats'           => [AdminController::class, 'stats'],
 ];

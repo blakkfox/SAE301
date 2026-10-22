@@ -11,6 +11,7 @@ import { SortSelectView } from "../../ui/sort-select/index.js";
 import { StockBadgeView } from "../../ui/stock-badge/index.js";
 import template from "./template.html?raw";
 import templateSummary from "./summary.html?raw";
+import templatePromoNote from "./promo-note.html?raw";
 import templateLegend from "./legend.html?raw";
 import templateEmptyInStock from "./empty-in-stock.html?raw";
 
@@ -35,6 +36,9 @@ import templateEmptyInStock from "./empty-in-stock.html?raw";
 // Tri affiché tant que le serveur n'a pas répondu ; identique au tri par
 // défaut du serveur (CatalogueController::DEFAULT_SORT).
 const DEFAULT_SORT = "price_asc";
+
+// Principe de la promotion automatique (PRO-c), texte de la maquette.
+const PROMO_NOTE = "La promotion change automatiquement selon les stocks de la concession.";
 
 // ---------------------------------------------------------------------------
 // M — Modèle
@@ -117,16 +121,19 @@ M.loadPage = async function (page, sort) {
 /**
  * Prépare un produit de l'API pour la carte produit.
  *
- * @param {{id: number, name: string, price: number, image: ?string, variantId: ?number,
- *   stock: number, lowStockThreshold: number}} product
- * @returns {{id: number, name: string, price: number, imageUrl: ?string,
- *   variantId: ?number, stockStatus: "in"|"low"|"out", isAdded: boolean}}
+ * @param {{id: number, name: string, price: number, originalPrice: ?number,
+ *   discountRate: ?number, image: ?string, variantId: ?number, stock: number, lowStockThreshold: number}} product
+ * @returns {{id: number, name: string, price: number, originalPrice: ?number,
+ *   discountRate: ?number, imageUrl: ?string, variantId: ?number,
+ *   stockStatus: "in"|"low"|"out", isAdded: boolean}}
  */
 M.toCardData = function (product) {
   return {
     id: product.id,
     name: product.name,
     price: product.price,
+    originalPrice: product.originalPrice,
+    discountRate: product.discountRate,
     imageUrl: ProductData.imageUrl(product.image),
     variantId: product.variantId,
     stockStatus: getStockStatus(product.stock, product.lowStockThreshold),
@@ -210,8 +217,8 @@ M.getPageNumbers = function (pageCount) {
 /**
  * Rassemble tout ce que la Vue doit afficher, déjà préparé.
  *
- * @returns {{isLoading: boolean, summary: ?string, sort: string, hideSoldOut: boolean,
- *   message: ?{type: string, texte: string},
+ * @returns {{isLoading: boolean, summary: ?string, promoNote: ?string, sort: string,
+ *   hideSoldOut: boolean, message: ?{type: string, texte: string},
  *   products: Array<ReturnType<typeof M.toCardData>>,
  *   legend: ReturnType<typeof M.getLegendData>,
  *   pagination: ?{page: number, pagesTotal: number, pages: number[]}}}
@@ -222,6 +229,7 @@ M.getViewData = function () {
   return {
     isLoading: M.isLoading,
     summary: catalogue === null ? null : M.formatSummary(catalogue.total),
+    promoNote: catalogue === null || catalogue.promotion === null ? null : PROMO_NOTE,
     sort: M.sort ?? DEFAULT_SORT,
     hideSoldOut: M.hideSoldOut,
     legend: M.getLegendData(),
@@ -435,6 +443,13 @@ V.createPageFragment = function (data) {
     summarySlot.remove();
   } else {
     summarySlot.replaceWith(htmlToFragment(genericRenderer(templateSummary, { summary: data.summary })));
+  }
+
+  let promoNoteSlot = page.querySelector('slot[name="promo-note"]');
+  if (data.promoNote === null) {
+    promoNoteSlot.remove();
+  } else {
+    promoNoteSlot.replaceWith(htmlToFragment(genericRenderer(templatePromoNote, { text: data.promoNote })));
   }
 
   page

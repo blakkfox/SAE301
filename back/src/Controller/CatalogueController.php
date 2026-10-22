@@ -25,10 +25,12 @@ final class CatalogueController
      * choisit donc jamais un nom de colonne : il choisit une entrée dans un
      * tableau que nous contrôlons entièrement. Un paramètre lié ne conviendrait
      * pas : il protège une VALEUR, jamais un IDENTIFIANT comme une colonne.
+     * sale_price est la colonne du prix payé (US PRO-c, ProductModel) : le
+     * produit en promotion est trié à son prix remisé, celui de sa carte.
      */
     private const SORTS = [
-        'price_asc'  => 'product.price ASC',
-        'price_desc' => 'product.price DESC',
+        'price_asc'  => 'sale_price ASC',
+        'price_desc' => 'sale_price DESC',
         'name_asc'   => 'product.name ASC',
         'newest'     => 'product.created_at DESC',
     ];
@@ -63,7 +65,9 @@ final class CatalogueController
     /**
      * GET /api/products?page=2&sort=price_asc&category=collection-honda&inStock=1
      *
-     * Répond { products, sort, page, pageCount, total, perPage }.
+     * Répond { products, sort, page, pageCount, total, perPage, promotion }.
+     * promotion (US PRO-c) : le produit en promotion automatique, comme
+     * GET /api/promotion, ou null ; le catalogue en signale le principe.
      * Le front n'a jamais besoin de lire le cookie (HttpOnly) : l'API lui
      * rappelle le tri effectivement appliqué.
      * category est facultatif : sans lui, tout le catalogue. Une catégorie
@@ -126,6 +130,7 @@ final class CatalogueController
             'pageCount' => $pageCount,
             'perPage'   => self::PER_PAGE,
             'total'     => $total,
+            'promotion' => $this->products->findPromotion(),
         ]);
     }
 
