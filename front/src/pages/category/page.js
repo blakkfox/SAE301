@@ -232,16 +232,19 @@ M.getChipsData = function (section) {
 /**
  * Prépare un produit de l'API pour la carte produit.
  *
- * @param {{id: number, name: string, price: number, image: ?string, variantId: ?number,
- *   stock: number}} product
- * @returns {{id: number, name: string, price: number, imageUrl: ?string,
- *   variantId: ?number, stockStatus: "in"|"low"|"out", isAdded: boolean}}
+ * @param {{id: number, name: string, price: number, originalPrice: ?number,
+ *   discountRate: ?number, image: ?string, variantId: ?number, stock: number}} product
+ * @returns {{id: number, name: string, price: number, originalPrice: ?number,
+ *   discountRate: ?number, imageUrl: ?string, variantId: ?number,
+ *   stockStatus: "in"|"low"|"out", isAdded: boolean}}
  */
 M.toCardData = function (product) {
   return {
     id: product.id,
     name: product.name,
     price: product.price,
+    originalPrice: product.originalPrice,
+    discountRate: product.discountRate,
     imageUrl: ProductData.imageUrl(product.image),
     variantId: product.variantId,
     stockStatus: getStockStatus(product.stock, product.lowStockThreshold),

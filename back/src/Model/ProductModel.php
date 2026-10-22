@@ -77,6 +77,25 @@ final class ProductModel
     private const IN_CATEGORY = 'product.category_id IN (
         SELECT category.id FROM category WHERE :category IN (category.id, category.parent_id))';
 
+    /** Réduction de la promotion automatique (US PRO-c), en pour cent du prix du produit. */
+    public const PROMO_RATE = 20;
+
+    /**
+     * Sous-requête SQL de l'identifiant du produit en promotion automatique
+     * (US PRO-c) : le produit visible au plus grand stock total, le plus
+     * petit id en cas d'égalité ; NULL si aucun produit visible n'a de stock.
+     * Recalculée à chaque requête : la promotion suit les ventes et les
+     * réassorts.
+     * Le FROM product interne masque la table product de la requête
+     * appelante : VISIBLE et IN_STOCK y désignent bien le candidat.
+     */
+    public const PROMOTED_ID = '(SELECT product.id
+                  FROM product
+                 WHERE ' . self::VISIBLE . ' AND ' . self::IN_STOCK . '
+              ORDER BY (SELECT SUM(variant.stock) FROM variant WHERE variant.product_id = product.id) DESC,
+                       product.id
+                 LIMIT 1)';
+
     /** Code SQLSTATE d'une contrainte d'unicité violée (référence ou libellé déjà pris). */
     private const INTEGRITY_VIOLATION = '23000';
 
@@ -132,7 +151,8 @@ final class ProductModel
      * @param bool     $inStockOnly true pour ne garder que les produits dont
      *                              une variante au moins est en stock.
      *
-     * @return array<int, array{id:int, name:string, price:float, image:?string, variantId:?int, stock:int,
+     * @return array<int, array{id:int, name:string, price:float, originalPrice:?float, discountRate:?int,
+     *                          image:?string, variantId:?int, stock:int,
      *                          lowStockThreshold:int}>
      */
     public function findVisiblePage(
@@ -146,7 +166,7 @@ final class ProductModel
         // toujours le même ordre, sinon un produit pourrait apparaître sur
         // deux pages successives.
         $sql = 'SELECT product.id, product.name, product.price, product.image, product.low_stock_threshold, '
-                     . self::SINGLE_VARIANT . ', ' . self::TOTAL_STOCK . '
+                     . self::SINGLE_VARIANT . ', ' . self::TOTAL_STOCK . ', ' . self::promotionColumns() . '
                   FROM product
                  WHERE ' . self::VISIBLE . self::categoryFilter($categoryId) . self::stockFilter($inStockOnly) . "
               ORDER BY {$orderBy}, product.id
@@ -167,20 +187,22 @@ final class ProductModel
      *
      * @param int $id Identifiant du produit.
      *
-     * @return array{id:int, name:string, description:?string, price:float, image:?string,
+     * @return array{id:int, name:string, description:?string, price:float, originalPrice:?float,
+     *               discountRate:?int, image:?string,
      *               variantAxis:?string, lowStockThreshold:int,
      *               category:array{id:int, name:string, slug:string,
      *                              parent:?array{id:int, name:string, slug:string}}}|null
      *         null si le produit n'existe pas ou n'est pas visible ;
      *         variantAxis : ce qui distingue ses variantes (« Taille »…), ou null (US OPT-b) ;
-     *         lowStockThreshold : seuil « Bientôt épuisé » du produit (US GOF-a).
+     *         lowStockThreshold : seuil « Bientôt épuisé » du produit (US GOF-a) ;
+     *         price, originalPrice, discountRate : voir self::toPrices() (US PRO-c).
      */
     public function findVisibleById(int $id): ?array
     {
         // LEFT JOIN : une catégorie de premier niveau n'a pas de parent, et le
         // produit doit tout de même être trouvé.
         $sql = 'SELECT product.id, product.name, product.description, product.price, product.image,
-                       product.variant_axis, product.low_stock_threshold,
+                       product.variant_axis, product.low_stock_threshold, ' . self::promotionColumns() . ',
                        category.id   AS category_id,
                        category.name AS category_name,
                        category.slug AS category_slug,
@@ -207,7 +229,7 @@ final class ProductModel
             'id'          => (int) $row['id'],
             'name'        => $row['name'],
             'description' => $row['description'],
-            'price'       => (float) $row['price'],
+        ] + self::toPrices($row) + [
             'image'       => $row['image'],
             'variantAxis' => $row['variant_axis'],
             // Seuil « Bientôt épuisé » du produit (US GOF-a).
@@ -367,7 +389,8 @@ final class ProductModel
      * @param int $categoryId Catégorie du produit affiché.
      * @param int $limit      Nombre de suggestions.
      *
-     * @return array<int, array{id:int, name:string, price:float, image:?string, variantId:?int, stock:int,
+     * @return array<int, array{id:int, name:string, price:float, originalPrice:?float, discountRate:?int,
+     *                          image:?string, variantId:?int, stock:int,
      *                          lowStockThreshold:int}>
      */
     public function findRelated(int $productId, int $categoryId, int $limit): array
@@ -375,7 +398,7 @@ final class ProductModel
         // « product.category_id = :category » vaut 1 ou 0 : trié en DESC, il
         // place la même catégorie en tête.
         $sql = 'SELECT product.id, product.name, product.price, product.image, product.low_stock_threshold, '
-                     . self::SINGLE_VARIANT . ', ' . self::TOTAL_STOCK . '
+                     . self::SINGLE_VARIANT . ', ' . self::TOTAL_STOCK . ', ' . self::promotionColumns() . '
                   FROM product
                  WHERE product.id <> :product
                    AND ' . self::VISIBLE . '
@@ -396,14 +419,16 @@ final class ProductModel
      *
      * Seules les variantes d'un produit visible sont renvoyées : une variante
      * inconnue ou retirée du catalogue est simplement absente du résultat.
-     * Le prix vient toujours de la base, jamais du navigateur. Le stock sert
+     * Le prix vient toujours de la base, jamais du navigateur : remisé si le
+     * produit est en promotion (US PRO-c, voir self::toPrices()). Le stock sert
      * aux contraintes du panier (US STK-c) ; il est revérifié à la commande.
      *
      * @param array<int, int> $variantIds Identifiants de variantes, déjà validés
      *                                    par le contrôleur (entiers > 0, sans doublon).
      *
      * @return array<int, array{variantId:int, label:string, reference:string,
-     *                          productId:int, name:string, price:float, image:?string, stock:int,
+     *                          productId:int, name:string, price:float, originalPrice:?float,
+     *                          discountRate:?int, image:?string, stock:int,
      *                          lowStockThreshold:int}>
      */
     public function findCartVariants(array $variantIds): array
@@ -421,7 +446,8 @@ final class ProductModel
 
         $sql = 'SELECT variant.id AS variant_id, ' . self::VARIANT_LABEL . ' AS label,
                        variant.reference, variant.stock,
-                       product.id, product.name, product.price, product.image, product.low_stock_threshold
+                       product.id, product.name, product.price, product.image, product.low_stock_threshold,
+                       ' . self::promotionColumns() . '
                   FROM variant
             INNER JOIN product ON product.id = variant.product_id
                  WHERE variant.id IN (' . implode(', ', $markers) . ')
@@ -442,7 +468,7 @@ final class ProductModel
                 'reference' => $row['reference'],
                 'productId' => (int) $row['id'],
                 'name'      => $row['name'],
-                'price'     => (float) $row['price'],
+            ] + self::toPrices($row) + [
                 'image'     => $row['image'],
                 'stock'     => (int) $row['stock'],
                 'lowStockThreshold' => (int) $row['low_stock_threshold'],
@@ -946,6 +972,78 @@ final class ProductModel
     }
 
     /**
+     * Le produit en promotion automatique (US PRO-c), pour le bandeau du site.
+     *
+     * @return array{id:int, name:string, price:float, originalPrice:?float, discountRate:?int}|null
+     *         null si aucun produit n'est en promotion ; price est le prix remisé.
+     */
+    public function findPromotion(): ?array
+    {
+        $row = $this->pdo->query(
+            'SELECT product.id, product.name, product.price, ' . self::promotionColumns() . '
+               FROM product
+              WHERE product.id = ' . self::PROMOTED_ID
+        )->fetch();
+
+        if ($row === false) {
+            return null;
+        }
+
+        return ['id' => (int) $row['id'], 'name' => $row['name']] + self::toPrices($row);
+    }
+
+    /**
+     * Expression SQL du prix payé d'un produit (US PRO-c) : son prix, diminué
+     * de PROMO_RATE % s'il est le produit en promotion, arrondi au centime.
+     * La requête doit joindre product.
+     *
+     * @param string $promotedId Expression SQL de l'identifiant du produit en
+     *                           promotion : self::PROMOTED_ID, ou un marqueur
+     *                           lié (OrderModel, qui le lit avant de baisser le stock).
+     *
+     * @return string Le fragment SQL.
+     */
+    public static function salePrice(string $promotedId): string
+    {
+        return 'ROUND(product.price * IF(product.id <=> ' . $promotedId . ', '
+            . (100 - self::PROMO_RATE) . ' / 100, 1), 2)';
+    }
+
+    /**
+     * Colonnes SQL sale_price et is_promoted d'un produit (US PRO-c), lues
+     * par self::toPrices(). La requête doit joindre product.
+     *
+     * @return string Le fragment SQL.
+     */
+    private static function promotionColumns(): string
+    {
+        return self::salePrice(self::PROMOTED_ID) . ' AS sale_price, product.id <=> '
+            . self::PROMOTED_ID . ' AS is_promoted';
+    }
+
+    /**
+     * Prix d'un produit tels que l'API les renvoie (US PRO-c).
+     *
+     * @param array{price:string, sale_price:string, is_promoted:string} $row Ligne lue avec
+     *                                                                         self::promotionColumns().
+     *
+     * @return array{price:float, originalPrice:?float, discountRate:?int}
+     *         price : le prix à payer, remisé si le produit est en promotion ;
+     *         originalPrice : le prix avant remise, ou null sans promotion ;
+     *         discountRate : la réduction en pour cent, ou null sans promotion.
+     */
+    private static function toPrices(array $row): array
+    {
+        $isPromoted = (int) $row['is_promoted'] === 1;
+
+        return [
+            'price'         => (float) $row['sale_price'],
+            'originalPrice' => $isPromoted ? (float) $row['price'] : null,
+            'discountRate'  => $isPromoted ? self::PROMO_RATE : null,
+        ];
+    }
+
+    /**
      * Fragment SQL à ajouter après self::VISIBLE pour filtrer par catégorie.
      *
      * @param int|null $categoryId Catégorie, ou null pour ne pas filtrer.
@@ -988,21 +1086,23 @@ final class ProductModel
      * DECIMAL et les entiers sous forme de chaînes : on les type pour que le
      * JSON contienne de vrais nombres.
      *
-     * @param array{id:string, name:string, price:string, image:?string, low_stock_threshold:string,
-     *              single_variant_id:?string, stock:string} $row
+     * @param array{id:string, name:string, price:string, sale_price:string, is_promoted:string,
+     *              image:?string, low_stock_threshold:string, single_variant_id:?string, stock:string} $row
      *
-     * @return array{id:int, name:string, price:float, image:?string, variantId:?int, stock:int,
+     * @return array{id:int, name:string, price:float, originalPrice:?float, discountRate:?int,
+     *                          image:?string, variantId:?int, stock:int,
      *               lowStockThreshold:int}
      *         variantId : la variante unique du produit, ou null s'il en a plusieurs ;
      *         stock : le stock total de ses variantes (US STK-b) ;
-     *         lowStockThreshold : seuil « Bientôt épuisé » du produit (US GOF-a).
+     *         lowStockThreshold : seuil « Bientôt épuisé » du produit (US GOF-a) ;
+     *         price, originalPrice, discountRate : voir self::toPrices() (US PRO-c).
      */
     private static function toCard(array $row): array
     {
         return [
             'id'                => (int) $row['id'],
             'name'              => $row['name'],
-            'price'             => (float) $row['price'],
+        ] + self::toPrices($row) + [
             'image'             => $row['image'],
             'variantId'         => $row['single_variant_id'] === null ? null : (int) $row['single_variant_id'],
             'stock'             => (int) $row['stock'],

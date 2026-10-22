@@ -8,33 +8,48 @@ import templateActionAdd from "./action-add.html?raw";
 import templateActionChoose from "./action-choose.html?raw";
 import templateActionSoldOut from "./action-sold-out.html?raw";
 
+// Classes du prix, écrites en entier : rouge des promotions pour le produit
+// en promotion automatique (PRO-c).
+const PRICE_CLASSES = {
+  promo: "text-accent",
+  regular: "text-ink",
+};
+
 // Carte d'un produit, telle que la prépare le modèle de la page :
-// { id, name, price, imageUrl, variantId, stockStatus, isAdded } — imageUrl
+// { id, name, price, originalPrice, discountRate, imageUrl, variantId,
+// stockStatus, isAdded } — originalPrice (prix avant remise) et discountRate
+// (réduction en pour cent) valent null hors promotion (PRO-c) ; imageUrl
 // vaut null sans photo ; variantId vaut null si le produit a plusieurs
 // variantes (le bouton mène alors à la fiche) ; stockStatus est le statut de
 // stock du produit (STK-b), « out » désactive l'ajout ; isAdded vaut true
 // juste après un ajout au panier.
 let ProductCardView = {
   /**
-   * @param {{id: number, name: string, price: number, imageUrl: ?string,
-   *   variantId: ?number, stockStatus: "in"|"low"|"out", isAdded: boolean}} product
+   * @param {{id: number, name: string, price: number, originalPrice: ?number,
+   *   discountRate: ?number, imageUrl: ?string, variantId: ?number,
+   *   stockStatus: "in"|"low"|"out", isAdded: boolean}} product
    * @param {2|3} [headingLevel=2] - Niveau du titre de la carte (h2 ou h3).
    * @returns {string} Le HTML de la carte, sans son visuel ni son bouton
    *   (slots « visual » et « action »).
    */
   html: function (product, headingLevel = 2) {
     // Les valeurs sont mises en forme avant d'être passées au template.
+    let isPromo = product.originalPrice !== null;
     return genericRenderer(template, {
       id: product.id,
       name: product.name,
       price: formatPrice(product.price),
+      originalPrice: isPromo ? formatPrice(product.originalPrice) : "",
+      discountRate: product.discountRate ?? "",
+      priceClasses: isPromo ? PRICE_CLASSES.promo : PRICE_CLASSES.regular,
       headingLevel: headingLevel,
     });
   },
 
   /**
-   * @param {{id: number, name: string, price: number, imageUrl: ?string,
-   *   variantId: ?number, stockStatus: "in"|"low"|"out", isAdded: boolean}} product
+   * @param {{id: number, name: string, price: number, originalPrice: ?number,
+   *   discountRate: ?number, imageUrl: ?string, variantId: ?number,
+   *   stockStatus: "in"|"low"|"out", isAdded: boolean}} product
    * @param {2|3} headingLevel - Niveau du titre de la carte (h2 ou h3).
    * @param {{onAdd: (productId: number) => void}} actions
    * @returns {DocumentFragment} La carte, visuel et bouton compris.
@@ -45,6 +60,12 @@ let ProductCardView = {
     fragment.querySelector('slot[name="stock"]').replaceWith(StockBadgeView.dom(product.stockStatus));
     fragment.querySelector('slot[name="action"]').replaceWith(ProductCardView.action(product, actions));
     fragment.querySelector('slot[name="visual"]').replaceWith(ProductCardView.visual(product));
+
+    // Un template n'a pas de condition : la promotion se retire ici.
+    if (product.originalPrice === null) {
+      fragment.querySelector("[data-discount]").remove();
+      fragment.querySelector("[data-original-price]").remove();
+    }
 
     return fragment;
   },

@@ -295,6 +295,22 @@
   }
 
   /*
+    Étiquette de réduction (US PRO-c) : « −20 % » en blanc sur le rouge des
+    promotions, posée sur la photo d'une carte ou à côté du prix de la fiche.
+  */
+  .promo-badge {
+    display: inline-block;
+    padding: 0.25rem 0.625rem;
+    border-radius: 0.25rem;
+    background-color: var(--clr-action);
+    color: var(--clr-on-action);
+    font-size: var(--size-text-caption);
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+
+  /*
     Pastille de statut de commande (US GOF-b) : « En cours », « Disponible »,
     « Retirée » ou « Annulée ». Même forme que .stock-badge, mais une autre
     information : les deux évoluent séparément.

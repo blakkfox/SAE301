@@ -1,6 +1,5 @@
 <!--
-  Récapitulatif (400 px dès 1024 px). Hors CMD-b, et donc absents ici :
-  la ligne « Dont promotion » (PRO-c) et le champ « Code promo » (PRO-a).
+  Récapitulatif (400 px dès 1024 px). Pas encore de champ « Code promo » (PRO-a).
 -->
 <section aria-labelledby="cart-summary-title" class="flex flex-col gap-4 rounded-xl bg-page p-6 sm:p-7">
   <h2 id="cart-summary-title" class="font-display text-h3 leading-none text-ink">Récapitulatif</h2>
@@ -9,6 +8,12 @@
     <div class="flex justify-between gap-4">
       <dt class="text-ink-muted">{{subtotalTitle}} ({{subtotalLabel}})</dt>
       <dd class="font-semibold text-ink">{{subtotal}}</dd>
+    </div>
+    <!-- Remise de la promotion automatique (écran 4, PRO-c), déjà déduite du
+         sous-total : retirée sans produit en promotion. -->
+    <div data-summary-promo class="flex justify-between gap-4">
+      <dt class="text-ink-muted">{{promoLabel}}</dt>
+      <dd class="font-semibold text-accent">{{promo}}</dd>
     </div>
     <!-- Suppléments des options cochées (écran 17, OPT-a), retirée sans option. -->
     <div data-summary-options class="flex justify-between gap-4">

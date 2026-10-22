@@ -9,7 +9,7 @@ use App\Core\Response;
 use App\Model\ProductModel;
 
 /**
- * Fiche d'un produit (US DEC-c).
+ * Fiche d'un produit (US DEC-c) et promotion automatique du moment (US PRO-c).
  *
  * Le routeur du starter compare des chemins exacts : l'identifiant passe donc
  * dans la chaîne de requête (/api/product?id=13) et non dans le chemin.
@@ -64,5 +64,18 @@ final class ProductController
             'product' => $product,
             'related' => $this->products->findRelated($id, $product['category']['id'], self::RELATED_COUNT),
         ]);
+    }
+
+    /**
+     * GET /api/promotion
+     *
+     * Promotion automatique (US PRO-c), pour le bandeau du site. Répond
+     * { promotion } : le produit visible le plus en stock, remisé de
+     * ProductModel::PROMO_RATE % ({ id, name, price, originalPrice,
+     * discountRate }), ou null si aucun produit n'a de stock.
+     */
+    public function promotion(): void
+    {
+        Response::json(['promotion' => $this->products->findPromotion()]);
     }
 }

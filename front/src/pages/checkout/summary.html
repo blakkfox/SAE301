@@ -1,10 +1,17 @@
-<!-- Récapitulatif (420 px dès 1024 px). Promotions et code promo : PRO-a et PRO-c. -->
+<!-- Récapitulatif (420 px dès 1024 px). Code promo : PRO-a. -->
 <section aria-labelledby="checkout-summary-title" class="flex flex-col gap-3.5 rounded-xl bg-page p-6 sm:p-7">
   <h2 id="checkout-summary-title" class="font-display text-h3 leading-none text-ink">Récapitulatif</h2>
 
   <ul aria-label="Articles commandés" class="flex flex-col gap-3.5 text-small">
     <slot name="lines"></slot>
   </ul>
+
+  <!-- Remise de la promotion automatique (PRO-c), déjà comprise dans les
+       lignes : retirée sans produit en promotion. -->
+  <p data-summary-promo class="flex justify-between gap-4 text-small">
+    <span class="text-ink-muted">{{promoLabel}}</span>
+    <span class="font-semibold text-accent">{{promo}}</span>
+  </p>
 
   <p class="flex justify-between gap-4 text-small">
     <span class="text-ink-muted">Retrait à {{dealershipShortName}}</span>

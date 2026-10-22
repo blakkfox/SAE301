@@ -7,6 +7,9 @@
   aussi » de la fiche produit, pour garder une hiérarchie de titres continue.
 -->
 <article data-product-id="{{id}}" class="group relative flex flex-col overflow-hidden rounded-lg border border-line-subtle bg-page transition-shadow duration-200 hover:shadow-lg motion-reduce:transition-none">
+  <!-- Réduction du produit en promotion (PRO-c), retirée sinon.
+       pointer-events-none : le clic passe au lien étiré de la carte. -->
+  <p data-discount class="promo-badge pointer-events-none absolute top-3 left-3 z-10"><span class="sr-only">Promotion </span>−{{discountRate}} %</p>
   <slot name="visual"></slot>
 
   <div class="flex flex-1 flex-col items-start gap-2 p-4">
@@ -17,7 +20,12 @@
       <a href="/produits/{{id}}" data-link class="transition-colors after:absolute after:inset-0 hover:text-accent">{{name}}</a>
     </h{{headingLevel}}>
 
-    <p class="text-xl font-bold text-ink"><span class="sr-only">Prix : </span>{{price}}</p>
+    <!-- Produit en promotion (PRO-c) : prix remisé en rouge, puis prix
+         d'origine barré ; [data-original-price] est retiré sinon. -->
+    <p class="flex flex-wrap items-baseline gap-x-2">
+      <span class="text-xl font-bold {{priceClasses}}"><span class="sr-only">Prix : </span>{{price}}</span>
+      <s data-original-price class="text-sm text-ink-muted"><span class="sr-only">au lieu de </span>{{originalPrice}}</s>
+    </p>
 
     <!-- « Ajouter au panier » (variante unique), « Choisir une option »
          (plusieurs variantes) ou « Épuisé » : voir action-*.html. -->
