@@ -16,6 +16,7 @@ import { AdminCategoriesPage } from "./pages/admin-categories/page.js";
 import { AdminProductsPage } from "./pages/admin-products/page.js";
 import { AdminProductPage } from "./pages/admin-product/page.js";
 import { AdminStatsPage } from "./pages/admin-stats/page.js";
+import { AdminPromoCodesPage } from "./pages/admin-promo-codes/page.js";
 import { The404Page } from "./pages/404/page.js";
 
 // base : chemin du projet sur le serveur (BASE dans vite.config.js).
@@ -69,6 +70,9 @@ router.addRoute("/admin/produits/:id", AdminProductPage);
 
 // PIL-a — Statistiques (écran Figma n° 20).
 router.addRoute("/admin/statistiques", AdminStatsPage);
+
+// PRO-b — Gestion des codes promo (écran Figma n° 22).
+router.addRoute("/admin/codes-promo", AdminPromoCodesPage);
 
 // En dernier : toute adresse qui ne correspond à aucune route.
 router.addRoute("*", The404Page);

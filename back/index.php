@@ -29,6 +29,7 @@ use App\Model\CustomerModel;
 use App\Model\DealershipModel;
 use App\Model\OrderModel;
 use App\Model\ProductModel;
+use App\Model\PromoCodeModel;
 use App\Model\StockModel;
 
 // --- Chargement automatique des classes ------------------------------------
@@ -77,7 +78,7 @@ try {
         AuthController::class      => new AuthController(new CustomerModel($pdo)),
         OrderController::class     => new OrderController(new CustomerModel($pdo), new DealershipModel($pdo), new OrderModel($pdo, new StockModel($pdo))),
         AccountController::class   => new AccountController(new CustomerModel($pdo), new DealershipModel($pdo), new OrderModel($pdo, new StockModel($pdo))),
-        AdminController::class     => new AdminController(new CustomerModel($pdo), new ProductModel($pdo, new StockModel($pdo)), new CategoryModel($pdo), new OrderModel($pdo, new StockModel($pdo)), __DIR__ . '/../front/dist/images/produits'),
+        AdminController::class     => new AdminController(new CustomerModel($pdo), new ProductModel($pdo, new StockModel($pdo)), new CategoryModel($pdo), new OrderModel($pdo, new StockModel($pdo)), new PromoCodeModel($pdo), __DIR__ . '/../front/dist/images/produits'),
     ];
 
     $routes = require __DIR__ . '/src/routes.php';

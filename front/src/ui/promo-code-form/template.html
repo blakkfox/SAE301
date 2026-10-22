@@ -1,0 +1,55 @@
+<!--
+  Formulaire « Nouveau code promo » / « Modifier le code promo » (écran 22,
+  colonne de droite). novalidate : c'est le serveur qui valide, et ses
+  erreurs s'affichent sous leur champ (applyFieldErrors). Les dates sont des
+  champs natifs : le navigateur les affiche en jj/mm/aaaa et envoie aaaa-mm-jj.
+-->
+<form novalidate class="flex flex-col gap-5">
+  <h2 id="promo-form-title" tabindex="-1" class="font-display text-h4 leading-none text-ink">{{title}}</h2>
+
+  <div class="flex flex-col gap-2">
+    <label for="promo-code" class="text-small font-semibold text-ink">Code</label>
+    <input id="promo-code" name="code" type="text" maxlength="20" autocomplete="off" autocapitalize="characters" spellcheck="false" required value="{{code}}" placeholder="NOEL25" aria-describedby="promo-code-hint promo-code-error" data-focus-key="promo-code" class="field uppercase" />
+    <p id="promo-code-hint" class="text-caption text-ink-muted">Lettres sans accent et chiffres, de 3 à 20 caractères.</p>
+    <p id="promo-code-error" data-error-for="code" hidden class="text-caption text-accent"></p>
+  </div>
+
+  <div class="flex flex-col gap-2">
+    <label for="promo-rate" class="text-small font-semibold text-ink">Réduction (%)</label>
+    <input id="promo-rate" name="discountRate" type="number" min="1" max="90" step="1" inputmode="numeric" required value="{{discountRate}}" placeholder="25" aria-describedby="promo-rate-error" data-focus-key="promo-rate" class="field" />
+    <p id="promo-rate-error" data-error-for="discountRate" hidden class="text-caption text-accent"></p>
+  </div>
+
+  <div class="flex flex-col gap-2">
+    <label for="promo-amount" class="text-small font-semibold text-ink">Montant minimum du panier (€)</label>
+    <input id="promo-amount" name="minAmount" type="text" inputmode="decimal" autocomplete="off" value="{{minAmount}}" placeholder="50,00" aria-describedby="promo-amount-hint promo-amount-error" data-focus-key="promo-amount" class="field" />
+    <p id="promo-amount-hint" class="text-caption text-ink-muted">Vide : sans minimum.</p>
+    <p id="promo-amount-error" data-error-for="minAmount" hidden class="text-caption text-accent"></p>
+  </div>
+
+  <div class="grid gap-4 sm:grid-cols-2">
+    <div class="flex min-w-0 flex-col gap-2">
+      <label for="promo-start" class="text-small font-semibold text-ink">Début</label>
+      <input id="promo-start" name="startsOn" type="date" value="{{startsOn}}" aria-describedby="promo-start-error" data-focus-key="promo-start" class="field" />
+      <p id="promo-start-error" data-error-for="startsOn" hidden class="text-caption text-accent"></p>
+    </div>
+    <div class="flex min-w-0 flex-col gap-2">
+      <label for="promo-end" class="text-small font-semibold text-ink">Fin</label>
+      <input id="promo-end" name="endsOn" type="date" value="{{endsOn}}" aria-describedby="promo-end-error" data-focus-key="promo-end" class="field" />
+      <p id="promo-end-error" data-error-for="endsOn" hidden class="text-caption text-accent"></p>
+    </div>
+  </div>
+  <p class="-mt-3 text-caption text-ink-muted">Dates comprises. Vide : dès maintenant, ou sans fin.</p>
+
+  <div class="flex flex-col gap-2">
+    <label for="promo-max" class="text-small font-semibold text-ink">Utilisations max.</label>
+    <input id="promo-max" name="maxUses" type="number" min="1" max="9999" step="1" inputmode="numeric" value="{{maxUses}}" placeholder="100" aria-describedby="promo-max-hint promo-max-error" data-focus-key="promo-max" class="field" />
+    <p id="promo-max-hint" class="text-caption text-ink-muted">{{maxUsesHint}}</p>
+    <p id="promo-max-error" data-error-for="maxUses" hidden class="text-caption text-accent"></p>
+  </div>
+
+  <div class="flex flex-col gap-3">
+    <button type="submit" data-focus-key="promo-submit" class="button h-12 w-full px-6 text-small">{{submitLabel}}</button>
+    <button type="button" data-action="cancel" data-focus-key="promo-cancel" class="button button--outline h-12 w-full px-6 text-small">Annuler</button>
+  </div>
+</form>
