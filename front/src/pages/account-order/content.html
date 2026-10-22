@@ -1,0 +1,29 @@
+<!-- La commande : retour à l'historique, en-tête, message de l'ajout au panier, articles. -->
+<div class="flex min-w-0 flex-col gap-6">
+  <nav aria-label="Fil d'Ariane de la commande" class="text-sm text-ink-muted">
+    <ol class="flex flex-wrap gap-2">
+      <li><a href="/compte/commandes" data-link class="transition-colors hover:text-accent">Mes commandes</a></li>
+      <li aria-hidden="true">/</li>
+      <li class="text-ink">{{number}}</li>
+    </ol>
+  </nav>
+
+  <div class="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+    <div class="flex min-w-0 flex-col gap-1.5">
+      <div class="flex flex-wrap items-center gap-x-3.5 gap-y-2">
+        <h1 tabindex="-1" class="font-display text-3xl leading-none text-ink outline-none sm:text-h1-mobile sm:leading-title">Commande {{number}}</h1>
+        <slot name="status"></slot>
+      </div>
+      <p class="text-small text-ink-muted">{{summary}}</p>
+    </div>
+    <slot name="actions"></slot>
+  </div>
+
+  <!-- Messages (ajout au panier, stock non vérifié, déconnexion). -->
+  <div data-order-notice class="empty:hidden"></div>
+
+  <section aria-labelledby="order-lines-title" class="flex flex-col rounded-xl bg-page p-4 sm:p-6">
+    <h2 id="order-lines-title" class="pb-1 font-display text-h4 leading-none text-ink">Articles</h2>
+    <ul data-order-lines class="flex flex-col"></ul>
+  </section>
+</div>

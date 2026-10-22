@@ -242,15 +242,17 @@ M.getTitle = function () {
 };
 
 /**
- * @returns {?{status: string, summary: string}} La dernière commande, prête à
- *   afficher (« CMD-0142 · 13/10/2026 · 473,22 € · retrait aujourd’hui 16 h – 18 h »),
- *   ou null si le client n'a jamais commandé.
+ * @returns {?{id: number, number: string, status: string, summary: string}} La dernière
+ *   commande, prête à afficher (« CMD-0142 · 13/10/2026 · 473,22 € · retrait aujourd’hui
+ *   16 h – 18 h »), ou null si le client n'a jamais commandé. id : lien vers sa page (SUI-a).
  */
 M.getLastOrderData = function () {
   let order = M.account.lastOrder;
   if (order === null) return null;
 
   return {
+    id: order.id,
+    number: formatOrderNumber(order.id),
     status: order.status,
     summary: [
       formatOrderNumber(order.id),

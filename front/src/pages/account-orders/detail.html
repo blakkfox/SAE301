@@ -1,4 +1,5 @@
-<!-- Détail d'une commande : articles et total, retrait, suivi des statuts (journal de PIL-b). -->
+<!-- Détail d'une commande : articles et total, retrait, suivi des statuts (journal de PIL-b),
+     lien vers sa page pour la commander à nouveau (SUI-a). -->
 <div class="grid gap-6 rounded-lg bg-section p-5 md:grid-cols-2 md:gap-10">
   <div class="flex flex-col gap-3">
     <h3 class="text-caption font-semibold text-ink-muted">Articles</h3>
@@ -17,5 +18,7 @@
       <h3 class="text-caption font-semibold text-ink-muted">Suivi de la commande</h3>
       <ol data-detail-events class="flex flex-col gap-2"></ol>
     </div>
+    <!-- Page de la commande, avec « Commander à nouveau » (US SUI-a). -->
+    <a href="/compte/commandes/{{id}}" data-link data-focus-key="reorder-{{id}}" class="button button--outline h-11 self-start px-5 text-small">Commander à nouveau<span class="sr-only"> la commande {{number}}</span></a>
   </div>
 </div>
