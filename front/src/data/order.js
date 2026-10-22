@@ -1,7 +1,8 @@
 import { getRequest, postRequest } from "../lib/api-request.js";
 
 /**
- * Validation de la commande (US CMD-a) et historique du client (US SUI-c).
+ * Validation de la commande (US CMD-a), historique du client (US SUI-c) et
+ * détail d'une commande, pour la commander à nouveau (US SUI-a).
  *
  * Les appels exigent un compte connecté : sinon l'API répond 401.
  * Le serveur recalcule les créneaux, revérifie les quantités et le stock, et
@@ -57,6 +58,24 @@ OrderData.create = async function (order) {
  */
 OrderData.fetchHistory = async function (period) {
   return getRequest(`orders?period=${encodeURIComponent(period)}`);
+};
+
+/**
+ * Une commande du compte connecté (US SUI-a) : GET /api/order?id=97
+ *
+ * @param {number} id
+ * @returns {Promise<{order: {id: number, status: string, total: number, pickupStart: string,
+ *   pickupEnd: string, createdAt: string, dayOffset: number,
+ *   dealership: {id: number, name: string, shortName: string},
+ *   lines: Array<{variantId: ?number, name: string, label: string, reference: string,
+ *     unitPrice: number, quantity: number}>,
+ *   events: Array<{status: string, createdAt: string}>}}>}
+ *   lines : prix figés à la commande ; le stock actuel se lit avec CartData.fetchVariants.
+ * @throws {ErreurApi} 401 (non connecté), 400 (identifiant invalide), 404 (commande
+ *   introuvable ou d'un autre compte).
+ */
+OrderData.fetchOne = async function (id) {
+  return getRequest(`order?id=${encodeURIComponent(id)}`);
 };
 
 export { OrderData };

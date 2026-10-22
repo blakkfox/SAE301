@@ -34,6 +34,7 @@ return [
     'GET  /api/checkout'       => [OrderController::class,     'checkout'],
     'POST /api/orders'         => [OrderController::class,     'create'],
     'GET  /api/orders'         => [OrderController::class,     'history'],
+    'GET  /api/order'          => [OrderController::class,     'show'],
     'GET  /api/account'          => [AccountController::class, 'show'],
     'POST /api/account'          => [AccountController::class, 'update'],
     'POST /api/account/password' => [AccountController::class, 'changePassword'],

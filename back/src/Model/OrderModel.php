@@ -239,6 +239,44 @@ final class OrderModel
     }
 
     /**
+     * Une commande d'un client (US SUI-a), avec sa concession, ses lignes et
+     * le journal de ses statuts, sans l'administrateur : le client n'a pas à
+     * le savoir (comme findCustomerHistory).
+     *
+     * @param int $id         Identifiant de la commande.
+     * @param int $customerId Compte connecté.
+     *
+     * @return array{id:int, status:string, total:float, pickupStart:string, pickupEnd:string,
+     *               createdAt:string, dealership:array{id:int, name:string, shortName:string},
+     *               lines:array<int, array{variantId:?int, name:string, label:string,
+     *                                      reference:string, unitPrice:float, quantity:int}>,
+     *               events:array<int, array{status:string, createdAt:string}>}|null
+     *         null si la commande n'existe pas ou appartient à un autre client.
+     */
+    public function findCustomerOrder(int $id, int $customerId): ?array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT id FROM customer_order WHERE id = :id AND customer_id = :customer'
+        );
+        $statement->bindValue(':id', $id, PDO::PARAM_INT);
+        $statement->bindValue(':customer', $customerId, PDO::PARAM_INT);
+        $statement->execute();
+
+        if ($statement->fetchColumn() === false) {
+            return null;
+        }
+
+        $order = $this->findById($id);
+
+        return $order + [
+            'events' => array_map(
+                static fn (array $event): array => ['status' => $event['status'], 'createdAt' => $event['createdAt']],
+                $this->findEvents($id),
+            ),
+        ];
+    }
+
+    /**
      * Nombre de commandes de chaque statut, pour le tableau de bord du
      * back-office (US GOF-b) et les pastilles de filtre de la gestion des
      * commandes (US PIL-b). Un statut sans commande vaut 0.

@@ -14,7 +14,8 @@ use DateTimeZone;
 
 /**
  * Validation de la commande (US CMD-a) : concession, créneau de retrait et
- * paiement sur place. Historique des commandes du client (US SUI-c).
+ * paiement sur place. Historique des commandes du client (US SUI-c) et
+ * détail d'une commande, pour la commander à nouveau (US SUI-a).
  *
  * Les routes exigent un compte connecté (identifiant rangé en session
  * par AuthController). Les créneaux sont calculés ici, côté serveur, et
@@ -190,6 +191,41 @@ final class OrderController
             ),
             'period' => (string) $period,
         ]);
+    }
+
+    /**
+     * GET /api/order?id=97
+     *
+     * Une commande du compte connecté (US SUI-a), pour la commander à
+     * nouveau. Répond { order } : sa concession, ses lignes (prix figés à la
+     * commande), le journal de ses statuts (events) et dayOffset, comme une
+     * commande de l'historique. Le stock actuel des variantes est lu par
+     * GET /api/cart (CartController), comme pour le panier.
+     *
+     * 401 si personne n'est connecté ; 400 si l'identifiant est invalide ;
+     * 404 si la commande n'existe pas ou appartient à un autre compte : le
+     * même code dans les deux cas, pour ne rien dire des commandes des autres.
+     *
+     * @param Request $request Requête entrante.
+     */
+    public function show(Request $request): void
+    {
+        $customer = $this->requireCustomer('Connectez-vous pour consulter vos commandes.');
+
+        // filter_var refuse « 12abc », « -3 » ou « 0 », que (int) aurait acceptés.
+        $id = filter_var($request->parametre('id'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+
+        if ($id === false) {
+            Response::erreur('Identifiant de commande invalide', 400);
+        }
+
+        $order = $this->orders->findCustomerOrder($id, $customer['id']);
+
+        if ($order === null) {
+            Response::erreur('Commande introuvable', 404);
+        }
+
+        Response::json(['order' => $order + ['dayOffset' => self::pickupDayOffset($order['pickupStart'])]]);
     }
 
     /**

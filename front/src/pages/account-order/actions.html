@@ -1,0 +1,5 @@
+<!-- « Commander à nouveau ». Le lien vers le panier n'apparaît qu'après un ajout (page.js). -->
+<div class="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-3">
+  <a href="/panier" data-link data-cart-link data-focus-key="cart" class="text-small font-medium whitespace-nowrap text-link underline-offset-4 hover:underline">Voir mon panier <span aria-hidden="true">→</span></a>
+  <button type="button" data-action="reorder" data-focus-key="reorder" class="button h-12 px-6 text-base disabled:cursor-wait">{{reorderLabel}}</button>
+</div>

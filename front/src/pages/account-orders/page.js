@@ -284,6 +284,8 @@ M.getEvents = function (order) {
  */
 M.getDetail = function (order) {
   return {
+    id: order.id,
+    number: formatOrderNumber(order.id),
     lines: order.lines.map((line) => ({
       label: `${line.name}${line.label === "Unique" ? "" : ` · ${line.label}`} × ${line.quantity}`,
       price: formatPrice(line.unitPrice * line.quantity),

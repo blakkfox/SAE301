@@ -1,0 +1,23 @@
+<!--
+  Un article de la commande (écran 15). Desktop (dès 640 px) : photo 80 px,
+  nom et variante, disponibilité, prix payé. Mobile : photo et nom, puis une
+  seconde rangée disponibilité et prix (sm:contents rend ses enfants à la
+  rangée unique). Un article qui ne peut plus être commandé est grisé : le
+  nom et le prix passent en gris secondaire, plus contrasté que le gris
+  Texte/Désactivé de la maquette (classes : TONES dans page.js).
+-->
+<li class="grid grid-cols-(--grid-cart-line) items-center gap-x-4 gap-y-3 border-t border-line-subtle py-4 first:border-t-0 sm:flex sm:gap-5">
+  <div class="shrink-0 {{visualClasses}}">
+    <slot name="visual"></slot>
+  </div>
+
+  <div class="flex min-w-0 flex-col items-start gap-1 sm:flex-1">
+    <h3 class="font-semibold {{nameClasses}}">{{name}}</h3>
+    <p class="text-sm text-ink-muted">{{details}}</p>
+  </div>
+
+  <div class="col-span-2 flex items-center justify-end gap-4 sm:contents">
+    <slot name="stock"></slot>
+    <p class="shrink-0 text-right text-lg font-bold {{priceClasses}}"><span class="sr-only">Prix payé : </span>{{price}}</p>
+  </div>
+</li>
