@@ -8,6 +8,7 @@ import { ProductFeaturesView } from "../../ui/product-features/index.js";
 import { ProductCardView } from "../../ui/product-card/index.js";
 import { ProductGalleryView } from "../../ui/product-gallery/index.js";
 import { ProductGridView } from "../../ui/product-grid/index.js";
+import { ProductOptionsView } from "../../ui/product-options/index.js";
 import { QuantityStepperView } from "../../ui/quantity-stepper/index.js";
 import { StockBadgeView } from "../../ui/stock-badge/index.js";
 import { VariantPickerView } from "../../ui/variant-picker/index.js";
@@ -38,6 +39,17 @@ import templateFeedback from "./feedback.html?raw";
  * Contraintes de stock (STK-c) : la quantité à ajouter ne dépasse pas le
  * stock de la variante choisie, moins ce qui est déjà dans le panier.
  *
+ * Options (OPT-c) : les cases cochées s'ajoutent au prix d'un article
+ * (« Prix avec options ») et au montant du bouton d'ajout. Elles sont
+ * enregistrées avec la ligne du panier (OPT-a) : si la variante y est déjà,
+ * les options cochées remplacent les siennes, et le message d'ajout le dit.
+ *
+ * Variantes (OPT-b, écran 18) : le sélecteur nomme le type de variante du
+ * produit (« Taille : M »), signale les variantes bientôt épuisées, donne le
+ * stock restant de celle choisie et liste les épuisées ; le guide des tailles
+ * s'ouvre pour un produit à tailles. La référence de la variante choisie
+ * s'affiche sous le bouton d'ajout.
+ *
  * Découpage MVC strict :
  *   M — état de la page, appel à l'API, préparation des données affichables ;
  *   V — construction du DOM à partir des données REÇUES en paramètre ;
@@ -60,6 +72,7 @@ let M = {
   selectedImage: 0, // indice de la photo affichée en grand
   selectedVariantId: null, // variante choisie, ou null tant qu'aucune ne l'est
   quantity: 1, // quantité à ajouter au panier
+  selectedOptionIds: [], // options cochées (OPT-c), dans l'ordre d'affichage
   feedback: null, // { type: "succes" | "erreur", texte } après « Ajouter au panier », ou null
   addedProductId: null, // produit de la dernière carte « Vous aimerez aussi » ajoutée, ou null
   cartStatus: null, // confirmation d'ajout depuis une carte, à annoncer, ou null
@@ -75,6 +88,7 @@ M.reset = function () {
   M.selectedImage = 0;
   M.selectedVariantId = null;
   M.quantity = 1;
+  M.selectedOptionIds = [];
   M.feedback = null;
   M.addedProductId = null;
   M.cartStatus = null;
@@ -136,22 +150,16 @@ M.selectImage = function (index) {
 };
 
 /**
- * Ligne sous le titre : la référence, puis la catégorie.
+ * Ligne sous le titre : la catégorie, puis la matière si le produit a cette
+ * caractéristique, comme sur la maquette (écran 18). La référence, portée par
+ * la variante, est affichée sous le bouton d'ajout (OPT-b).
  *
- * La référence est portée par la variante. Tant que le choix de variante
- * n'existe pas (OPT-b), elle n'est affichée que si le produit n'en a qu'une :
- * sinon, laquelle afficher serait arbitraire.
- *
- * @returns {string} Par exemple « Réf. HM-KTB-ALU-42 · Bagagerie ».
+ * @returns {string} Par exemple « T-shirts · 100 % coton, 200 g/m² ».
  */
 M.getSubtitle = function () {
-  let variants = M.product.variants;
+  let material = M.product.features.find((feature) => feature.label === "Matière");
   let category = M.product.category.name;
-
-  if (variants.length === 1) {
-    return `Réf. ${variants[0].reference} · ${category}`;
-  }
-  return category;
+  return material === undefined ? category : `${category} · ${material.value}`;
 };
 
 /**
@@ -181,6 +189,55 @@ M.getSelectedVariant = function () {
 };
 
 /**
+ * Type de variante du produit (« Taille », « Coloris »…), ou « Choix » si la
+ * base ne le précise pas.
+ *
+ * @returns {string}
+ */
+M.getVariantAxis = function () {
+  return M.product.variantAxis ?? "Choix";
+};
+
+/**
+ * Libellé complet d'une variante, tel que le panier l'affiche : « Taille M »
+ * pour « M » (voir ProductModel::VARIANT_LABEL côté serveur).
+ *
+ * @param {{label: string}} variant
+ * @returns {string}
+ */
+M.getFullLabel = function (variant) {
+  return M.product.variantAxis === null ? variant.label : `${M.product.variantAxis} ${variant.label}`;
+};
+
+/**
+ * Stock restant de la variante choisie, s'il est bas (OPT-b) : « Plus qu'1
+ * en taille M ». Le nombre exact aide à se décider ; au-delà de
+ * LOW_STOCK_MAX, « En stock » suffit et rien n'est affiché.
+ *
+ * @returns {?string} Le texte, ou null.
+ */
+M.getStockNote = function () {
+  let selected = M.getSelectedVariant();
+  if (selected === null || getStockStatus(selected.stock) !== "low") return null;
+
+  // Élision devant « 1 » (« un ») seulement.
+  let count = selected.stock === 1 ? "Plus qu'1" : `Plus que ${selected.stock}`;
+  let axis = M.product.variantAxis;
+  return axis === null ? `${count} : ${selected.label}` : `${count} en ${axis.toLowerCase()} ${selected.label}`;
+};
+
+/**
+ * Variantes épuisées, rappelées sous les choix (OPT-b) : « L : épuisé ».
+ *
+ * @returns {?string} Le texte, ou null si aucune n'est épuisée.
+ */
+M.getSoldOutNote = function () {
+  let labels = M.product.variants.filter((variant) => variant.stock <= 0).map((variant) => variant.label);
+  if (labels.length === 0) return null;
+  return labels.length === 1 ? `${labels[0]} : épuisé` : `${labels.join(", ")} : épuisés`;
+};
+
+/**
  * Statut de stock affiché à côté du prix : celui de la variante choisie, ou
  * celui du stock total du produit tant qu'aucune variante ne l'est.
  *
@@ -205,6 +262,40 @@ M.selectVariant = function (variantId) {
     M.feedback = null;
     M.setQuantity(M.quantity);
   }
+};
+
+/**
+ * Coche ou décoche une option, si elle appartient au produit. Les options
+ * cochées restent dans l'ordre d'affichage.
+ *
+ * @param {number} optionId
+ * @param {boolean} isSelected - true pour cocher, false pour décocher.
+ */
+M.toggleOption = function (optionId, isSelected) {
+  if (!M.product.options.some((option) => option.id === optionId)) return;
+
+  M.selectedOptionIds = M.product.options
+    .map((option) => option.id)
+    .filter((id) => (id === optionId ? isSelected : M.selectedOptionIds.includes(id)));
+  M.feedback = null;
+};
+
+/**
+ * @returns {Array<{id: number, label: string, description: ?string, price: number}>}
+ *   Les options cochées, dans l'ordre d'affichage.
+ */
+M.getSelectedOptions = function () {
+  return M.product.options.filter((option) => M.selectedOptionIds.includes(option.id));
+};
+
+/**
+ * Prix d'un article avec les options cochées. Calculé pour l'affichage
+ * seulement : le serveur recalcule les suppléments à la commande (OPT-a).
+ *
+ * @returns {number}
+ */
+M.getUnitPrice = function () {
+  return M.getSelectedOptions().reduce((total, option) => total + option.price, M.product.price);
 };
 
 /**
@@ -236,13 +327,16 @@ M.setQuantity = function (quantity) {
 M.addToCart = function () {
   let variant = M.getSelectedVariant();
 
+  // « votre » plutôt qu'un article : « taille » et « coloris » n'ont pas le même genre.
+  let axis = M.getVariantAxis().toLowerCase();
+
   if (variant === null) {
-    M.feedback = { type: "erreur", texte: "Choisissez d'abord une option ci-dessus." };
+    M.feedback = { type: "erreur", texte: `Choisissez d'abord votre ${axis} ci-dessus.` };
     return;
   }
 
   if (variant.stock <= 0) {
-    M.feedback = { type: "erreur", texte: "Cette option est épuisée : choisissez-en une autre." };
+    M.feedback = { type: "erreur", texte: `${M.getFullLabel(variant)} : épuisé. Faites un autre choix ci-dessus.` };
     return;
   }
 
@@ -257,45 +351,133 @@ M.addToCart = function () {
   }
   M.quantity = Math.min(M.quantity, remaining);
 
-  if (!CartData.add(variant.id, M.quantity)) {
+  // Options de la ligne déjà au panier, remplacées par l'ajout si elles diffèrent.
+  let previous = CartData.optionsOf(variant.id);
+  let hasReplaced = previous.length > 0 && previous.join(",") !== M.selectedOptionIds.join(",");
+
+  if (!CartData.add(variant.id, M.quantity, M.selectedOptionIds)) {
     M.feedback = { type: "erreur", texte: "Le panier n'a pas pu être enregistré sur cet appareil." };
     return;
   }
 
-  let label = M.product.variants.length > 1 ? ` (${variant.label})` : "";
-  let count = M.quantity > 1 ? `${M.quantity} × ` : "";
-  M.feedback = { type: "succes", texte: `${count}${M.product.name}${label} ajouté au panier.` };
+  M.feedback = { type: "succes", texte: M.formatAddedMessage(variant, hasReplaced) };
   M.quantity = 1;
 };
 
 /**
- * Données du bloc d'achat : le sélecteur de variante (null s'il n'y a qu'une
- * variante), le sélecteur de quantité et le bouton, « Épuisé » et désactivé
- * si la variante choisie, ou le produit entier, est épuisé.
+ * Message de confirmation d'un ajout au panier, avec les options choisies
+ * (OPT-a). Si la ligne du panier avait d'autres options, elles ont été
+ * remplacées par celles-ci : le message le précise.
  *
- * @returns {{picker: ?Parameters<typeof VariantPickerView.dom>[0],
+ * @param {{label: string}} variant - Variante ajoutée.
+ * @param {boolean} hasReplaced - Les options de la ligne du panier ont changé.
+ * @returns {string}
+ */
+M.formatAddedMessage = function (variant, hasReplaced) {
+  let label = M.product.variants.length > 1 ? ` (${M.getFullLabel(variant)})` : "";
+  let count = M.quantity > 1 ? `${M.quantity} × ` : "";
+  let options = M.getSelectedOptions().map((option) => option.label);
+  let text = `${count}${M.product.name}${label} ajouté au panier`;
+
+  if (options.length > 0) {
+    text += ` avec : ${options.join(", ")}`;
+  }
+  text += ".";
+
+  if (hasReplaced) {
+    text +=
+      options.length > 0
+        ? " Ces options remplacent celles de l'article déjà dans votre panier."
+        : " L'article de votre panier n'a plus d'option.";
+  }
+  return text;
+};
+
+/**
+ * Données du bloc « Options » (OPT-c), ou null si le produit n'en a aucune.
+ *
+ * @returns {?Parameters<typeof ProductOptionsView.dom>[0]}
+ */
+M.getOptionsData = function () {
+  if (M.product.options.length === 0) return null;
+
+  return {
+    total: formatPrice(M.getUnitPrice()),
+    options: M.product.options.map((option) => ({
+      id: option.id,
+      label: option.label,
+      description: option.description ?? "",
+      price: `+ ${formatPrice(option.price)}`,
+      isSelected: M.selectedOptionIds.includes(option.id),
+    })),
+  };
+};
+
+/**
+ * Données du sélecteur de variante (OPT-b), ou null s'il n'y a qu'une
+ * variante : rien à choisir.
+ *
+ * @returns {?Parameters<typeof VariantPickerView.dom>[0]}
+ */
+M.getPickerData = function () {
+  if (M.product.variants.length === 1) return null;
+
+  let selected = M.getSelectedVariant();
+
+  return {
+    legend: `${M.getVariantAxis()} : ${selected === null ? "à sélectionner" : selected.label}`,
+    stockNote: M.getStockNote(),
+    soldOutNote: M.getSoldOutNote(),
+    hasSizeGuide: M.product.variantAxis === "Taille",
+    options: M.product.variants.map((variant) => ({
+      id: variant.id,
+      label: variant.label,
+      isSelected: variant.id === M.selectedVariantId,
+      stockStatus: getStockStatus(variant.stock),
+    })),
+  };
+};
+
+/**
+ * Référence de la variante choisie, affichée sous le bouton (OPT-b), ou null
+ * tant qu'aucune ne l'est.
+ *
+ * @returns {?string} « Réf. variante : HM-TSH-CBR-M », ou « Réf. : HM-PCL-RW »
+ *   pour un produit à variante unique.
+ */
+M.getReferenceText = function () {
+  let selected = M.getSelectedVariant();
+  if (selected === null) return null;
+  return M.product.variants.length > 1 ? `Réf. variante : ${selected.reference}` : `Réf. : ${selected.reference}`;
+};
+
+/**
+ * Données du bloc d'achat : le sélecteur de variante (null s'il n'y a qu'une
+ * variante), les options (null si le produit n'en a pas), le sélecteur de
+ * quantité, le bouton, « Épuisé » et désactivé si la variante choisie, ou
+ * le produit entier, est épuisé, et la référence de la variante choisie. Un
+ * produit à options affiche dans le bouton le montant à ajouter, options
+ * comprises, comme sur la maquette (écran 16).
+ *
+ * @returns {{picker: ?ReturnType<typeof M.getPickerData>,
+ *   options: ?ReturnType<typeof M.getOptionsData>,
  *   quantity: Parameters<typeof QuantityStepperView.dom>[0],
- *   addLabel: string, isSoldOut: boolean}}
+ *   addLabel: string, isSoldOut: boolean, reference: ?string}}
  */
 M.getPurchaseData = function () {
-  let selected = M.getSelectedVariant();
   let isSoldOut = M.getStockStatus() === "out";
-  let picker = null;
+  let options = M.getOptionsData();
 
-  if (M.product.variants.length > 1) {
-    picker = {
-      selectedLabel: selected === null ? "à sélectionner" : selected.label,
-      options: M.product.variants.map((variant) => ({
-        id: variant.id,
-        label: variant.label,
-        isSelected: variant.id === M.selectedVariantId,
-        isSoldOut: variant.stock <= 0,
-      })),
-    };
+  let addLabel = "Ajouter au panier";
+  if (isSoldOut) {
+    addLabel = "Épuisé";
+  } else if (options !== null) {
+    addLabel = `Ajouter au panier · ${formatPrice(M.getUnitPrice() * M.quantity)}`;
   }
 
   return {
-    picker,
+    picker: M.getPickerData(),
+    options,
     quantity: {
       quantity: M.quantity,
       min: 1,
@@ -303,8 +485,9 @@ M.getPurchaseData = function () {
       label: `Quantité de ${M.product.name}`,
       size: "large",
     },
-    addLabel: isSoldOut ? "Épuisé" : "Ajouter au panier",
+    addLabel,
     isSoldOut,
+    reference: M.getReferenceText(),
   };
 };
 
@@ -451,6 +634,19 @@ C.handler_selectVariant = function (variantId) {
 };
 
 /**
+ * Case d'option cochée ou décochée : le prix avec options et le montant du
+ * bouton suivent.
+ *
+ * @param {number} optionId
+ * @param {boolean} isSelected - Nouvel état de la case.
+ */
+C.handler_toggleOption = function (optionId, isSelected) {
+  M.toggleOption(optionId, isSelected);
+  V.renderPurchase(M.getPurchaseData());
+  V.renderFeedback(M.feedback);
+};
+
+/**
  * Clic sur « − » ou « + » du sélecteur de quantité.
  *
  * @param {number} quantity - Quantité demandée.
@@ -561,13 +757,26 @@ V.renderFeedback = function (feedback) {
  * @returns {DocumentFragment} Le bloc d'achat, relié au contrôleur.
  */
 V.createPurchaseFragment = function (purchaseData) {
-  let fragment = htmlToFragment(genericRenderer(templatePurchase, { addLabel: purchaseData.addLabel }));
+  let fragment = htmlToFragment(
+    genericRenderer(templatePurchase, { addLabel: purchaseData.addLabel, reference: purchaseData.reference ?? "" })
+  );
+
+  if (purchaseData.reference === null) {
+    fragment.querySelector("[data-variant-reference]").remove();
+  }
 
   let variantsSlot = fragment.querySelector('slot[name="variants"]');
   if (purchaseData.picker === null) {
     variantsSlot.remove();
   } else {
     variantsSlot.replaceWith(VariantPickerView.dom(purchaseData.picker, { onSelect: C.handler_selectVariant }));
+  }
+
+  let optionsSlot = fragment.querySelector('slot[name="options"]');
+  if (purchaseData.options === null) {
+    optionsSlot.remove();
+  } else {
+    optionsSlot.replaceWith(ProductOptionsView.dom(purchaseData.options, { onToggle: C.handler_toggleOption }));
   }
 
   fragment

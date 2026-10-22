@@ -1,13 +1,17 @@
 <!--
   Bloc d'achat de la fiche (écran 2) : choix de la variante s'il y en a
-  plusieurs, puis quantité (132 px) et bouton sur une même rangée.
+  plusieurs, options à cocher s'il y en a (écran 16, OPT-c), puis quantité
+  (132 px) et bouton sur une même rangée.
   tabindex="-1" : voir replaceKeepingFocus dans lib/utils.js.
 -->
 <div tabindex="-1" class="flex flex-col gap-5 outline-none">
   <slot name="variants"></slot>
+  <slot name="options"></slot>
   <div class="flex gap-3">
     <slot name="quantity"></slot>
     <!-- « Épuisé », désactivé, si la variante choisie (ou toutes) est épuisée (STK-b). -->
     <button type="button" data-add-to-cart data-focus-key="add" class="button h-13 min-w-0 flex-1 px-6 text-base">{{addLabel}}</button>
   </div>
+  <!-- Référence de la variante choisie (OPT-b), retirée tant qu'aucune ne l'est. -->
+  <p data-variant-reference class="text-caption text-ink-muted">{{reference}}</p>
 </div>

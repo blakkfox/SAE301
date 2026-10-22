@@ -31,6 +31,11 @@ import templateError from "./error.html?raw";
  * dit (écran 9, STK-a). Une fois la commande enregistrée, le stock est baissé
  * (STK-a), le panier est vidé et la page passe à l'étape 4.
  *
+ * Options (US OPT-a) : le récapitulatif liste les options de chaque article,
+ * dont le prix comprend les suppléments, et la commande envoie leurs
+ * identifiants. Le serveur relit les suppléments en base et refuse (422) une
+ * option qui n'est plus proposée.
+ *
  * Découpage MVC strict :
  *   M — panier, données de validation, choix, envoi, textes et montants ;
  *   V — construction du DOM à partir des données REÇUES en paramètre ;
@@ -72,8 +77,8 @@ const LONG_DAY = new Intl.DateTimeFormat("fr-FR", {
 // ---------------------------------------------------------------------------
 
 let M = {
-  items: [], // lignes du panier : [{ variantId, quantity }]
-  variants: [], // variantes du panier renvoyées par l'API (nom, prix…)
+  items: [], // lignes du panier : [{ variantId, quantity, optionIds }]
+  variants: [], // variantes du panier renvoyées par l'API (nom, prix, options…)
   checkout: null, // { customer, dealerships, slots } renvoyé par l'API, ou null
   dealershipId: null, // concession choisie
   slotId: null, // créneau choisi (« 2026-10-21T16:00 »), ou null
@@ -105,8 +110,9 @@ M.reset = function () {
 /**
  * Lit le panier, puis demande à l'API, en parallèle, les données de
  * validation et les variantes du panier. Les variantes que l'API ne renvoie
- * plus sont retirées du panier, comme sur la page Panier. Un stock devenu
- * insuffisant (STK-c) est signalé : le serveur refuserait la commande.
+ * plus sont retirées du panier, comme sur la page Panier, ainsi que les
+ * options qui ne sont plus proposées (OPT-a). Un stock devenu insuffisant
+ * (STK-c) est signalé : le serveur refuserait la commande.
  *
  * @returns {Promise<void>}
  */
@@ -140,6 +146,18 @@ M.load = async function () {
         missing.length > 1
           ? `${missing.length} articles ne sont plus disponibles et ont été retirés de votre panier.`
           : "Un article n'est plus disponible et a été retiré de votre panier.",
+    };
+  }
+
+  let options = CartData.keepOfferedOptions(M.variants);
+  if (options.removed > 0) {
+    M.items = CartData.read();
+    M.notice ??= {
+      type: "erreur",
+      texte:
+        options.removed > 1
+          ? `${options.removed} options ne sont plus proposées et ont été retirées de votre panier.`
+          : "Une option n'est plus proposée et a été retirée de votre panier.",
     };
   }
 
@@ -247,7 +265,11 @@ M.submit = async function () {
     let response = await OrderData.create({
       dealershipId: M.dealershipId,
       slot: M.slotId,
-      items: M.items.map((item) => ({ variantId: item.variantId, quantity: item.quantity })),
+      items: M.items.map((item) => ({
+        variantId: item.variantId,
+        quantity: item.quantity,
+        optionIds: item.optionIds,
+      })),
     });
     M.order = response.order;
     M.notice = CartData.clear()
@@ -460,9 +482,10 @@ M.getDetailsData = function () {
 };
 
 /**
- * Données du récapitulatif.
+ * Données du récapitulatif. Le prix d'une ligne comprend les suppléments de
+ * ses options (OPT-a), listées sous l'article (texte vide sans option).
  *
- * @returns {{lines: Array<{text: string, total: string}>, dealershipShortName: string,
+ * @returns {{lines: Array<{text: string, options: string, total: string}>, dealershipShortName: string,
  *   total: string, confirmLabel: string, isDisabled: boolean}}
  */
 M.getSummaryData = function () {
@@ -472,9 +495,15 @@ M.getSummaryData = function () {
   for (const item of M.items) {
     let variant = M.findVariant(item.variantId);
     if (variant !== undefined) {
-      let lineCents = M.toCents(variant.price) * item.quantity;
+      let options = variant.options.filter((option) => item.optionIds.includes(option.id));
+      let unitCents = options.reduce((total, option) => total + M.toCents(option.price), M.toCents(variant.price));
+      let lineCents = unitCents * item.quantity;
       cents += lineCents;
-      lines.push({ text: `${M.formatArticle(variant)} × ${item.quantity}`, total: formatPrice(lineCents / 100) });
+      lines.push({
+        text: `${M.formatArticle(variant)} × ${item.quantity}`,
+        options: options.map((option) => `+ ${option.label} (${formatPrice(option.price)})`).join(" · "),
+        total: formatPrice(lineCents / 100),
+      });
     }
   }
 

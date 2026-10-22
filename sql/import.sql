@@ -8,11 +8,13 @@
 -- Modèle (lot 0, voir analyse-user-stories.md) :
 --
 --     category 1 ── n product 1 ── n variant
---                           └── n product_feature
+--                           ├── n product_feature
+--                           └── n product_option   (US OPT-c)
 --
 --     customer : comptes clients et administrateurs (US CMD-c)
 --
 --     customer 1 ── n customer_order 1 ── n order_line n ── 1 variant
+--     order_line 1 ── n order_line_option n ── 0..1 product_option   (US OPT-a)
 --     dealership 1 ── n customer_order          (US CMD-a)
 --     dealership 1 ── n customer (concession préférée, US SUI-b)
 --
@@ -21,8 +23,8 @@
 --
 -- Chaque produit a AU MOINS une variante (taille, coloris, garniture… ou
 -- « Unique »). C'est la variante qui porte la référence et le stock : le
--- panier, les commandes et les stocks s'appuieront sur variant.id, et l'arrivée
--- des variantes (OPT-b) ne demandera pas de réécrire ces tables.
+-- panier, les commandes et les stocks s'appuient sur variant.id. Le type de
+-- variante (« Taille », « Coloris »…) est porté par le produit (US OPT-b).
 --
 -- 18 produits répartis sur 4 catégories : de quoi remplir 2 pages de 12, comme
 -- sur la maquette du catalogue (écran 1, DEC-b). Chaque catégorie est découpée
@@ -42,10 +44,12 @@ DROP TABLE IF EXISTS film;
 DROP TABLE IF EXISTS genre;
 DROP TABLE IF EXISTS order_event;
 DROP TABLE IF EXISTS stock_movement;
+DROP TABLE IF EXISTS order_line_option;
 DROP TABLE IF EXISTS order_line;
 DROP TABLE IF EXISTS customer_order;
 DROP TABLE IF EXISTS customer;
 DROP TABLE IF EXISTS dealership;
+DROP TABLE IF EXISTS product_option;
 DROP TABLE IF EXISTS product_feature;
 DROP TABLE IF EXISTS variant;
 DROP TABLE IF EXISTS product;
@@ -93,6 +97,9 @@ CREATE TABLE category (
 -- doit jamais subir d'arrondi binaire (0,1 + 0,2 ≠ 0,3 en FLOAT).
 -- image est un nom de fichier de front/public/images/produits/, ou NULL tant
 -- qu'aucune photo n'est disponible.
+-- variant_axis (US OPT-b) nomme ce qui distingue ses variantes (« Taille »,
+-- « Coloris »…) : la fiche affiche « Taille : M » et le panier « Taille M ».
+-- NULL pour un produit à variante unique, qui n'a rien à choisir.
 -- Les index sur price et created_at servent les tris du catalogue.
 -- ---------------------------------------------------------------------------
 CREATE TABLE product (
@@ -103,6 +110,7 @@ CREATE TABLE product (
     description TEXT                  NULL,
     price       DECIMAL(8,2)      NOT NULL,
     image       VARCHAR(120)          NULL,
+    variant_axis VARCHAR(20)          NULL,
     is_active   TINYINT(1)        NOT NULL DEFAULT 1,
     created_at  DATETIME          NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -166,6 +174,35 @@ CREATE TABLE product_feature (
     CONSTRAINT fk_feature_product
         FOREIGN KEY (product_id) REFERENCES product (id)
         ON DELETE CASCADE
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- Options (US OPT-c)
+--
+-- Services ou accessoires facultatifs, à cocher sur la fiche d'un produit
+-- (sac intérieur, pose en atelier…). price est le supplément TTC ajouté au
+-- prix du produit, quelle que soit la variante choisie. Un produit peut n'en
+-- avoir aucune : la fiche masque alors le bloc. position fixe l'ordre
+-- d'affichage.
+-- ---------------------------------------------------------------------------
+CREATE TABLE product_option (
+    id          SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    product_id  SMALLINT UNSIGNED NOT NULL,
+    label       VARCHAR(60)       NOT NULL,
+    description VARCHAR(120)          NULL,
+    price       DECIMAL(8,2)      NOT NULL,
+    position    TINYINT UNSIGNED  NOT NULL DEFAULT 0,
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_option_product_label (product_id, label),
+    KEY idx_option_product (product_id, position),
+
+    CONSTRAINT fk_option_product
+        FOREIGN KEY (product_id) REFERENCES product (id)
+        ON DELETE CASCADE,
+    CONSTRAINT chk_option_price CHECK (price >= 0)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
@@ -266,13 +303,17 @@ CREATE TABLE customer_order (
 -- Nom, variante, référence et prix unitaire sont COPIÉS au moment de la
 -- commande : la commande reste lisible et juste même si le produit change de
 -- prix ou disparaît. variant_id passe alors à NULL (ON DELETE SET NULL).
+-- unit_price est le prix payé pour un article, suppléments des options
+-- compris (US OPT-a) : leur détail est dans order_line_option.
+-- variant_label est le libellé complet (« Taille M ») : type de variante du
+-- produit (20) + espace + libellé de la variante (60), soit 81 caractères.
 -- ---------------------------------------------------------------------------
 CREATE TABLE order_line (
     id            INT UNSIGNED      NOT NULL AUTO_INCREMENT,
     order_id      INT UNSIGNED      NOT NULL,
     variant_id    SMALLINT UNSIGNED     NULL,
     product_name  VARCHAR(120)      NOT NULL,
-    variant_label VARCHAR(60)       NOT NULL,
+    variant_label VARCHAR(81)       NOT NULL,
     reference     VARCHAR(40)       NOT NULL,
     unit_price    DECIMAL(8,2)      NOT NULL,
     quantity      SMALLINT UNSIGNED NOT NULL,
@@ -289,6 +330,37 @@ CREATE TABLE order_line (
         ON DELETE SET NULL,
     CONSTRAINT chk_line_price CHECK (unit_price >= 0),
     CONSTRAINT chk_line_quantity CHECK (quantity > 0)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- Options d'une ligne de commande (US OPT-a)
+--
+-- Les options cochées pour une ligne, avec leur libellé et leur supplément
+-- COPIÉS au moment de la commande, comme la ligne elle-même : le bon de
+-- commande reste juste si l'option change de prix ou disparaît (option_id
+-- passe alors à NULL). price est le supplément d'UN article : il s'applique
+-- à toute la quantité de la ligne, et il est déjà compté dans unit_price.
+-- ---------------------------------------------------------------------------
+CREATE TABLE order_line_option (
+    id            INT UNSIGNED      NOT NULL AUTO_INCREMENT,
+    order_line_id INT UNSIGNED      NOT NULL,
+    option_id     SMALLINT UNSIGNED     NULL,
+    label         VARCHAR(60)       NOT NULL,
+    price         DECIMAL(8,2)      NOT NULL,
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_line_option (order_line_id, option_id),
+    KEY idx_line_option_option (option_id),
+
+    CONSTRAINT fk_line_option_line
+        FOREIGN KEY (order_line_id) REFERENCES order_line (id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_line_option_option
+        FOREIGN KEY (option_id) REFERENCES product_option (id)
+        ON DELETE SET NULL,
+    CONSTRAINT chk_line_option_price CHECK (price >= 0)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
@@ -466,36 +538,46 @@ INSERT INTO variant (product_id, reference, label, stock, position) VALUES
     ( 5, 'HM-FIL-HU',       'Unique',     18, 1),
     ( 6, 'HM-CAS-FAC-RGE',  'Rouge',       0, 1),
     ( 6, 'HM-CAS-FAC-NOI',  'Noir',        9, 2),
-    ( 7, 'HM-TSH-CBR-S',    'Taille S',    4, 1),
-    ( 7, 'HM-TSH-CBR-M',    'Taille M',    6, 2),
-    ( 7, 'HM-TSH-CBR-L',    'Taille L',    5, 3),
-    ( 7, 'HM-TSH-CBR-XL',   'Taille XL',   2, 4),
-    ( 8, 'HM-TSH-TRB-S',    'Taille S',    3, 1),
-    ( 8, 'HM-TSH-TRB-M',    'Taille M',    5, 2),
-    ( 8, 'HM-TSH-TRB-L',    'Taille L',    7, 3),
-    ( 8, 'HM-TSH-TRB-XL',   'Taille XL',   1, 4),
-    ( 9, 'HM-TSH-CAP-S',    'Taille S',    2, 1),
-    ( 9, 'HM-TSH-CAP-M',    'Taille M',    4, 2),
-    ( 9, 'HM-TSH-CAP-L',    'Taille L',    3, 3),
-    (10, 'HM-SWT-MKY-S',    'Taille S',    2, 1),
-    (10, 'HM-SWT-MKY-M',    'Taille M',    5, 2),
-    (10, 'HM-SWT-MKY-L',    'Taille L',    4, 3),
-    (10, 'HM-SWT-MKY-XL',   'Taille XL',   2, 4),
-    (11, 'HM-PMX-30',       'Taille 30',   2, 1),
-    (11, 'HM-PMX-32',       'Taille 32',   3, 2),
-    (11, 'HM-PMX-34',       'Taille 34',   2, 3),
+    ( 7, 'HM-TSH-CBR-S',    'S',           4, 1),
+    ( 7, 'HM-TSH-CBR-M',    'M',           1, 2),
+    ( 7, 'HM-TSH-CBR-L',    'L',           0, 3),
+    ( 7, 'HM-TSH-CBR-XL',   'XL',          5, 4),
+    ( 8, 'HM-TSH-TRB-S',    'S',           3, 1),
+    ( 8, 'HM-TSH-TRB-M',    'M',           5, 2),
+    ( 8, 'HM-TSH-TRB-L',    'L',           7, 3),
+    ( 8, 'HM-TSH-TRB-XL',   'XL',          1, 4),
+    ( 9, 'HM-TSH-CAP-S',    'S',           2, 1),
+    ( 9, 'HM-TSH-CAP-M',    'M',           4, 2),
+    ( 9, 'HM-TSH-CAP-L',    'L',           3, 3),
+    (10, 'HM-SWT-MKY-S',    'S',           2, 1),
+    (10, 'HM-SWT-MKY-M',    'M',           5, 2),
+    (10, 'HM-SWT-MKY-L',    'L',           4, 3),
+    (10, 'HM-SWT-MKY-XL',   'XL',          2, 4),
+    (11, 'HM-PMX-30',       '30',          2, 1),
+    (11, 'HM-PMX-32',       '32',          3, 2),
+    (11, 'HM-PMX-34',       '34',          2, 3),
     (12, 'HM-SAC-RES-45',   'Unique',      6, 1),
-    (13, 'HM-BLC-MAI-S',    'Taille S',    1, 1),
-    (13, 'HM-BLC-MAI-M',    'Taille M',    3, 2),
-    (13, 'HM-BLC-MAI-L',    'Taille L',    2, 3),
-    (13, 'HM-BLC-MAI-XL',   'Taille XL',   1, 4),
+    (13, 'HM-BLC-MAI-S',    'S',           1, 1),
+    (13, 'HM-BLC-MAI-M',    'M',           3, 2),
+    (13, 'HM-BLC-MAI-L',    'L',           2, 3),
+    (13, 'HM-BLC-MAI-XL',   'XL',          1, 4),
     (14, 'HM-STB-50-ALU',   'Aluminium',   4, 1),
     (14, 'HM-STB-50-ARG',   'Argent',      2, 2),
     (14, 'HM-STB-50-NOI',   'Noir',        3, 3),
     (15, 'HM-KTB-ALU-42',   'Unique',      0, 1),
     (16, 'HM-POI-CHA-XADV', 'Unique',      5, 1),
     (17, 'HM-SEL-CNF',      'Unique',      2, 1),
-    (18, 'HM-SAC-SEL-10',   'Unique',      7, 1);
+    (18, 'HM-SAC-SEL-10',   'Unique',      7, 1),
+    -- 2XL ajoutée en dernier : les identifiants des variantes précédentes,
+    -- déjà enregistrés dans les paniers, ne changent pas.
+    ( 7, 'HM-TSH-CBR-2XL',  '2XL',         4, 5);
+
+-- Type de variante des produits qui en ont plusieurs (US OPT-b). Les tailles
+-- du T-shirt CBR Fireblade et leurs stocks reprennent la maquette (écran 18).
+UPDATE product SET variant_axis = 'Taille'     WHERE id IN (7, 8, 9, 10, 11, 13);
+UPDATE product SET variant_axis = 'Coloris'    WHERE id = 6;
+UPDATE product SET variant_axis = 'Contenance' WHERE id = 4;
+UPDATE product SET variant_axis = 'Finition'   WHERE id = 14;
 
 -- Caractéristiques : celles du blouson reprennent la maquette (écran 2).
 INSERT INTO product_feature (product_id, label, value, position) VALUES
@@ -521,6 +603,13 @@ INSERT INTO product_feature (product_id, label, value, position) VALUES
     (14, 'Fourni avec',   'Dosseret passager',                            3),
     (16, 'Compatibilité', 'X-ADV 750 (2017-2020)',                        1),
     (16, 'Réglage',       '5 niveaux de chauffe',                         2);
+
+-- Options : celles de la top box reprennent la maquette du choix des options
+-- (écran 16), la pose des poignées celle du panier avec options (écran 17).
+INSERT INTO product_option (product_id, label, description, price, position) VALUES
+    (14, 'Sac intérieur 50 L', 'Sac étanche sur mesure avec poignée',  59.00, 1),
+    (14, 'Pose en atelier',    'Montage par la concession au retrait', 30.00, 2),
+    (16, 'Pose en atelier',    'Montage par la concession au retrait', 60.00, 1);
 
 -- Comptes de démonstration (voir README) : alice@exemple.fr / azerty et
 -- admin@honda-lyon.fr / motdepasse. Les empreintes ont été produites par

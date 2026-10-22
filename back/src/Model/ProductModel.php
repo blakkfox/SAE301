@@ -34,6 +34,15 @@ final class ProductModel
                        AND (shown_parent.id IS NULL OR shown_parent.is_visible = 1))';
 
     /**
+     * Libellé complet d'une variante (US OPT-b) : le type de variante du
+     * produit suivi du libellé de la variante, « Taille M » pour « M ».
+     * CONCAT_WS ignore un type NULL : une variante unique garde son libellé
+     * (« Unique », « 1 L »). Partagé avec OrderModel, qui le copie dans la
+     * ligne de commande. La requête doit joindre variant et product.
+     */
+    public const VARIANT_LABEL = "CONCAT_WS(' ', product.variant_axis, variant.label)";
+
+    /**
      * Colonne SQL single_variant_id d'une carte produit : l'identifiant de la
      * variante si le produit n'en a qu'une, NULL sinon. Elle permet d'ajouter
      * au panier depuis la carte (CMD-b) sans avoir à choisir de variante.
@@ -148,15 +157,18 @@ final class ProductModel
      * @param int $id Identifiant du produit.
      *
      * @return array{id:int, name:string, description:?string, price:float, image:?string,
+     *               variantAxis:?string,
      *               category:array{id:int, name:string, slug:string,
      *                              parent:?array{id:int, name:string, slug:string}}}|null
-     *         null si le produit n'existe pas ou n'est pas visible.
+     *         null si le produit n'existe pas ou n'est pas visible ;
+     *         variantAxis : ce qui distingue ses variantes (« Taille »…), ou null (US OPT-b).
      */
     public function findVisibleById(int $id): ?array
     {
         // LEFT JOIN : une catégorie de premier niveau n'a pas de parent, et le
         // produit doit tout de même être trouvé.
         $sql = 'SELECT product.id, product.name, product.description, product.price, product.image,
+                       product.variant_axis,
                        category.id   AS category_id,
                        category.name AS category_name,
                        category.slug AS category_slug,
@@ -185,6 +197,7 @@ final class ProductModel
             'description' => $row['description'],
             'price'       => (float) $row['price'],
             'image'       => $row['image'],
+            'variantAxis' => $row['variant_axis'],
             'category'    => [
                 'id'     => (int) $row['category_id'],
                 'name'   => $row['category_name'],
@@ -202,7 +215,8 @@ final class ProductModel
      * Variantes d'un produit, dans l'ordre d'affichage.
      *
      * Le stock de chaque variante est renvoyé pour son affichage (US STK-b) ;
-     * il est revérifié par le serveur à la commande (CMD-a).
+     * il est revérifié par le serveur à la commande (CMD-a). Le libellé est
+     * court (« M ») : la fiche l'affiche sous le type de variante du produit.
      *
      * @param int $productId Identifiant du produit.
      *
@@ -249,6 +263,86 @@ final class ProductModel
         $statement->execute();
 
         return $statement->fetchAll();
+    }
+
+    /**
+     * Options à cocher sur la fiche d'un produit (US OPT-c), dans l'ordre
+     * d'affichage. Le supplément est renvoyé pour son affichage ; il est
+     * relu en base à la commande (OPT-a, OrderModel), jamais pris au navigateur.
+     *
+     * @param int $productId Identifiant du produit.
+     *
+     * @return array<int, array{id:int, label:string, description:?string, price:float}>
+     */
+    public function findOptions(int $productId): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT id, label, description, price
+               FROM product_option
+              WHERE product_id = :product
+           ORDER BY position, id'
+        );
+        $statement->bindValue(':product', $productId, PDO::PARAM_INT);
+        $statement->execute();
+
+        return array_map(
+            static fn (array $row): array => [
+                'id'          => (int) $row['id'],
+                'label'       => $row['label'],
+                'description' => $row['description'],
+                'price'       => (float) $row['price'],
+            ],
+            $statement->fetchAll(),
+        );
+    }
+
+    /**
+     * Options de plusieurs produits à la fois, pour le panier (US OPT-a) :
+     * une seule requête, quel que soit le nombre de produits.
+     *
+     * @param array<int, int> $productIds Identifiants de produits, liste indexée à partir de 0.
+     *
+     * @return array<int, array<int, array{id:int, label:string, description:?string, price:float}>>
+     *         Clé : identifiant du produit ; un produit sans option est absent.
+     */
+    public function findOptionsByProducts(array $productIds): array
+    {
+        if ($productIds === []) {
+            return [];
+        }
+
+        // Un marqueur par identifiant, comme findCartVariants.
+        $markers = array_map(
+            static fn (int $index): string => ':p' . $index,
+            array_keys($productIds),
+        );
+
+        $statement = $this->pdo->prepare(
+            'SELECT id, product_id, label, description, price
+               FROM product_option
+              WHERE product_id IN (' . implode(', ', $markers) . ')
+           ORDER BY product_id, position, id'
+        );
+
+        for ($i = 0; $i < count($productIds); $i++) {
+            $statement->bindValue($markers[$i], $productIds[$i], PDO::PARAM_INT);
+        }
+
+        $statement->execute();
+        $rows = $statement->fetchAll();
+
+        $options = [];
+
+        for ($i = 0; $i < count($rows); $i++) {
+            $options[(int) $rows[$i]['product_id']][] = [
+                'id'          => (int) $rows[$i]['id'],
+                'label'       => $rows[$i]['label'],
+                'description' => $rows[$i]['description'],
+                'price'       => (float) $rows[$i]['price'],
+            ];
+        }
+
+        return $options;
     }
 
     /**
@@ -309,7 +403,8 @@ final class ProductModel
             array_keys($variantIds),
         );
 
-        $sql = 'SELECT variant.id AS variant_id, variant.label, variant.reference, variant.stock,
+        $sql = 'SELECT variant.id AS variant_id, ' . self::VARIANT_LABEL . ' AS label,
+                       variant.reference, variant.stock,
                        product.id, product.name, product.price, product.image
                   FROM variant
             INNER JOIN product ON product.id = variant.product_id
@@ -370,7 +465,8 @@ final class ProductModel
     public function findLowStockVariants(int $maxStock): array
     {
         $statement = $this->pdo->prepare(
-            'SELECT variant.id AS variant_id, variant.label, variant.stock, product.id, product.name
+            'SELECT variant.id AS variant_id, ' . self::VARIANT_LABEL . ' AS label,
+                    variant.stock, product.id, product.name
                FROM variant
          INNER JOIN product ON product.id = variant.product_id
               WHERE variant.stock <= :maxStock

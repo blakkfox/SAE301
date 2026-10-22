@@ -1,4 +1,9 @@
+<!-- Un article du récapitulatif, avec ses options (OPT-a) dessous ; la
+     ligne des options disparaît si elle est vide (empty:hidden). -->
 <li class="flex justify-between gap-4">
-  <span class="min-w-0 text-ink-muted">{{text}}</span>
+  <span class="flex min-w-0 flex-col gap-0.5">
+    <span class="text-ink-muted">{{text}}</span>
+    <span class="text-caption text-ink-muted empty:hidden">{{options}}</span>
+  </span>
   <span class="shrink-0 font-semibold text-ink">{{total}}</span>
 </li>

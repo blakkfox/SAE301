@@ -1,0 +1,50 @@
+<!--
+  Lien « Guide des tailles » de la fiche produit (écran 18, US OPT-b) et sa
+  fenêtre. Un <dialog> natif ouvert par showModal() : il garde le focus,
+  se ferme avec Échap et rend le focus au bouton qui l'a ouvert.
+  m-auto : la remise à zéro de Tailwind retire les marges qui le centrent.
+-->
+<button type="button" data-size-guide-open data-focus-key="size-guide" class="text-sm text-link underline-offset-4 hover:underline">Guide des tailles</button>
+<dialog aria-labelledby="size-guide-title" class="m-auto w-[calc(100%-2rem)] max-w-lg rounded-xl bg-page p-0 text-ink backdrop:bg-dark/60">
+  <div class="flex flex-col gap-5 p-5 sm:p-6">
+    <div class="flex items-start justify-between gap-4">
+      <h2 id="size-guide-title" class="font-display text-h4 leading-none text-ink">Guide des tailles</h2>
+      <button type="button" data-size-guide-close class="-m-2 p-2 text-xl leading-none text-ink-muted hover:text-ink"><span aria-hidden="true">×</span><span class="sr-only">Fermer le guide des tailles</span></button>
+    </div>
+    <p class="text-sm text-ink-muted">Mesures du corps, en centimètres. Entre deux tailles, prenez la plus grande.</p>
+
+    <table class="w-full text-left text-small">
+      <caption class="mb-2 text-left font-semibold text-ink">T-shirts, sweats et blousons</caption>
+      <thead class="text-sm text-ink-muted">
+        <tr class="border-b border-line">
+          <th scope="col" class="py-2 font-normal">Taille</th>
+          <th scope="col" class="py-2 font-normal">Tour de poitrine</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="border-b border-line-subtle"><th scope="row" class="py-2 font-semibold">S</th><td class="py-2">88 à 96</td></tr>
+        <tr class="border-b border-line-subtle"><th scope="row" class="py-2 font-semibold">M</th><td class="py-2">96 à 104</td></tr>
+        <tr class="border-b border-line-subtle"><th scope="row" class="py-2 font-semibold">L</th><td class="py-2">104 à 112</td></tr>
+        <tr class="border-b border-line-subtle"><th scope="row" class="py-2 font-semibold">XL</th><td class="py-2">112 à 120</td></tr>
+        <tr><th scope="row" class="py-2 font-semibold">2XL</th><td class="py-2">120 à 128</td></tr>
+      </tbody>
+    </table>
+
+    <table class="w-full text-left text-small">
+      <caption class="mb-2 text-left font-semibold text-ink">Pantalons</caption>
+      <thead class="text-sm text-ink-muted">
+        <tr class="border-b border-line">
+          <th scope="col" class="py-2 font-normal">Taille</th>
+          <th scope="col" class="py-2 font-normal">Tour de taille</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="border-b border-line-subtle"><th scope="row" class="py-2 font-semibold">30</th><td class="py-2">76</td></tr>
+        <tr class="border-b border-line-subtle"><th scope="row" class="py-2 font-semibold">32</th><td class="py-2">81</td></tr>
+        <tr><th scope="row" class="py-2 font-semibold">34</th><td class="py-2">86</td></tr>
+      </tbody>
+    </table>
+
+    <button type="button" data-size-guide-close class="button button--outline h-12 px-6 text-base">Fermer</button>
+  </div>
+</dialog>

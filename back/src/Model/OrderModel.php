@@ -52,18 +52,22 @@ final class OrderModel
      * est annulée : ni commande, ni baisse, ni journal.
      *
      * Nom, variante, référence et prix sont copiés depuis la base dans les
-     * lignes de commande : le prix ne vient jamais du navigateur.
+     * lignes de commande : le prix ne vient jamais du navigateur. Il en va de
+     * même des options cochées (US OPT-a) : libellé et supplément sont copiés
+     * depuis product_option, et une option qui n'appartient pas au produit de
+     * sa ligne annule toute la commande.
      *
-     * @param int                                           $customerId   Compte connecté.
-     * @param int                                           $dealershipId Concession, déjà vérifiée.
-     * @param DateTimeImmutable                             $pickupStart  Début du créneau.
-     * @param DateTimeImmutable                             $pickupEnd    Fin du créneau.
-     * @param array<int, array{variantId:int, quantity:int}> $items       Lignes déjà validées,
-     *                                                                    sans doublon de variante.
+     * @param int                                                                    $customerId   Compte connecté.
+     * @param int                                                                    $dealershipId Concession, déjà vérifiée.
+     * @param DateTimeImmutable                                                      $pickupStart  Début du créneau.
+     * @param DateTimeImmutable                                                      $pickupEnd    Fin du créneau.
+     * @param array<int, array{variantId:int, quantity:int, optionIds:array<int, int>}> $items     Lignes déjà validées,
+     *                                                                                             sans doublon de variante.
      *
-     * @return array{orderId:?int, unavailable:array<int, int>}
+     * @return array{orderId:?int, unavailable:array<int, int>, refusedOptions:array<int, int>}
      *         orderId : la commande créée, ou null si rien n'a été enregistré ;
-     *         unavailable : les variantes en cause dans ce cas.
+     *         unavailable : les variantes en rupture dans ce cas ;
+     *         refusedOptions : les variantes dont une option est refusée.
      */
     public function create(
         int $customerId,
@@ -83,10 +87,17 @@ final class OrderModel
             if ($unavailable !== []) {
                 $this->pdo->rollBack();
 
-                return ['orderId' => null, 'unavailable' => $unavailable];
+                return ['orderId' => null, 'unavailable' => $unavailable, 'refusedOptions' => []];
             }
 
-            $this->insertLines($orderId, $items);
+            $refusedOptions = $this->insertLines($orderId, $items);
+
+            if ($refusedOptions !== []) {
+                $this->pdo->rollBack();
+
+                return ['orderId' => null, 'unavailable' => [], 'refusedOptions' => $refusedOptions];
+            }
+
             $this->updateTotal($orderId);
             $this->insertEvent($orderId, 'en_cours', null);
 
@@ -96,7 +107,7 @@ final class OrderModel
             throw $e;
         }
 
-        return ['orderId' => $orderId, 'unavailable' => []];
+        return ['orderId' => $orderId, 'unavailable' => [], 'refusedOptions' => []];
     }
 
     /**
@@ -107,7 +118,8 @@ final class OrderModel
      * @return array{id:int, status:string, total:float, pickupStart:string, pickupEnd:string,
      *               createdAt:string, dealership:array{id:int, name:string, shortName:string},
      *               lines:array<int, array{variantId:?int, name:string, label:string,
-     *                                      reference:string, unitPrice:float, quantity:int}>}|null
+     *                                      reference:string, unitPrice:float, quantity:int,
+     *                                      options:array<int, array{label:string, price:float}>}>}|null
      *         null si la commande n'existe pas.
      */
     public function findById(int $id): ?array
@@ -220,7 +232,8 @@ final class OrderModel
      * @return array{id:int, status:string, total:float, pickupStart:string, pickupEnd:string,
      *               createdAt:string, dealership:array{id:int, name:string, shortName:string},
      *               lines:array<int, array{variantId:?int, name:string, label:string,
-     *                                      reference:string, unitPrice:float, quantity:int}>}|null
+     *                                      reference:string, unitPrice:float, quantity:int,
+     *                                      options:array<int, array{label:string, price:float}>}>}|null
      *         null si le client n'a jamais commandé.
      */
     public function findLastByCustomer(int $customerId): ?array
@@ -249,7 +262,8 @@ final class OrderModel
      * @return array{id:int, status:string, total:float, pickupStart:string, pickupEnd:string,
      *               createdAt:string, dealership:array{id:int, name:string, shortName:string},
      *               lines:array<int, array{variantId:?int, name:string, label:string,
-     *                                      reference:string, unitPrice:float, quantity:int}>,
+     *                                      reference:string, unitPrice:float, quantity:int,
+     *                                      options:array<int, array{label:string, price:float}>}>,
      *               events:array<int, array{status:string, createdAt:string}>}|null
      *         null si la commande n'existe pas ou appartient à un autre client.
      */
@@ -406,7 +420,8 @@ final class OrderModel
      * @return array{id:int, status:string, total:float, pickupStart:string, pickupEnd:string,
      *               createdAt:string, dealership:array{id:int, name:string, shortName:string},
      *               lines:array<int, array{variantId:?int, name:string, label:string,
-     *                                      reference:string, unitPrice:float, quantity:int}>,
+     *                                      reference:string, unitPrice:float, quantity:int,
+     *                                      options:array<int, array{label:string, price:float}>}>,
      *               customer:array{firstName:string, lastName:string, phone:string},
      *               events:array<int, array{status:string, createdAt:string,
      *                                       admin:?array{firstName:string, lastName:string}}>}|null
@@ -556,28 +571,79 @@ final class OrderModel
     }
 
     /**
-     * Copie, pour chaque ligne, le nom, la variante, la référence et le prix
-     * tels qu'ils sont en base.
+     * Copie, pour chaque ligne, le nom, la variante (libellé complet,
+     * « Taille M », US OPT-b), la référence et le prix tels qu'ils sont en
+     * base, puis ses options (US OPT-a) : leur libellé et leur supplément,
+     * ajouté au prix unitaire de la ligne.
      *
-     * @param int                                           $orderId
-     * @param array<int, array{variantId:int, quantity:int}> $items
+     * Une option n'est copiée que si elle appartient au produit de la
+     * variante : MySQL le vérifie par la jointure, si bien qu'un identifiant
+     * inventé ou d'un autre produit ne copie rien et est relevé.
+     *
+     * @param int                                                                    $orderId
+     * @param array<int, array{variantId:int, quantity:int, optionIds:array<int, int>}> $items
+     *
+     * @return array<int, int> Variantes dont une option est refusée (vide si tout va bien).
      */
-    private function insertLines(int $orderId, array $items): void
+    private function insertLines(int $orderId, array $items): array
     {
-        $statement = $this->pdo->prepare(
+        $line = $this->pdo->prepare(
             'INSERT INTO order_line (order_id, variant_id, product_name, variant_label, reference, unit_price, quantity)
-             SELECT :order, variant.id, product.name, variant.label, variant.reference, product.price, :quantity
+             SELECT :order, variant.id, product.name, ' . ProductModel::VARIANT_LABEL . ',
+                    variant.reference, product.price, :quantity
                FROM variant
          INNER JOIN product ON product.id = variant.product_id
               WHERE variant.id = :variant'
         );
+        $option = $this->pdo->prepare(
+            'INSERT INTO order_line_option (order_line_id, option_id, label, price)
+             SELECT :line, product_option.id, product_option.label, product_option.price
+               FROM product_option
+         INNER JOIN variant ON variant.product_id = product_option.product_id
+              WHERE product_option.id = :option AND variant.id = :variant'
+        );
+        // COALESCE : si toutes les options sont refusées, SUM vaut NULL ; la
+        // ligne garde alors son prix le temps que create annule la commande.
+        $price = $this->pdo->prepare(
+            'UPDATE order_line
+                SET unit_price = unit_price
+                               + (SELECT COALESCE(SUM(price), 0) FROM order_line_option WHERE order_line_id = :options)
+              WHERE id = :line'
+        );
+
+        $refused = [];
 
         for ($i = 0; $i < count($items); $i++) {
-            $statement->bindValue(':order', $orderId, PDO::PARAM_INT);
-            $statement->bindValue(':quantity', $items[$i]['quantity'], PDO::PARAM_INT);
-            $statement->bindValue(':variant', $items[$i]['variantId'], PDO::PARAM_INT);
-            $statement->execute();
+            $line->bindValue(':order', $orderId, PDO::PARAM_INT);
+            $line->bindValue(':quantity', $items[$i]['quantity'], PDO::PARAM_INT);
+            $line->bindValue(':variant', $items[$i]['variantId'], PDO::PARAM_INT);
+            $line->execute();
+
+            $optionIds = $items[$i]['optionIds'];
+
+            if ($optionIds === []) {
+                continue;
+            }
+
+            $lineId = (int) $this->pdo->lastInsertId();
+
+            for ($j = 0; $j < count($optionIds); $j++) {
+                $option->bindValue(':line', $lineId, PDO::PARAM_INT);
+                $option->bindValue(':option', $optionIds[$j], PDO::PARAM_INT);
+                $option->bindValue(':variant', $items[$i]['variantId'], PDO::PARAM_INT);
+                $option->execute();
+
+                if ($option->rowCount() === 0) {
+                    $refused[] = $items[$i]['variantId'];
+                }
+            }
+
+            $price->bindValue(':options', $lineId, PDO::PARAM_INT);
+            $price->bindValue(':line', $lineId, PDO::PARAM_INT);
+            $price->execute();
         }
+
+        return array_values(array_unique($refused));
     }
 
     /**
@@ -598,23 +664,28 @@ final class OrderModel
     }
 
     /**
-     * Lignes d'une commande, dans l'ordre d'enregistrement.
+     * Lignes d'une commande, dans l'ordre d'enregistrement, chacune avec ses
+     * options (US OPT-a). unitPrice comprend déjà leurs suppléments.
      *
      * @param int $orderId
      *
      * @return array<int, array{variantId:?int, name:string, label:string, reference:string,
-     *                          unitPrice:float, quantity:int}>
+     *                          unitPrice:float, quantity:int,
+     *                          options:array<int, array{label:string, price:float}>}>
      */
     private function findLines(int $orderId): array
     {
         $statement = $this->pdo->prepare(
-            'SELECT variant_id, product_name, variant_label, reference, unit_price, quantity
+            'SELECT id, variant_id, product_name, variant_label, reference, unit_price, quantity
                FROM order_line
               WHERE order_id = :order
            ORDER BY id'
         );
         $statement->bindValue(':order', $orderId, PDO::PARAM_INT);
         $statement->execute();
+        $rows = $statement->fetchAll();
+
+        $options = $this->findLineOptions($orderId);
 
         return array_map(
             static fn (array $row): array => [
@@ -624,9 +695,43 @@ final class OrderModel
                 'reference' => $row['reference'],
                 'unitPrice' => (float) $row['unit_price'],
                 'quantity'  => (int) $row['quantity'],
+                'options'   => $options[(int) $row['id']] ?? [],
             ],
-            $statement->fetchAll(),
+            $rows,
         );
+    }
+
+    /**
+     * Options des lignes d'une commande (US OPT-a), rangées par ligne, dans
+     * l'ordre où elles ont été enregistrées.
+     *
+     * @param int $orderId
+     *
+     * @return array<int, array<int, array{label:string, price:float}>> Clé : identifiant de la ligne.
+     */
+    private function findLineOptions(int $orderId): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT order_line_option.order_line_id, order_line_option.label, order_line_option.price
+               FROM order_line_option
+         INNER JOIN order_line ON order_line.id = order_line_option.order_line_id
+              WHERE order_line.order_id = :order
+           ORDER BY order_line_option.id'
+        );
+        $statement->bindValue(':order', $orderId, PDO::PARAM_INT);
+        $statement->execute();
+        $rows = $statement->fetchAll();
+
+        $options = [];
+
+        for ($i = 0; $i < count($rows); $i++) {
+            $options[(int) $rows[$i]['order_line_id']][] = [
+                'label' => $rows[$i]['label'],
+                'price' => (float) $rows[$i]['price'],
+            ];
+        }
+
+        return $options;
     }
 
     /**

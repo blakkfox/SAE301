@@ -19,6 +19,10 @@ use App\Model\ProductModel;
  * Le stock permet au panier de plafonner les quantités et de signaler les
  * articles épuisés (US STK-c).
  *
+ * Les options proposées pour chaque produit (US OPT-a), avec leur supplément
+ * lu en base, permettent au panier d'afficher et de modifier les options
+ * cochées de chaque ligne.
+ *
  * Les quantités, la disponibilité et les prix seront revérifiés à la
  * validation de la commande (CMD-a), dans une transaction.
  */
@@ -42,7 +46,8 @@ final class CartController
      * GET /api/cart?variants=12,4,31
      *
      * Répond { variants } : une entrée par variante encore visible au
-     * catalogue, avec son stock. Une variante absente de la réponse n'est
+     * catalogue, avec son stock et les options de son produit (options,
+     * liste vide s'il n'en a pas). Une variante absente de la réponse n'est
      * plus disponible. 400 si la liste est vide, trop longue ou contient une valeur invalide.
      *
      * @param Request $request Requête entrante.
@@ -73,6 +78,16 @@ final class CartController
         // attend une liste indexée à partir de 0.
         $ids = array_values(array_unique($ids));
 
-        Response::json(['variants' => $this->products->findCartVariants($ids)]);
+        $variants = $this->products->findCartVariants($ids);
+        $options  = $this->products->findOptionsByProducts(
+            array_values(array_unique(array_column($variants, 'productId'))),
+        );
+
+        Response::json([
+            'variants' => array_map(
+                static fn (array $variant): array => $variant + ['options' => $options[$variant['productId']] ?? []],
+                $variants,
+            ),
+        ]);
     }
 }

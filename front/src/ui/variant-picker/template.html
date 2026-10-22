@@ -1,15 +1,22 @@
 <!--
   Choix de la variante (taille, coloris, contenance…) de la fiche produit,
-  d'après le bloc « Taille » de la maquette (écran 2). Les variantes épuisées
-  sont barrées (STK-b) ; le guide des tailles et les variantes enrichies
-  arriveront avec OPT-b.
+  d'après le bloc « Taille : M » de la maquette (écran 18, US OPT-b) : la
+  légende nomme le type de variante et le choix courant ; sous les choix, le
+  stock restant de la variante choisie, les variantes épuisées et le guide
+  des tailles. Chaque élément de cette ligne est retiré s'il est vide
+  (index.js), et la ligne entière s'il ne reste rien.
 
   Des boutons radio (et non des <button>) : le groupe se parcourt aux flèches
   du clavier, et le choix courant est annoncé par les lecteurs d'écran.
 -->
-<fieldset class="flex flex-col gap-3">
-  <legend class="mb-3 text-small font-semibold text-ink">Choix : {{selectedLabel}}</legend>
+<fieldset class="flex flex-col gap-2.5">
+  <legend class="mb-2.5 text-small font-semibold text-ink">{{legend}}</legend>
   <div class="flex flex-wrap gap-2.5">
     <slot name="options"></slot>
+  </div>
+  <div data-variant-info class="flex flex-wrap items-center gap-x-3 gap-y-2">
+    <span data-variant-stock class="stock-badge stock-badge--low">{{stockNote}}</span>
+    <p data-variant-sold-out class="text-sm text-ink-muted">{{soldOutNote}}</p>
+    <slot name="size-guide"></slot>
   </div>
 </fieldset>

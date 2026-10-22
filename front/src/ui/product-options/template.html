@@ -1,0 +1,17 @@
+<!--
+  Bloc « Options » de la fiche produit (écran 16, US OPT-c) : les options à
+  cocher, puis le prix d'un article avec les options choisies.
+
+  Un fieldset : le lecteur d'écran annonce « Options » en entrant dans le
+  groupe de cases.
+-->
+<fieldset class="flex flex-col gap-3.5 rounded-xl border border-line bg-page p-5 sm:p-6">
+  <!-- float-left : la légende passe dans le cadre, au lieu d'en couper la bordure. -->
+  <legend class="float-left text-lg font-semibold text-ink">Options</legend>
+  <slot name="options"></slot>
+  <hr class="border-line-subtle" />
+  <p class="flex items-baseline justify-between gap-4 text-ink">
+    <span class="font-semibold">Prix avec options</span>
+    <span class="text-xl font-bold whitespace-nowrap">{{total}}</span>
+  </p>
+</fieldset>

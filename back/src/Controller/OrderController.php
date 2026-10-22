@@ -20,7 +20,8 @@ use DateTimeZone;
  * Les routes exigent un compte connecté (identifiant rangé en session
  * par AuthController). Les créneaux sont calculés ici, côté serveur, et
  * recalculés à l'envoi : un créneau passé ou inventé est refusé. Quantités,
- * stock et prix sont revérifiés par OrderModel, dans une transaction.
+ * stock, prix et options (US OPT-a) sont revérifiés par OrderModel, dans une
+ * transaction.
  */
 final class OrderController
 {
@@ -50,6 +51,9 @@ final class OrderController
 
     /** Quantité maximale d'une ligne (comme MAX_QUANTITY dans front/src/data/cart.js). */
     private const MAX_QUANTITY = 10;
+
+    /** Nombre maximal d'options d'une ligne (comme MAX_OPTIONS dans front/src/data/cart.js). */
+    private const MAX_OPTIONS = 10;
 
     /**
      * Périodes de l'historique (US SUI-c) : nombre de mois, ou null pour
@@ -108,11 +112,14 @@ final class OrderController
 
     /**
      * POST /api/orders, corps JSON
-     * { dealershipId, slot, items: [{ variantId, quantity }] }.
+     * { dealershipId, slot, items: [{ variantId, quantity, optionIds }] }.
+     * optionIds (US OPT-a) est facultatif : sans lui, la ligne n'a pas d'option.
      *
      * Enregistre la commande et baisse les stocks : répond { order }, en 201.
      * 401 si personne n'est connecté ; 400 si les articles sont invalides ;
-     * 422 (clé « champs ») si la concession ou le créneau est refusé ;
+     * 422 (clé « champs ») si la concession ou le créneau est refusé, ou si
+     * une option n'est pas (ou plus) proposée pour son article : rien n'est
+     * alors enregistré ;
      * 409 (clé « indisponibles », identifiants de variantes) si un article
      * manque : rien n'est alors enregistré.
      *
@@ -145,6 +152,13 @@ final class OrderController
         }
 
         $result = $this->orders->create($customer['id'], $dealership['id'], $slot['start'], $slot['end'], $items);
+
+        if ($result['refusedOptions'] !== []) {
+            Response::json([
+                'erreur' => 'Certaines options ont changé.',
+                'champs' => ['options' => 'Certaines options ne sont plus proposées : vérifiez votre panier.'],
+            ], 422);
+        }
 
         if ($result['orderId'] === null) {
             Response::json([
@@ -264,12 +278,13 @@ final class OrderController
 
     /**
      * Valide les articles reçus : une liste non vide d'au plus MAX_LINES
-     * lignes { variantId > 0, quantity entre 1 et MAX_QUANTITY }, sans
-     * variante en double.
+     * lignes { variantId > 0, quantity entre 1 et MAX_QUANTITY, optionIds },
+     * sans variante en double. Que chaque option appartienne bien au produit
+     * de sa ligne, c'est OrderModel qui le vérifie en base.
      *
      * @param mixed $items Valeur « items » du corps JSON.
      *
-     * @return array<int, array{variantId:int, quantity:int}>|null null si invalide.
+     * @return array<int, array{variantId:int, quantity:int, optionIds:array<int, int>}>|null null si invalide.
      */
     private static function validateItems(mixed $items): ?array
     {
@@ -294,16 +309,45 @@ final class OrderController
                 ['options' => ['min_range' => 1, 'max_range' => self::MAX_QUANTITY]],
             );
 
-            if ($variantId === false || $quantity === false) {
+            $optionIds = self::validateOptionIds($item['optionIds'] ?? []);
+
+            if ($variantId === false || $quantity === false || $optionIds === null) {
                 return null;
             }
 
-            $valid[] = ['variantId' => $variantId, 'quantity' => $quantity];
+            $valid[] = ['variantId' => $variantId, 'quantity' => $quantity, 'optionIds' => $optionIds];
         }
 
         $variantIds = array_column($valid, 'variantId');
 
         return count(array_unique($variantIds)) === count($variantIds) ? $valid : null;
+    }
+
+    /**
+     * Valide les options d'une ligne (US OPT-a) : une liste d'au plus
+     * MAX_OPTIONS identifiants > 0, sans doublon.
+     *
+     * @param mixed $optionIds Valeur « optionIds » d'une ligne.
+     *
+     * @return array<int, int>|null null si invalide.
+     */
+    private static function validateOptionIds(mixed $optionIds): ?array
+    {
+        if (!is_array($optionIds) || !array_is_list($optionIds) || count($optionIds) > self::MAX_OPTIONS) {
+            return null;
+        }
+
+        // filter_var refuse « 12abc », « -3 » ou « 0 », que (int) aurait acceptés.
+        $ids = array_map(
+            static fn (mixed $id): int|false => filter_var($id, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]),
+            $optionIds,
+        );
+
+        if (in_array(false, $ids, true) || count(array_unique($ids)) !== count($ids)) {
+            return null;
+        }
+
+        return $ids;
     }
 
     /**

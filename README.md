@@ -151,12 +151,14 @@ Une page dynamique suit le découpage Modèle / Contrôleur / Vue :
 | `GET /api/products?page=2&sort=price_asc` | une page du catalogue (12 produits) |
 | `GET /api/products?category=collection-honda` | une page des produits d'une catégorie, sous-catégories comprises. 404 si la catégorie n'existe pas |
 | `GET /api/categories` | arbre des catégories visibles (une catégorie masquée, ou dont la parente est masquée, en est absente avec ses produits) (`children` : sous-catégories) avec leur nombre de produits (`productCount`), et `total` du catalogue |
-| `GET /api/product?id=13` | fiche d'un produit : catégorie, variantes, caractéristiques, et 4 suggestions (`related`). 400 si `id` invalide, 404 si produit introuvable |
+| `GET /api/product?id=13` | fiche d'un produit : catégorie, variantes, caractéristiques, options à cocher (`options` : `id`, `label`, `description`, supplément `price`, US OPT-c), et 4 suggestions (`related`). 400 si `id` invalide, 404 si produit introuvable |
 | `GET /api/me` | compte connecté (`customer`), ou `null` |
 | `POST /api/login` | connexion, corps JSON `{"email": …, "password": …}`. 401 si identifiants incorrects |
 | `POST /api/register` | création de compte puis connexion, corps JSON `{firstName, lastName, email, phone, password, passwordConfirm}`. 422 si saisie invalide, 409 si e-mail déjà pris (erreurs par champ dans `champs`) |
 | `POST /api/password-reset` | nouveau mot de passe d'un compte client, corps JSON `{email, password, passwordConfirm}`. **Sans vérification d'identité** (version simplifiée du projet) ; les comptes admin sont exclus |
 | `POST /api/logout` | déconnexion |
+| `GET /api/cart?variants=12,4` | variantes du panier : nom, photo, prix, stock et options proposées pour leur produit (`options`, US OPT-a). Une variante absente de la réponse n'est plus au catalogue |
+| `POST /api/orders` | validation de la commande (US CMD-a), corps JSON `{dealershipId, slot, items: [{variantId, quantity, optionIds}]}` (`optionIds` facultatif, US OPT-a). Prix et suppléments relus en base et figés (`order_line`, `order_line_option`). 401 sans session, 400 si articles invalides, 422 si concession, créneau ou option refusé, 409 si stock insuffisant : rien n'est alors enregistré |
 | `GET /api/orders?period=6` | historique du compte connecté (US SUI-c) : ses commandes (`orders`) des plus récentes aux plus anciennes, avec lignes, concession et journal des statuts (`events`, sans l'administrateur). Périodes : `3`, `6` (défaut), `12` derniers mois ou `all`. 401 sans session |
 | `GET /api/order?id=97` | une commande du compte connecté (US SUI-a), pour la commander à nouveau : `order` (lignes au prix payé, concession, `events`, `dayOffset`). Le stock actuel se lit avec `GET /api/cart`. 401 sans session, 400 si `id` invalide, 404 si la commande n'existe pas ou est celle d'un autre compte |
 | `GET /api/account` | espace personnel du compte connecté (US SUI-b) : `customer` (prénom, nom, e-mail, téléphone, `preferredDealershipId`), `dealerships`, `lastOrder` (commande la plus récente avec `dayOffset`, ou `null`). 401 sans session |
@@ -165,7 +167,7 @@ Une page dynamique suit le découpage Modèle / Contrôleur / Vue :
 | `POST /api/admin/login` | connexion du back-office (US GOF-b), corps JSON `{"email": …, "password": …}`. 401 si identifiants incorrects **ou compte client** |
 | `GET /api/admin/dashboard` | tableau de bord : indicateurs (`stats`), prochaines commandes (`upcomingOrders`), alertes stock (`stockAlerts`, `stockAlertCount`). 401 sans session, 403 pour un compte client |
 | `GET /api/admin/orders?status=en_cours&q=dupont&sort=total_desc&page=2` | gestion des commandes (US PIL-b) : une page de 20 commandes (`orders`), nombre par statut (`counts`, avec `all`) selon la recherche, réglages appliqués. Tris : `pickup_desc` (défaut), `pickup_asc`, `customer_asc`, `customer_desc`, `total_desc`, `total_asc`, `status_asc`, `status_desc`. 401, 403 comme le tableau de bord |
-| `GET /api/admin/order?id=142` | détail d'une commande : lignes, client, concession, journal des statuts (`events`). 400 si `id` invalide, 404 si introuvable |
+| `GET /api/admin/order?id=142` | détail d'une commande : lignes (avec leurs `options`, US OPT-a), client, concession, journal des statuts (`events`). 400 si `id` invalide, 404 si introuvable |
 | `POST /api/admin/orders/status` | corps JSON `{"ids": [142, 141], "status": "disponible" \| "retiree"}` : passage en lot, seulement depuis le statut précédent du cycle. Répond `updated` et `skipped` |
 | `POST /api/admin/orders/cancel` | corps JSON `{"id": 142}` : annulation et recrédit du stock (STK-a), dans une transaction. 409 si la commande est retirée ou déjà annulée |
 | `GET /api/admin/categories` | gestion des catégories (US GOF-c) : toutes les catégories, masquées comprises, en arbre, avec `isVisible` et `productCount` (tous les produits, sous-catégories comprises). 401, 403 comme le tableau de bord |

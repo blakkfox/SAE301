@@ -7,8 +7,13 @@
 
   <dl class="flex flex-col gap-4 text-small">
     <div class="flex justify-between gap-4">
-      <dt class="text-ink-muted">Sous-total ({{subtotalLabel}})</dt>
+      <dt class="text-ink-muted">{{subtotalTitle}} ({{subtotalLabel}})</dt>
       <dd class="font-semibold text-ink">{{subtotal}}</dd>
+    </div>
+    <!-- Suppléments des options cochées (écran 17, OPT-a), retirée sans option. -->
+    <div data-summary-options class="flex justify-between gap-4">
+      <dt class="text-ink-muted">Options</dt>
+      <dd class="font-semibold text-ink">{{options}}</dd>
     </div>
     <div class="flex justify-between gap-4">
       <dt class="text-ink-muted">Retrait en concession</dt>
@@ -29,4 +34,5 @@
   <button type="button" disabled data-checkout-blocked aria-describedby="cart-summary-note" class="button h-12 w-full px-6 text-base">Valider la commande</button>
 
   <p id="cart-summary-note" class="text-caption text-ink-muted">{{note}}</p>
+  <p data-summary-options-note class="text-caption text-ink-muted">{{optionsNote}}</p>
 </section>
