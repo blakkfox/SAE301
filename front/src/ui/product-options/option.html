@@ -1,0 +1,10 @@
+<!-- Le libellé entier est cliquable. La description, facultative, disparaît
+     si elle est vide (empty:hidden). -->
+<label class="flex cursor-pointer items-center gap-3">
+  <input type="checkbox" value="{{id}}" data-focus-key="option-{{id}}" class="checkbox" />
+  <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+    <span class="text-small font-medium text-ink">{{label}}</span>
+    <span class="text-caption text-ink-muted empty:hidden">{{description}}</span>
+  </span>
+  <span class="text-small font-semibold whitespace-nowrap text-ink">{{price}}</span>
+</label>

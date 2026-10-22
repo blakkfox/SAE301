@@ -377,6 +377,49 @@
   }
 
   /*
+    Case à cocher des options de la fiche produit (US OPT-c) : une case
+    native, redessinée en carré de 22 px. Cochée, elle prend le rouge des
+    actions et affiche une coche blanche (::before) ; seules les variables
+    privées changent.
+  */
+  .checkbox {
+    --_bg: var(--clr-bg-page);
+    --_border: var(--clr-border-strong);
+
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 1.375rem;
+    height: 1.375rem;
+    border: 1.5px solid var(--_border);
+    border-radius: 0.25rem;
+    background-color: var(--_bg);
+    transition: background-color 150ms ease;
+
+    &::before {
+      content: "";
+      width: 0.375rem;
+      height: 0.6875rem;
+      margin-top: -0.125rem;
+      border: solid var(--clr-on-action);
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+      visibility: hidden;
+    }
+
+    &:checked {
+      --_bg: var(--clr-action);
+      --_border: var(--clr-action);
+
+      &::before {
+        visibility: visible;
+      }
+    }
+  }
+
+  /*
     Champ de saisie de la charte (formulaires de CMD-c). Comme pour .button,
     l'état ne fait que réassigner la variable privée : un champ en erreur
     (aria-invalid, posé par applyFieldErrors) est bordé du rouge Honda.

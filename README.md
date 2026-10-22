@@ -151,7 +151,7 @@ Une page dynamique suit le découpage Modèle / Contrôleur / Vue :
 | `GET /api/products?page=2&sort=price_asc` | une page du catalogue (12 produits) |
 | `GET /api/products?category=collection-honda` | une page des produits d'une catégorie, sous-catégories comprises. 404 si la catégorie n'existe pas |
 | `GET /api/categories` | arbre des catégories visibles (une catégorie masquée, ou dont la parente est masquée, en est absente avec ses produits) (`children` : sous-catégories) avec leur nombre de produits (`productCount`), et `total` du catalogue |
-| `GET /api/product?id=13` | fiche d'un produit : catégorie, variantes, caractéristiques, et 4 suggestions (`related`). 400 si `id` invalide, 404 si produit introuvable |
+| `GET /api/product?id=13` | fiche d'un produit : catégorie, variantes, caractéristiques, options à cocher (`options` : `id`, `label`, `description`, supplément `price`, US OPT-c), et 4 suggestions (`related`). 400 si `id` invalide, 404 si produit introuvable |
 | `GET /api/me` | compte connecté (`customer`), ou `null` |
 | `POST /api/login` | connexion, corps JSON `{"email": …, "password": …}`. 401 si identifiants incorrects |
 | `POST /api/register` | création de compte puis connexion, corps JSON `{firstName, lastName, email, phone, password, passwordConfirm}`. 422 si saisie invalide, 409 si e-mail déjà pris (erreurs par champ dans `champs`) |

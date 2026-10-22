@@ -8,6 +8,7 @@ import { ProductFeaturesView } from "../../ui/product-features/index.js";
 import { ProductCardView } from "../../ui/product-card/index.js";
 import { ProductGalleryView } from "../../ui/product-gallery/index.js";
 import { ProductGridView } from "../../ui/product-grid/index.js";
+import { ProductOptionsView } from "../../ui/product-options/index.js";
 import { QuantityStepperView } from "../../ui/quantity-stepper/index.js";
 import { StockBadgeView } from "../../ui/stock-badge/index.js";
 import { VariantPickerView } from "../../ui/variant-picker/index.js";
@@ -38,6 +39,11 @@ import templateFeedback from "./feedback.html?raw";
  * Contraintes de stock (STK-c) : la quantité à ajouter ne dépasse pas le
  * stock de la variante choisie, moins ce qui est déjà dans le panier.
  *
+ * Options (OPT-c) : les cases cochées s'ajoutent au prix d'un article
+ * (« Prix avec options ») et au montant du bouton d'ajout. Le panier ne garde
+ * encore que la variante et la quantité : les options y seront reprises avec
+ * OPT-a, et le message d'ajout le précise en attendant.
+ *
  * Découpage MVC strict :
  *   M — état de la page, appel à l'API, préparation des données affichables ;
  *   V — construction du DOM à partir des données REÇUES en paramètre ;
@@ -60,6 +66,7 @@ let M = {
   selectedImage: 0, // indice de la photo affichée en grand
   selectedVariantId: null, // variante choisie, ou null tant qu'aucune ne l'est
   quantity: 1, // quantité à ajouter au panier
+  selectedOptionIds: [], // options cochées (OPT-c), dans l'ordre d'affichage
   feedback: null, // { type: "succes" | "erreur", texte } après « Ajouter au panier », ou null
   addedProductId: null, // produit de la dernière carte « Vous aimerez aussi » ajoutée, ou null
   cartStatus: null, // confirmation d'ajout depuis une carte, à annoncer, ou null
@@ -75,6 +82,7 @@ M.reset = function () {
   M.selectedImage = 0;
   M.selectedVariantId = null;
   M.quantity = 1;
+  M.selectedOptionIds = [];
   M.feedback = null;
   M.addedProductId = null;
   M.cartStatus = null;
@@ -208,6 +216,40 @@ M.selectVariant = function (variantId) {
 };
 
 /**
+ * Coche ou décoche une option, si elle appartient au produit. Les options
+ * cochées restent dans l'ordre d'affichage.
+ *
+ * @param {number} optionId
+ * @param {boolean} isSelected - true pour cocher, false pour décocher.
+ */
+M.toggleOption = function (optionId, isSelected) {
+  if (!M.product.options.some((option) => option.id === optionId)) return;
+
+  M.selectedOptionIds = M.product.options
+    .map((option) => option.id)
+    .filter((id) => (id === optionId ? isSelected : M.selectedOptionIds.includes(id)));
+  M.feedback = null;
+};
+
+/**
+ * @returns {Array<{id: number, label: string, description: ?string, price: number}>}
+ *   Les options cochées, dans l'ordre d'affichage.
+ */
+M.getSelectedOptions = function () {
+  return M.product.options.filter((option) => M.selectedOptionIds.includes(option.id));
+};
+
+/**
+ * Prix d'un article avec les options cochées. Calculé pour l'affichage
+ * seulement : le serveur recalculera les suppléments à la commande (OPT-a).
+ *
+ * @returns {number}
+ */
+M.getUnitPrice = function () {
+  return M.getSelectedOptions().reduce((total, option) => total + option.price, M.product.price);
+};
+
+/**
  * Quantité maximale à ajouter (STK-c) : ce qui reste du stock de la variante
  * choisie une fois déduit le panier, ou le maximum du panier tant qu'aucune
  * ne l'est. Au moins 1, pour que le sélecteur reste lisible.
@@ -264,22 +306,51 @@ M.addToCart = function () {
 
   let label = M.product.variants.length > 1 ? ` (${variant.label})` : "";
   let count = M.quantity > 1 ? `${M.quantity} × ` : "";
-  M.feedback = { type: "succes", texte: `${count}${M.product.name}${label} ajouté au panier.` };
+  let options = M.getSelectedOptions().map((option) => option.label);
+  // Les options ne sont pas encore enregistrées dans le panier (OPT-a).
+  let optionsNote = options.length === 0
+    ? ""
+    : ` Les options (${options.join(", ")}) ne sont pas encore reprises dans le panier : précisez-les en concession au retrait.`;
+  M.feedback = { type: "succes", texte: `${count}${M.product.name}${label} ajouté au panier.${optionsNote}` };
   M.quantity = 1;
 };
 
 /**
+ * Données du bloc « Options » (OPT-c), ou null si le produit n'en a aucune.
+ *
+ * @returns {?Parameters<typeof ProductOptionsView.dom>[0]}
+ */
+M.getOptionsData = function () {
+  if (M.product.options.length === 0) return null;
+
+  return {
+    total: formatPrice(M.getUnitPrice()),
+    options: M.product.options.map((option) => ({
+      id: option.id,
+      label: option.label,
+      description: option.description ?? "",
+      price: `+ ${formatPrice(option.price)}`,
+      isSelected: M.selectedOptionIds.includes(option.id),
+    })),
+  };
+};
+
+/**
  * Données du bloc d'achat : le sélecteur de variante (null s'il n'y a qu'une
- * variante), le sélecteur de quantité et le bouton, « Épuisé » et désactivé
- * si la variante choisie, ou le produit entier, est épuisé.
+ * variante), les options (null si le produit n'en a pas), le sélecteur de
+ * quantité et le bouton, « Épuisé » et désactivé si la variante choisie, ou
+ * le produit entier, est épuisé. Un produit à options affiche dans le bouton
+ * le montant à ajouter, options comprises, comme sur la maquette (écran 16).
  *
  * @returns {{picker: ?Parameters<typeof VariantPickerView.dom>[0],
+ *   options: ?ReturnType<typeof M.getOptionsData>,
  *   quantity: Parameters<typeof QuantityStepperView.dom>[0],
  *   addLabel: string, isSoldOut: boolean}}
  */
 M.getPurchaseData = function () {
   let selected = M.getSelectedVariant();
   let isSoldOut = M.getStockStatus() === "out";
+  let options = M.getOptionsData();
   let picker = null;
 
   if (M.product.variants.length > 1) {
@@ -294,8 +365,16 @@ M.getPurchaseData = function () {
     };
   }
 
+  let addLabel = "Ajouter au panier";
+  if (isSoldOut) {
+    addLabel = "Épuisé";
+  } else if (options !== null) {
+    addLabel = `Ajouter au panier · ${formatPrice(M.getUnitPrice() * M.quantity)}`;
+  }
+
   return {
     picker,
+    options,
     quantity: {
       quantity: M.quantity,
       min: 1,
@@ -303,7 +382,7 @@ M.getPurchaseData = function () {
       label: `Quantité de ${M.product.name}`,
       size: "large",
     },
-    addLabel: isSoldOut ? "Épuisé" : "Ajouter au panier",
+    addLabel,
     isSoldOut,
   };
 };
@@ -451,6 +530,19 @@ C.handler_selectVariant = function (variantId) {
 };
 
 /**
+ * Case d'option cochée ou décochée : le prix avec options et le montant du
+ * bouton suivent.
+ *
+ * @param {number} optionId
+ * @param {boolean} isSelected - Nouvel état de la case.
+ */
+C.handler_toggleOption = function (optionId, isSelected) {
+  M.toggleOption(optionId, isSelected);
+  V.renderPurchase(M.getPurchaseData());
+  V.renderFeedback(M.feedback);
+};
+
+/**
  * Clic sur « − » ou « + » du sélecteur de quantité.
  *
  * @param {number} quantity - Quantité demandée.
@@ -568,6 +660,13 @@ V.createPurchaseFragment = function (purchaseData) {
     variantsSlot.remove();
   } else {
     variantsSlot.replaceWith(VariantPickerView.dom(purchaseData.picker, { onSelect: C.handler_selectVariant }));
+  }
+
+  let optionsSlot = fragment.querySelector('slot[name="options"]');
+  if (purchaseData.options === null) {
+    optionsSlot.remove();
+  } else {
+    optionsSlot.replaceWith(ProductOptionsView.dom(purchaseData.options, { onToggle: C.handler_toggleOption }));
   }
 
   fragment

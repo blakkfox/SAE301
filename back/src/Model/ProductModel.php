@@ -252,6 +252,37 @@ final class ProductModel
     }
 
     /**
+     * Options à cocher sur la fiche d'un produit (US OPT-c), dans l'ordre
+     * d'affichage. Le supplément est renvoyé pour son affichage ; il sera
+     * relu en base à la commande (OPT-a), jamais pris au navigateur.
+     *
+     * @param int $productId Identifiant du produit.
+     *
+     * @return array<int, array{id:int, label:string, description:?string, price:float}>
+     */
+    public function findOptions(int $productId): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT id, label, description, price
+               FROM product_option
+              WHERE product_id = :product
+           ORDER BY position, id'
+        );
+        $statement->bindValue(':product', $productId, PDO::PARAM_INT);
+        $statement->execute();
+
+        return array_map(
+            static fn (array $row): array => [
+                'id'          => (int) $row['id'],
+                'label'       => $row['label'],
+                'description' => $row['description'],
+                'price'       => (float) $row['price'],
+            ],
+            $statement->fetchAll(),
+        );
+    }
+
+    /**
      * Produits à suggérer sur une fiche : ceux de la même catégorie d'abord,
      * complétés par les autres, sans le produit affiché.
      *

@@ -34,7 +34,8 @@ final class ProductController
      * GET /api/product?id=13
      *
      * Répond { product, related } :
-     * - product : le produit, sa catégorie, ses variantes et ses caractéristiques ;
+     * - product : le produit, sa catégorie, ses variantes, ses caractéristiques
+     *   et ses options à cocher (US OPT-c) ;
      * - related : les cartes du bloc « Vous aimerez aussi ».
      * 400 si l'identifiant est invalide, 404 si le produit n'est pas visible.
      *
@@ -57,6 +58,7 @@ final class ProductController
 
         $product['variants'] = $this->products->findVariants($id);
         $product['features'] = $this->products->findFeatures($id);
+        $product['options']  = $this->products->findOptions($id);
 
         Response::json([
             'product' => $product,

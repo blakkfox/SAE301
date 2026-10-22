@@ -49,12 +49,15 @@ ProductData.fetchPage = async function (page, sort, category, inStockOnly = fals
 /**
  * La fiche d'un produit : GET /api/product?id=…
  *
+ * options sont les options à cocher du produit (OPT-c), avec leur supplément.
+ *
  * @param {string|number} id - Identifiant du produit (paramètre de l'URL).
  * @returns {Promise<{product: {id: number, name: string, description: ?string, price: number,
  *   image: ?string, category: {id: number, name: string, slug: string,
  *     parent: ?{id: number, name: string, slug: string}},
  *   variants: Array<{id: number, label: string, reference: string, stock: number}>,
- *   features: Array<{label: string, value: string}>},
+ *   features: Array<{label: string, value: string}>,
+ *   options: Array<{id: number, label: string, description: ?string, price: number}>},
  *   related: Array<{id: number, name: string, price: number, image: ?string, variantId: ?number,
  *     stock: number}>}>}
  * @throws {ErreurApi} 400 si l'identifiant est invalide, 404 si le produit n'existe pas.

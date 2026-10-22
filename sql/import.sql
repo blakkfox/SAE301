@@ -8,7 +8,8 @@
 -- Modèle (lot 0, voir analyse-user-stories.md) :
 --
 --     category 1 ── n product 1 ── n variant
---                           └── n product_feature
+--                           ├── n product_feature
+--                           └── n product_option   (US OPT-c)
 --
 --     customer : comptes clients et administrateurs (US CMD-c)
 --
@@ -46,6 +47,7 @@ DROP TABLE IF EXISTS order_line;
 DROP TABLE IF EXISTS customer_order;
 DROP TABLE IF EXISTS customer;
 DROP TABLE IF EXISTS dealership;
+DROP TABLE IF EXISTS product_option;
 DROP TABLE IF EXISTS product_feature;
 DROP TABLE IF EXISTS variant;
 DROP TABLE IF EXISTS product;
@@ -166,6 +168,35 @@ CREATE TABLE product_feature (
     CONSTRAINT fk_feature_product
         FOREIGN KEY (product_id) REFERENCES product (id)
         ON DELETE CASCADE
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- Options (US OPT-c)
+--
+-- Services ou accessoires facultatifs, à cocher sur la fiche d'un produit
+-- (sac intérieur, pose en atelier…). price est le supplément TTC ajouté au
+-- prix du produit, quelle que soit la variante choisie. Un produit peut n'en
+-- avoir aucune : la fiche masque alors le bloc. position fixe l'ordre
+-- d'affichage.
+-- ---------------------------------------------------------------------------
+CREATE TABLE product_option (
+    id          SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    product_id  SMALLINT UNSIGNED NOT NULL,
+    label       VARCHAR(60)       NOT NULL,
+    description VARCHAR(120)          NULL,
+    price       DECIMAL(8,2)      NOT NULL,
+    position    TINYINT UNSIGNED  NOT NULL DEFAULT 0,
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_option_product_label (product_id, label),
+    KEY idx_option_product (product_id, position),
+
+    CONSTRAINT fk_option_product
+        FOREIGN KEY (product_id) REFERENCES product (id)
+        ON DELETE CASCADE,
+    CONSTRAINT chk_option_price CHECK (price >= 0)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
@@ -521,6 +552,13 @@ INSERT INTO product_feature (product_id, label, value, position) VALUES
     (14, 'Fourni avec',   'Dosseret passager',                            3),
     (16, 'Compatibilité', 'X-ADV 750 (2017-2020)',                        1),
     (16, 'Réglage',       '5 niveaux de chauffe',                         2);
+
+-- Options : celles de la top box reprennent la maquette du choix des options
+-- (écran 16), la pose des poignées celle du panier avec options (écran 17).
+INSERT INTO product_option (product_id, label, description, price, position) VALUES
+    (14, 'Sac intérieur 50 L', 'Sac étanche sur mesure avec poignée',  59.00, 1),
+    (14, 'Pose en atelier',    'Montage par la concession au retrait', 30.00, 2),
+    (16, 'Pose en atelier',    'Montage par la concession au retrait', 60.00, 1);
 
 -- Comptes de démonstration (voir README) : alice@exemple.fr / azerty et
 -- admin@honda-lyon.fr / motdepasse. Les empreintes ont été produites par
