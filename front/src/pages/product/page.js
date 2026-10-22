@@ -40,9 +40,9 @@ import templateFeedback from "./feedback.html?raw";
  * stock de la variante choisie, moins ce qui est déjà dans le panier.
  *
  * Options (OPT-c) : les cases cochées s'ajoutent au prix d'un article
- * (« Prix avec options ») et au montant du bouton d'ajout. Le panier ne garde
- * encore que la variante et la quantité : les options y seront reprises avec
- * OPT-a, et le message d'ajout le précise en attendant.
+ * (« Prix avec options ») et au montant du bouton d'ajout. Elles sont
+ * enregistrées avec la ligne du panier (OPT-a) : si la variante y est déjà,
+ * les options cochées remplacent les siennes, et le message d'ajout le dit.
  *
  * Découpage MVC strict :
  *   M — état de la page, appel à l'API, préparation des données affichables ;
@@ -241,7 +241,7 @@ M.getSelectedOptions = function () {
 
 /**
  * Prix d'un article avec les options cochées. Calculé pour l'affichage
- * seulement : le serveur recalculera les suppléments à la commande (OPT-a).
+ * seulement : le serveur recalcule les suppléments à la commande (OPT-a).
  *
  * @returns {number}
  */
@@ -299,20 +299,46 @@ M.addToCart = function () {
   }
   M.quantity = Math.min(M.quantity, remaining);
 
-  if (!CartData.add(variant.id, M.quantity)) {
+  // Options de la ligne déjà au panier, remplacées par l'ajout si elles diffèrent.
+  let previous = CartData.optionsOf(variant.id);
+  let hasReplaced = previous.length > 0 && previous.join(",") !== M.selectedOptionIds.join(",");
+
+  if (!CartData.add(variant.id, M.quantity, M.selectedOptionIds)) {
     M.feedback = { type: "erreur", texte: "Le panier n'a pas pu être enregistré sur cet appareil." };
     return;
   }
 
+  M.feedback = { type: "succes", texte: M.formatAddedMessage(variant, hasReplaced) };
+  M.quantity = 1;
+};
+
+/**
+ * Message de confirmation d'un ajout au panier, avec les options choisies
+ * (OPT-a). Si la ligne du panier avait d'autres options, elles ont été
+ * remplacées par celles-ci : le message le précise.
+ *
+ * @param {{label: string}} variant - Variante ajoutée.
+ * @param {boolean} hasReplaced - Les options de la ligne du panier ont changé.
+ * @returns {string}
+ */
+M.formatAddedMessage = function (variant, hasReplaced) {
   let label = M.product.variants.length > 1 ? ` (${variant.label})` : "";
   let count = M.quantity > 1 ? `${M.quantity} × ` : "";
   let options = M.getSelectedOptions().map((option) => option.label);
-  // Les options ne sont pas encore enregistrées dans le panier (OPT-a).
-  let optionsNote = options.length === 0
-    ? ""
-    : ` Les options (${options.join(", ")}) ne sont pas encore reprises dans le panier : précisez-les en concession au retrait.`;
-  M.feedback = { type: "succes", texte: `${count}${M.product.name}${label} ajouté au panier.${optionsNote}` };
-  M.quantity = 1;
+  let text = `${count}${M.product.name}${label} ajouté au panier`;
+
+  if (options.length > 0) {
+    text += ` avec : ${options.join(", ")}`;
+  }
+  text += ".";
+
+  if (hasReplaced) {
+    text +=
+      options.length > 0
+        ? " Ces options remplacent celles de l'article déjà dans votre panier."
+        : " L'article de votre panier n'a plus d'option.";
+  }
+  return text;
 };
 
 /**

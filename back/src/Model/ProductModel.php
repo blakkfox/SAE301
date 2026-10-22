@@ -253,8 +253,8 @@ final class ProductModel
 
     /**
      * Options à cocher sur la fiche d'un produit (US OPT-c), dans l'ordre
-     * d'affichage. Le supplément est renvoyé pour son affichage ; il sera
-     * relu en base à la commande (OPT-a), jamais pris au navigateur.
+     * d'affichage. Le supplément est renvoyé pour son affichage ; il est
+     * relu en base à la commande (OPT-a, OrderModel), jamais pris au navigateur.
      *
      * @param int $productId Identifiant du produit.
      *
@@ -280,6 +280,55 @@ final class ProductModel
             ],
             $statement->fetchAll(),
         );
+    }
+
+    /**
+     * Options de plusieurs produits à la fois, pour le panier (US OPT-a) :
+     * une seule requête, quel que soit le nombre de produits.
+     *
+     * @param array<int, int> $productIds Identifiants de produits, liste indexée à partir de 0.
+     *
+     * @return array<int, array<int, array{id:int, label:string, description:?string, price:float}>>
+     *         Clé : identifiant du produit ; un produit sans option est absent.
+     */
+    public function findOptionsByProducts(array $productIds): array
+    {
+        if ($productIds === []) {
+            return [];
+        }
+
+        // Un marqueur par identifiant, comme findCartVariants.
+        $markers = array_map(
+            static fn (int $index): string => ':p' . $index,
+            array_keys($productIds),
+        );
+
+        $statement = $this->pdo->prepare(
+            'SELECT id, product_id, label, description, price
+               FROM product_option
+              WHERE product_id IN (' . implode(', ', $markers) . ')
+           ORDER BY product_id, position, id'
+        );
+
+        for ($i = 0; $i < count($productIds); $i++) {
+            $statement->bindValue($markers[$i], $productIds[$i], PDO::PARAM_INT);
+        }
+
+        $statement->execute();
+        $rows = $statement->fetchAll();
+
+        $options = [];
+
+        for ($i = 0; $i < count($rows); $i++) {
+            $options[(int) $rows[$i]['product_id']][] = [
+                'id'          => (int) $rows[$i]['id'],
+                'label'       => $rows[$i]['label'],
+                'description' => $rows[$i]['description'],
+                'price'       => (float) $rows[$i]['price'],
+            ];
+        }
+
+        return $options;
     }
 
     /**

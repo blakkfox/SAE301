@@ -7,7 +7,8 @@ import { getRequest, postRequest } from "../lib/api-request.js";
  * Les appels exigent un compte connecté : sinon l'API répond 401.
  * Le serveur recalcule les créneaux, revérifie les quantités et le stock, et
  * relit les prix en base : la commande envoyée ne contient que des choix
- * (concession, créneau) et des identifiants de variantes avec leur quantité.
+ * (concession, créneau) et des identifiants de variantes avec leur quantité
+ * et leurs options (US OPT-a), dont le serveur relit les suppléments.
  */
 
 let OrderData = {};
@@ -31,13 +32,15 @@ OrderData.fetchCheckout = async function () {
  * Enregistre la commande : POST /api/orders
  *
  * @param {{dealershipId: number, slot: string,
- *   items: Array<{variantId: number, quantity: number}>}} order
+ *   items: Array<{variantId: number, quantity: number, optionIds: number[]}>}} order
  * @returns {Promise<{order: {id: number, status: string, total: number, pickupStart: string,
  *   pickupEnd: string, createdAt: string, dealership: {id: number, name: string, shortName: string},
  *   lines: Array<{variantId: ?number, name: string, label: string, reference: string,
- *     unitPrice: number, quantity: number}>}}>}
- * @throws {ErreurApi} 401 (non connecté), 400 (articles invalides), 422 (concession
- *   ou créneau refusé, détail dans champs), 409 (stock insuffisant : rien n'est enregistré).
+ *     unitPrice: number, quantity: number, options: Array<{label: string, price: number}>}>}}>}
+ *   unitPrice : prix d'un article, suppléments des options compris.
+ * @throws {ErreurApi} 401 (non connecté), 400 (articles invalides), 422 (concession,
+ *   créneau ou option refusé, détail dans champs), 409 (stock insuffisant : rien n'est
+ *   enregistré).
  */
 OrderData.create = async function (order) {
   return postRequest("orders", order);
@@ -68,7 +71,7 @@ OrderData.fetchHistory = async function (period) {
  *   pickupEnd: string, createdAt: string, dayOffset: number,
  *   dealership: {id: number, name: string, shortName: string},
  *   lines: Array<{variantId: ?number, name: string, label: string, reference: string,
- *     unitPrice: number, quantity: number}>,
+ *     unitPrice: number, quantity: number, options: Array<{label: string, price: number}>}>,
  *   events: Array<{status: string, createdAt: string}>}}>}
  *   lines : prix figés à la commande ; le stock actuel se lit avec CartData.fetchVariants.
  * @throws {ErreurApi} 401 (non connecté), 400 (identifiant invalide), 404 (commande

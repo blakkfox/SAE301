@@ -76,7 +76,7 @@ AdminData.fetchOrders = async function (query) {
  *   pickupEnd: string, createdAt: string, dayOffset: number,
  *   dealership: {id: number, name: string, shortName: string},
  *   lines: Array<{variantId: ?number, name: string, label: string, reference: string,
- *     unitPrice: number, quantity: number}>,
+ *     unitPrice: number, quantity: number, options: Array<{label: string, price: number}>}>,
  *   customer: {firstName: string, lastName: string, phone: string},
  *   events: Array<{status: string, createdAt: string, admin: ?{firstName: string, lastName: string}}>}}>}
  * @throws {ErreurApi} 404 si la commande n'existe pas ; 401, 403 comme fetchOrders.

@@ -27,9 +27,17 @@ import templateError from "./error.html?raw";
  * alerte le signale et « Valider la commande » est désactivé tant qu'il
  * n'est pas retiré. Le serveur revérifie tout à la commande (CMD-a).
  *
+ * Options (US OPT-a, écran Figma n° 17) : chaque ligne affiche ses options
+ * cochées et leur supplément, compris dans le prix de la ligne ; le
+ * récapitulatif sépare produits et options. « Modifier les options » ouvre,
+ * dans la ligne, les cases à cocher de la fiche produit ; quand le produit
+ * n'en propose qu'une, « + Ajouter une option » la coche directement. Les
+ * suppléments sont relus dans l'API, et une option qui n'est plus proposée
+ * est retirée du panier. Le serveur les revérifie à la commande (CMD-a).
+ *
  * Comme les autres pages, C.init attend la réponse de l'API avant de rendre
- * la page. Changer une quantité ne reconstruit que la ligne et le
- * récapitulatif ; retirer une ligne reconstruit la zone du panier.
+ * la page. Changer une quantité ou une option ne reconstruit que la ligne et
+ * le récapitulatif ; retirer une ligne reconstruit la zone du panier.
  *
  * Découpage MVC strict :
  *   M — état de la page, panier, appel à l'API, calcul des totaux ;
@@ -39,6 +47,9 @@ import templateError from "./error.html?raw";
 
 // Note sous « Valider la commande » quand rien ne bloque la validation.
 const CHECKOUT_NOTE = "Paiement sur place au moment du retrait. Vos articles sont réservés 48 h.";
+
+// Note ajoutée quand le panier contient des options (maquette, écran 17).
+const OPTIONS_NOTE = "Les options sont reprises sur le bon de commande remis en concession.";
 
 // Message affiché si le navigateur refuse d'enregistrer le panier.
 const STORAGE_NOTICE = {
@@ -51,9 +62,10 @@ const STORAGE_NOTICE = {
 // ---------------------------------------------------------------------------
 
 let M = {
-  items: [], // lignes du panier : [{ variantId, quantity }]
-  variants: [], // variantes renvoyées par l'API (nom, photo, prix, stock…)
+  items: [], // lignes du panier : [{ variantId, quantity, optionIds }]
+  variants: [], // variantes renvoyées par l'API (nom, photo, prix, stock, options…)
   adjusted: [], // variantes dont la quantité a été ramenée au stock au chargement
+  editingVariantId: null, // ligne dont les options sont en cours de modification, ou null
   error: null, // texte de l'erreur de chargement, ou null
   notice: null, // { type, texte } à afficher au-dessus du panier, ou null
 };
@@ -65,6 +77,7 @@ M.reset = function () {
   M.items = [];
   M.variants = [];
   M.adjusted = [];
+  M.editingVariantId = null;
   M.error = null;
   M.notice = null;
 };
@@ -72,7 +85,8 @@ M.reset = function () {
 /**
  * Lit le panier, puis demande à l'API les variantes qu'il contient. Les
  * variantes que l'API ne renvoie pas ne sont plus au catalogue : elles sont
- * retirées du panier. Les quantités sont ensuite ramenées au stock.
+ * retirées du panier, comme les options qui ne sont plus proposées (OPT-a).
+ * Les quantités sont ensuite ramenées au stock.
  *
  * @returns {Promise<void>}
  */
@@ -106,7 +120,26 @@ M.load = async function () {
     };
   }
 
+  M.dropUnofferedOptions();
   M.adjustToStock();
+};
+
+/**
+ * Retire du panier les options que l'API ne propose plus (OPT-a), et le
+ * signale si aucun autre message ne l'est déjà.
+ */
+M.dropUnofferedOptions = function () {
+  let result = CartData.keepOfferedOptions(M.variants);
+  if (result.removed === 0) return;
+
+  M.save(result.isSaved);
+  M.notice ??= {
+    type: "erreur",
+    texte:
+      result.removed > 1
+        ? `${result.removed} options ne sont plus proposées et ont été retirées de votre panier.`
+        : "Une option n'est plus proposée et a été retirée de votre panier.",
+  };
 };
 
 /**
@@ -182,7 +215,76 @@ M.setQuantity = function (variantId, quantity) {
  */
 M.remove = function (variantId) {
   M.adjusted = M.adjusted.filter((id) => id !== variantId);
+  if (M.editingVariantId === variantId) {
+    M.editingVariantId = null;
+  }
   M.save(CartData.remove([variantId]));
+};
+
+/**
+ * Ouvre la modification des options d'une ligne (OPT-a). Une seule ligne à
+ * la fois : celle qui était ouverte se referme.
+ *
+ * @param {number} variantId
+ * @returns {?number} La ligne qui était ouverte, à reconstruire, ou null.
+ */
+M.openOptions = function (variantId) {
+  let previous = M.editingVariantId;
+  let variant = M.findVariant(variantId);
+
+  if (variant === undefined || M.isSoldOut(variant) || variant.options.length === 0) {
+    return null;
+  }
+
+  M.editingVariantId = variantId;
+  return previous === variantId ? null : previous;
+};
+
+/**
+ * Referme la modification des options.
+ */
+M.closeOptions = function () {
+  M.editingVariantId = null;
+};
+
+/**
+ * Coche ou décoche une option d'une ligne (OPT-a), si son produit la
+ * propose. Les options restent dans l'ordre d'affichage du produit.
+ *
+ * @param {number} variantId
+ * @param {number} optionId
+ * @param {boolean} isSelected - true pour cocher, false pour décocher.
+ */
+M.toggleOption = function (variantId, optionId, isSelected) {
+  let item = M.items.find((candidate) => candidate.variantId === variantId);
+  let variant = M.findVariant(variantId);
+
+  if (item === undefined || variant === undefined || M.isSoldOut(variant)) return;
+  if (!variant.options.some((option) => option.id === optionId)) return;
+
+  let optionIds = variant.options
+    .map((option) => option.id)
+    .filter((id) => (id === optionId ? isSelected : item.optionIds.includes(id)));
+  M.save(CartData.setOptions(variantId, optionIds));
+};
+
+/**
+ * @param {{optionIds: number[]}} item - Ligne du panier.
+ * @param {{options: Array<{id: number, label: string, description: ?string, price: number}>}} variant
+ * @returns {Array<{id: number, label: string, description: ?string, price: number}>}
+ *   Les options cochées de la ligne, dans l'ordre d'affichage du produit.
+ */
+M.getSelectedOptions = function (item, variant) {
+  return variant.options.filter((option) => item.optionIds.includes(option.id));
+};
+
+/**
+ * @param {{optionIds: number[]}} item - Ligne du panier.
+ * @param {{options: Array<{id: number, price: number}>}} variant
+ * @returns {number} Suppléments des options d'UN article, en centimes.
+ */
+M.getOptionsCents = function (item, variant) {
+  return M.getSelectedOptions(item, variant).reduce((total, option) => total + M.toCents(option.price), 0);
 };
 
 /**
@@ -243,7 +345,9 @@ M.toCents = function (price) {
  * Données d'affichage d'une ligne.
  *
  * Sous le nom : la variante (ou la référence pour une variante « Unique »),
- * puis le prix unitaire dès que la quantité dépasse 1, comme sur la maquette.
+ * puis le prix unitaire dès que la quantité dépasse 1, comme sur la maquette
+ * du panier, ou dès qu'une option est cochée, comme sur celle des options :
+ * le prix de la ligne comprend leurs suppléments (OPT-a).
  * « + » s'arrête au stock (au moins 1, pour une ligne épuisée, désactivée).
  *
  * @param {number} variantId
@@ -257,9 +361,12 @@ M.getLine = function (variantId) {
     return null;
   }
 
+  let optionsCents = M.getOptionsCents(item, variant);
   let details = [variant.label === "Unique" ? `Réf. ${variant.reference}` : variant.label];
   if (item.quantity > 1) {
     details.push(`${formatPrice(variant.price)} l'unité`);
+  } else if (optionsCents > 0) {
+    details.push(formatPrice(variant.price));
   }
 
   return {
@@ -271,11 +378,59 @@ M.getLine = function (variantId) {
     imageUrl: ProductData.imageUrl(variant.image),
     quantity: item.quantity,
     maxQuantity: Math.max(1, Math.min(variant.stock, CartData.MAX_QUANTITY)),
-    total: formatPrice((M.toCents(variant.price) * item.quantity) / 100),
+    total: formatPrice(((M.toCents(variant.price) + optionsCents) * item.quantity) / 100),
     stockStatus: getStockStatus(variant.stock),
     isSoldOut: M.isSoldOut(variant),
     stockNote: M.adjusted.includes(variantId)
       ? `Quantité ajustée à ${item.quantity} : stock maximum disponible`
+      : null,
+    options: M.getLineOptions(item, variant),
+  };
+};
+
+/**
+ * Données du bloc des options d'une ligne (OPT-a), ou null si le produit
+ * n'en propose aucune.
+ *
+ * Sans option cochée, un produit qui n'en propose qu'une l'affiche dans le
+ * lien, qui la coche directement (« + Ajouter une option (pose en atelier
+ * + 60,00 €) ») ; sinon le lien ouvre les cases à cocher. Un article épuisé
+ * n'a pas de lien.
+ *
+ * @param {{optionIds: number[]}} item - Ligne du panier.
+ * @param {Object} variant - Variante renvoyée par l'API.
+ * @returns {?{isEditing: boolean, selected: Array<{label: string, price: string}>,
+ *   actionLabel: ?string, quickAddId: ?number, editor: ?Object}}
+ */
+M.getLineOptions = function (item, variant) {
+  if (variant.options.length === 0) return null;
+
+  let selected = M.getSelectedOptions(item, variant);
+  let isEditing = M.editingVariantId === variant.variantId && !M.isSoldOut(variant);
+  let only = variant.options.length === 1 && selected.length === 0 ? variant.options[0] : null;
+
+  let actionLabel = selected.length > 0 ? "Modifier les options" : "+ Ajouter une option";
+  if (only !== null) {
+    let name = only.label.charAt(0).toLowerCase() + only.label.slice(1);
+    actionLabel = `+ Ajouter une option (${name} + ${formatPrice(only.price)})`;
+  }
+
+  return {
+    isEditing,
+    selected: selected.map((option) => ({ label: option.label, price: `+ ${formatPrice(option.price)}` })),
+    actionLabel: M.isSoldOut(variant) ? null : actionLabel,
+    quickAddId: only === null || M.isSoldOut(variant) ? null : only.id,
+    editor: isEditing
+      ? {
+          total: formatPrice((M.toCents(variant.price) + M.getOptionsCents(item, variant)) / 100),
+          options: variant.options.map((option) => ({
+            id: option.id,
+            label: option.label,
+            description: option.description ?? "",
+            price: `+ ${formatPrice(option.price)}`,
+            isSelected: item.optionIds.includes(option.id),
+          })),
+        }
       : null,
   };
 };
@@ -290,19 +445,25 @@ M.getLines = function () {
 
 /**
  * Totaux du récapitulatif. Sans frais ni promotion pour l'instant (PRO-a,
- * PRO-c) : le total est égal au sous-total.
+ * PRO-c) : le total est la somme des produits et des options.
  *
  * Les articles épuisés (STK-c) comptent à côté du titre, mais pas dans le
  * sous-total ; tant qu'il y en a, la validation est bloquée et la note dit
  * lesquels retirer.
  *
- * @returns {{countLabel: string, subtotalLabel: string, subtotal: string,
- *   total: string, canCheckout: boolean, note: string}}
+ * Options (OPT-a) : dès qu'une option est cochée, le sous-total s'intitule
+ * « Produits » et une ligne « Options » donne la somme des suppléments,
+ * comme sur la maquette (écran 17).
+ *
+ * @returns {{countLabel: string, subtotalTitle: string, subtotalLabel: string, subtotal: string,
+ *   options: string, hasOptions: boolean, total: string, canCheckout: boolean, note: string,
+ *   optionsNote: string}}
  */
 M.getSummary = function () {
   let count = 0;
   let availableCount = 0;
   let cents = 0;
+  let optionsCents = 0;
 
   for (const item of M.items) {
     let variant = M.findVariant(item.variantId);
@@ -312,6 +473,7 @@ M.getSummary = function () {
     if (!M.isSoldOut(variant)) {
       availableCount += item.quantity;
       cents += M.toCents(variant.price) * item.quantity;
+      optionsCents += M.getOptionsCents(item, variant) * item.quantity;
     }
   }
 
@@ -329,11 +491,15 @@ M.getSummary = function () {
 
   return {
     countLabel: M.formatCount(count),
+    subtotalTitle: optionsCents > 0 ? "Produits" : "Sous-total",
     subtotalLabel,
     subtotal: formatPrice(cents / 100),
-    total: formatPrice(cents / 100),
+    options: formatPrice(optionsCents / 100),
+    hasOptions: optionsCents > 0,
+    total: formatPrice((cents + optionsCents) / 100),
     canCheckout: soldOut.length === 0,
     note,
+    optionsNote: OPTIONS_NOTE,
   };
 };
 
@@ -392,6 +558,45 @@ C.handler_changeQuantity = function (variantId, quantity) {
   V.renderLine(M.getLine(variantId));
   V.renderSummary(M.getSummary());
   V.renderNotice(M.notice);
+};
+
+/**
+ * Clic sur « Modifier les options » ou « + Ajouter une option » (OPT-a) :
+ * la ligne affiche ses cases à cocher. Une autre ligne ouverte se referme.
+ *
+ * @param {number} variantId
+ */
+C.handler_editOptions = function (variantId) {
+  let previous = M.openOptions(variantId);
+  if (previous !== null) {
+    V.renderLine(M.getLine(previous));
+  }
+  V.renderLine(M.getLine(variantId));
+};
+
+/**
+ * Case d'option cochée ou décochée dans une ligne, ou option ajoutée
+ * directement par son lien (OPT-a) : la ligne et le récapitulatif suivent.
+ *
+ * @param {number} variantId
+ * @param {number} optionId
+ * @param {boolean} isSelected - Nouvel état de l'option.
+ */
+C.handler_toggleOption = function (variantId, optionId, isSelected) {
+  M.toggleOption(variantId, optionId, isSelected);
+  V.renderLine(M.getLine(variantId));
+  V.renderSummary(M.getSummary());
+  V.renderNotice(M.notice);
+};
+
+/**
+ * Clic sur « Terminer » : la ligne affiche de nouveau ses options cochées.
+ *
+ * @param {number} variantId
+ */
+C.handler_closeOptions = function (variantId) {
+  M.closeOptions();
+  V.renderLine(M.getLine(variantId));
 };
 
 /**
@@ -553,12 +758,19 @@ V.createContentFragment = function (data) {
 /**
  * @param {ReturnType<typeof M.getSummary>} summary
  * @returns {DocumentFragment} Le récapitulatif, avec le lien « Valider la
- *   commande », ou le bouton désactivé si un article épuisé bloque la validation.
+ *   commande », ou le bouton désactivé si un article épuisé bloque la
+ *   validation. La ligne « Options » et sa note n'y sont que si une option
+ *   est cochée (OPT-a).
  */
 V.createSummaryFragment = function (summary) {
   let fragment = htmlToFragment(genericRenderer(templateSummary, summary));
   let unused = summary.canCheckout ? "[data-checkout-blocked]" : "[data-checkout-link]";
   fragment.querySelector(unused).remove();
+
+  if (!summary.hasOptions) {
+    fragment.querySelector("[data-summary-options]").remove();
+    fragment.querySelector("[data-summary-options-note]").remove();
+  }
   return fragment;
 };
 
@@ -567,7 +779,13 @@ V.createSummaryFragment = function (summary) {
  * @returns {DocumentFragment} La ligne, reliée au contrôleur.
  */
 V.createLineFragment = function (line) {
-  return CartLineView.dom(line, { onQuantity: C.handler_changeQuantity, onRemove: C.handler_remove });
+  return CartLineView.dom(line, {
+    onQuantity: C.handler_changeQuantity,
+    onRemove: C.handler_remove,
+    onEditOptions: C.handler_editOptions,
+    onToggleOption: C.handler_toggleOption,
+    onCloseOptions: C.handler_closeOptions,
+  });
 };
 
 /**

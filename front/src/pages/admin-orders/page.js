@@ -600,6 +600,8 @@ M.getDetailData = function () {
     lines: order.lines.map((line) => ({
       // « Unique » : produit sans déclinaison, le nom suffit.
       label: `${line.name}${line.label === "Unique" ? "" : ` · ${line.label}`} × ${line.quantity}`,
+      // Options à préparer (OPT-a), au supplément payé ; unitPrice le comprend déjà.
+      options: line.options.map((option) => `+ ${option.label} (${formatPrice(option.price)})`).join(" · "),
       price: formatPrice(line.unitPrice * line.quantity),
     })),
     total: formatPrice(order.total),

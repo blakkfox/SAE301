@@ -14,6 +14,7 @@
 --     customer : comptes clients et administrateurs (US CMD-c)
 --
 --     customer 1 ── n customer_order 1 ── n order_line n ── 1 variant
+--     order_line 1 ── n order_line_option n ── 0..1 product_option   (US OPT-a)
 --     dealership 1 ── n customer_order          (US CMD-a)
 --     dealership 1 ── n customer (concession préférée, US SUI-b)
 --
@@ -43,6 +44,7 @@ DROP TABLE IF EXISTS film;
 DROP TABLE IF EXISTS genre;
 DROP TABLE IF EXISTS order_event;
 DROP TABLE IF EXISTS stock_movement;
+DROP TABLE IF EXISTS order_line_option;
 DROP TABLE IF EXISTS order_line;
 DROP TABLE IF EXISTS customer_order;
 DROP TABLE IF EXISTS customer;
@@ -297,6 +299,8 @@ CREATE TABLE customer_order (
 -- Nom, variante, référence et prix unitaire sont COPIÉS au moment de la
 -- commande : la commande reste lisible et juste même si le produit change de
 -- prix ou disparaît. variant_id passe alors à NULL (ON DELETE SET NULL).
+-- unit_price est le prix payé pour un article, suppléments des options
+-- compris (US OPT-a) : leur détail est dans order_line_option.
 -- ---------------------------------------------------------------------------
 CREATE TABLE order_line (
     id            INT UNSIGNED      NOT NULL AUTO_INCREMENT,
@@ -320,6 +324,37 @@ CREATE TABLE order_line (
         ON DELETE SET NULL,
     CONSTRAINT chk_line_price CHECK (unit_price >= 0),
     CONSTRAINT chk_line_quantity CHECK (quantity > 0)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- Options d'une ligne de commande (US OPT-a)
+--
+-- Les options cochées pour une ligne, avec leur libellé et leur supplément
+-- COPIÉS au moment de la commande, comme la ligne elle-même : le bon de
+-- commande reste juste si l'option change de prix ou disparaît (option_id
+-- passe alors à NULL). price est le supplément d'UN article : il s'applique
+-- à toute la quantité de la ligne, et il est déjà compté dans unit_price.
+-- ---------------------------------------------------------------------------
+CREATE TABLE order_line_option (
+    id            INT UNSIGNED      NOT NULL AUTO_INCREMENT,
+    order_line_id INT UNSIGNED      NOT NULL,
+    option_id     SMALLINT UNSIGNED     NULL,
+    label         VARCHAR(60)       NOT NULL,
+    price         DECIMAL(8,2)      NOT NULL,
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_line_option (order_line_id, option_id),
+    KEY idx_line_option_option (option_id),
+
+    CONSTRAINT fk_line_option_line
+        FOREIGN KEY (order_line_id) REFERENCES order_line (id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_line_option_option
+        FOREIGN KEY (option_id) REFERENCES product_option (id)
+        ON DELETE SET NULL,
+    CONSTRAINT chk_line_option_price CHECK (price >= 0)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;

@@ -1,4 +1,10 @@
+<!-- Un article de la commande, avec ses options (OPT-a) dessous : c'est ce
+     que la concession prépare. La ligne des options disparaît si elle est
+     vide (empty:hidden). -->
 <li class="flex items-baseline justify-between gap-4 text-small text-ink">
-  <span>{{label}}</span>
+  <span class="flex min-w-0 flex-col gap-0.5">
+    <span>{{label}}</span>
+    <span class="text-caption text-ink-muted empty:hidden">{{options}}</span>
+  </span>
   <span class="shrink-0 font-semibold">{{price}}</span>
 </li>

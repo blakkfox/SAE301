@@ -1,0 +1,13 @@
+<!--
+  Options d'une ligne du panier (écran 17, US OPT-a), sous la variante : les
+  options cochées avec leur supplément, ou « Sans option », puis le lien
+  « Modifier les options » ou « + Ajouter une option ». Un article épuisé
+  garde ses options affichées, sans lien : il doit être retiré.
+-->
+<div class="flex flex-col items-start gap-1 self-stretch rounded-lg bg-section px-3 py-2.5 sm:max-w-66">
+  <ul aria-label="Options choisies" class="flex flex-col gap-1 self-stretch empty:hidden">
+    <slot name="selected"></slot>
+  </ul>
+  <p data-no-option class="text-sm text-ink">Sans option</p>
+  <button type="button" data-options-action data-focus-key="options" class="text-left text-caption font-medium text-link underline-offset-4 hover:underline">{{actionLabel}}</button>
+</div>

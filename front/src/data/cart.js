@@ -3,10 +3,13 @@ import { getRequest } from "../lib/api-request.js";
 /**
  * Panier (US CMD-b), gardé dans le localStorage du navigateur.
  *
- * Le panier ne contient que des identifiants de variantes et des quantités :
- * [{ variantId: 12, quantity: 2 }, …]. Le nom, la photo et surtout le prix
- * sont toujours redemandés à l'API (fetchVariants) : une valeur modifiée à la
- * main dans le navigateur ne peut donc pas changer un prix.
+ * Le panier ne contient que des identifiants de variantes, des quantités et
+ * les options cochées de chaque ligne (US OPT-a) :
+ * [{ variantId: 12, quantity: 2, optionIds: [1, 2] }, …]. Une ligne par
+ * variante : ses options valent pour toute sa quantité. Le nom, la photo et
+ * surtout les prix et suppléments sont toujours redemandés à l'API
+ * (fetchVariants) : une valeur modifiée à la main dans le navigateur ne peut
+ * donc pas changer un prix.
  *
  * Le localStorage peut être indisponible (navigation privée, stockage bloqué)
  * ou contenir une valeur abîmée : chaque lecture et écriture est protégée, et
@@ -23,6 +26,9 @@ const STORAGE_KEY = "honda-cart";
 // réduit encore (remainingFor, page Panier : STK-c) ; le serveur revérifie
 // tout à la validation (CMD-a).
 const MAX_QUANTITY = 10;
+
+// Nombre maximal d'options d'une ligne (comme MAX_OPTIONS côté serveur).
+const MAX_OPTIONS = 10;
 
 // Fonctions à appeler après chaque modification du panier.
 const listeners = [];
@@ -48,15 +54,37 @@ let isValidItem = function (item) {
 };
 
 /**
+ * Options d'une ligne lue dans le stockage. Un panier enregistré avant
+ * OPT-a n'en a pas : la ligne est alors sans option. Les identifiants
+ * invalides ou en double sont écartés.
+ *
+ * @param {*} optionIds - Valeur lue dans le stockage.
+ * @returns {number[]}
+ */
+let toOptionIds = function (optionIds) {
+  if (!Array.isArray(optionIds)) return [];
+
+  return optionIds
+    .filter((id, index) => Number.isInteger(id) && id > 0 && optionIds.indexOf(id) === index)
+    .slice(0, MAX_OPTIONS);
+};
+
+/**
  * Les lignes du panier. Une valeur abîmée ou un stockage indisponible donne
  * un panier vide ; une ligne invalide est ignorée.
  *
- * @returns {Array<{variantId: number, quantity: number}>}
+ * @returns {Array<{variantId: number, quantity: number, optionIds: number[]}>}
  */
 CartData.read = function () {
   try {
     let items = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
-    return Array.isArray(items) ? items.filter(isValidItem) : [];
+    if (!Array.isArray(items)) return [];
+
+    return items.filter(isValidItem).map((item) => ({
+      variantId: item.variantId,
+      quantity: item.quantity,
+      optionIds: toOptionIds(item.optionIds),
+    }));
   } catch (error) {
     return [];
   }
@@ -65,7 +93,7 @@ CartData.read = function () {
 /**
  * Enregistre les lignes du panier, puis prévient les abonnés.
  *
- * @param {Array<{variantId: number, quantity: number}>} items
+ * @param {Array<{variantId: number, quantity: number, optionIds: number[]}>} items
  * @returns {boolean} false si le stockage a refusé l'écriture.
  */
 CartData.write = function (items) {
@@ -85,25 +113,34 @@ CartData.write = function (items) {
  * Ajoute une quantité d'une variante. Si la variante est déjà dans le panier,
  * les quantités s'additionnent, dans la limite de MAX_QUANTITY.
  *
+ * Options (US OPT-a) : une liste reçue remplace celles de la ligne (choix
+ * fait sur la fiche produit) ; sans liste, la ligne garde les siennes
+ * (ajout depuis une carte du catalogue, ou « Commander à nouveau »).
+ *
  * @param {number} variantId
  * @param {number} quantity - Quantité à ajouter (au moins 1).
+ * @param {number[]} [optionIds] - Options cochées, ou rien pour garder celles de la ligne.
  * @returns {boolean} false si le panier n'a pas pu être enregistré.
  */
-CartData.add = function (variantId, quantity) {
+CartData.add = function (variantId, quantity, optionIds) {
   let items = CartData.read();
   let existing = items.find((item) => item.variantId === variantId);
 
   if (existing === undefined) {
-    items.push({ variantId, quantity: Math.min(quantity, MAX_QUANTITY) });
+    items.push({ variantId, quantity: Math.min(quantity, MAX_QUANTITY), optionIds: toOptionIds(optionIds) });
   } else {
     existing.quantity = Math.min(existing.quantity + quantity, MAX_QUANTITY);
+    if (optionIds !== undefined) {
+      existing.optionIds = toOptionIds(optionIds);
+    }
   }
 
   return CartData.write(items);
 };
 
 /**
- * Change la quantité d'une ligne (bornée entre 1 et MAX_QUANTITY).
+ * Change la quantité d'une ligne (bornée entre 1 et MAX_QUANTITY). Ses
+ * options ne changent pas.
  *
  * @param {number} variantId
  * @param {number} quantity
@@ -111,10 +148,56 @@ CartData.add = function (variantId, quantity) {
  */
 CartData.setQuantity = function (variantId, quantity) {
   let bounded = Math.min(Math.max(quantity, 1), MAX_QUANTITY);
+  let items = CartData.read().map((item) => (item.variantId === variantId ? { ...item, quantity: bounded } : item));
+  return CartData.write(items);
+};
+
+/**
+ * Remplace les options d'une ligne (US OPT-a). Le serveur vérifie à la
+ * commande que chacune appartient bien au produit.
+ *
+ * @param {number} variantId
+ * @param {number[]} optionIds - Options cochées.
+ * @returns {boolean} false si le panier n'a pas pu être enregistré.
+ */
+CartData.setOptions = function (variantId, optionIds) {
   let items = CartData.read().map((item) =>
-    item.variantId === variantId ? { variantId, quantity: bounded } : item
+    item.variantId === variantId ? { ...item, optionIds: toOptionIds(optionIds) } : item
   );
   return CartData.write(items);
+};
+
+/**
+ * Retire des lignes les options que l'API ne propose plus pour leur produit
+ * (option supprimée depuis l'ajout), et range les autres dans l'ordre
+ * d'affichage du produit (US OPT-a). Le panier n'est réécrit que si une
+ * option a été retirée.
+ *
+ * @param {Array<{variantId: number, options: Array<{id: number}>}>} variants - Réponse de fetchVariants.
+ * @returns {{removed: number, isSaved: boolean}} Nombre d'options retirées, et
+ *   false si le panier n'a pas pu être enregistré.
+ */
+CartData.keepOfferedOptions = function (variants) {
+  let removed = 0;
+
+  let items = CartData.read().map((item) => {
+    let variant = variants.find((candidate) => candidate.variantId === item.variantId);
+    if (variant === undefined) return item;
+
+    let optionIds = variant.options.map((option) => option.id).filter((id) => item.optionIds.includes(id));
+    removed += item.optionIds.length - optionIds.length;
+    return { ...item, optionIds };
+  });
+
+  return { removed, isSaved: removed === 0 || CartData.write(items) };
+};
+
+/**
+ * @param {number} variantId
+ * @returns {number[]} Options cochées pour cette variante (vide si elle n'est pas au panier).
+ */
+CartData.optionsOf = function (variantId) {
+  return CartData.read().find((item) => item.variantId === variantId)?.optionIds ?? [];
 };
 
 /**
@@ -184,13 +267,15 @@ CartData.notify = function () {
 };
 
 /**
- * Nom, photo, prix et stock des variantes du panier : GET /api/cart?variants=…
+ * Nom, photo, prix et stock des variantes du panier, et options proposées
+ * pour leur produit (US OPT-a) : GET /api/cart?variants=…
  *
  * Une variante absente de la réponse n'est plus au catalogue.
  *
  * @param {number[]} variantIds
  * @returns {Promise<{variants: Array<{variantId: number, label: string, reference: string,
- *   productId: number, name: string, price: number, image: ?string, stock: number}>}>}
+ *   productId: number, name: string, price: number, image: ?string, stock: number,
+ *   options: Array<{id: number, label: string, description: ?string, price: number}>}>}>}
  * @throws {ErreurApi} Si le serveur répond par une erreur.
  */
 CartData.fetchVariants = async function (variantIds) {

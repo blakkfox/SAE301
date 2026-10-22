@@ -8,6 +8,9 @@
   quantité a été ajustée au stock ; un article épuisé est grisé et
   « Retirer » passe en rouge (classes : TONES dans index.js).
 
+  Options (écran 17, OPT-a) : bloc des options sous la variante, retiré si
+  le produit n'en propose aucune (voir options.html et options-editor.html).
+
   tabindex="-1" : la ligne peut recevoir le focus quand elle est reconstruite
   et que le bouton qui l'avait ne peut plus le prendre (voir
   replaceKeepingFocus dans lib/utils.js).
@@ -22,6 +25,7 @@
       <a href="/produits/{{productId}}" data-link class="transition-colors hover:text-accent">{{name}}</a>
     </h2>
     <p class="text-sm text-ink-muted">{{details}}</p>
+    <slot name="options"></slot>
     <!-- La maquette écrit cette note en orange Statut/Avertissement, trop peu
          contrasté pour un texte de 15 px : l'orange reste sur la bordure du
          sélecteur de quantité. -->
