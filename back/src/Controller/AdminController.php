@@ -1554,13 +1554,15 @@ final class AdminController
     /**
      * Statut d'un code promo à une date donnée. Expiré et programmé passent
      * avant épuisé : c'est la date qui explique d'abord qu'il ne marche pas.
+     * Sert aussi au client, au panier et à la commande (CartController,
+     * US PRO-a) : seul un code « actif » s'utilise.
      *
      * @param array{startsOn:?string, endsOn:?string, maxUses:?int, useCount:int} $promoCode
      * @param string $today Aujourd'hui, « 2026-10-22 ».
      *
      * @return string « expire », « programme », « epuise » ou « actif ».
      */
-    private static function promoStatus(array $promoCode, string $today): string
+    public static function promoStatus(array $promoCode, string $today): string
     {
         if ($promoCode['endsOn'] !== null && $promoCode['endsOn'] < $today) {
             return 'expire';

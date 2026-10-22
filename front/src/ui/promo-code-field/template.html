@@ -1,0 +1,16 @@
+<!--
+  Bloc « Code promo » du récapitulatif du panier (écran 23, PRO-a) : vert
+  pâle quand un code est appliqué, gris sinon (stateClasses, voir index.js).
+  novalidate : c'est le serveur qui dit si le code existe et s'il est actif.
+  Le message (succès, erreur ou montant minimum) est vide et masqué s'il n'y
+  en a pas ; « Retirer le code » est retiré en JS sans code appliqué.
+-->
+<form novalidate aria-label="Code promo" class="flex flex-col gap-2.5 rounded-lg p-4 {{stateClasses}}">
+  <label for="promo-code-field" class="text-small font-semibold text-ink">Code promo</label>
+  <div class="flex gap-2">
+    <input id="promo-code-field" name="promoCode" type="text" maxlength="20" autocomplete="off" autocapitalize="characters" spellcheck="false" value="{{value}}" placeholder="BIENVENUE10" aria-describedby="promo-code-field-message" data-focus-key="promo-code" class="field uppercase" />
+    <button type="submit" data-focus-key="promo-apply" class="button button--outline h-12 shrink-0 px-4 text-small">{{applyLabel}}</button>
+  </div>
+  <p id="promo-code-field-message" role="status" class="text-small font-medium empty:hidden {{messageClasses}}">{{message}}</p>
+  <button type="button" data-promo-remove data-focus-key="promo-remove" class="self-start text-small font-medium text-link underline-offset-4 hover:underline">Retirer le code</button>
+</form>

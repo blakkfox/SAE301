@@ -17,7 +17,8 @@ use Throwable;
  * (US STK-a, StockModel) se font dans UNE transaction : si un seul article
  * manque, rien n'est enregistré. De même, un changement de statut et sa
  * ligne du journal order_event, et une annulation et son recrédit, sont
- * écrits ensemble ou pas du tout.
+ * écrits ensemble ou pas du tout. Le code promo (US PRO-a) est vérifié et
+ * son utilisation comptée dans la même transaction.
  */
 final class OrderModel
 {
@@ -30,14 +31,19 @@ final class OrderModel
     /** Mouvements de stock, écrits dans la transaction de la commande. */
     private StockModel $stock;
 
+    /** Codes promo (US PRO-a), dont l'utilisation est comptée dans la transaction de la commande. */
+    private PromoCodeModel $promoCodes;
+
     /**
-     * @param PDO        $pdo   Connexion ouverte par Database::connexion().
-     * @param StockModel $stock Mouvements de stock, sur la même connexion.
+     * @param PDO            $pdo        Connexion ouverte par Database::connexion().
+     * @param StockModel     $stock      Mouvements de stock, sur la même connexion.
+     * @param PromoCodeModel $promoCodes Codes promo, sur la même connexion.
      */
-    public function __construct(PDO $pdo, StockModel $stock)
+    public function __construct(PDO $pdo, StockModel $stock, PromoCodeModel $promoCodes)
     {
-        $this->pdo   = $pdo;
-        $this->stock = $stock;
+        $this->pdo        = $pdo;
+        $this->stock      = $stock;
+        $this->promoCodes = $promoCodes;
     }
 
     /**
@@ -58,17 +64,27 @@ final class OrderModel
      * depuis product_option, et une option qui n'appartient pas au produit de
      * sa ligne annule toute la commande.
      *
+     * Code promo (US PRO-a) : sa remise porte sur le montant des lignes
+     * (produits, déjà remisés pour la promotion automatique, et options),
+     * arrondie au centime. Un montant inférieur au minimum du code, ou un
+     * code qui vient d'atteindre son nombre d'utilisations, annule toute la
+     * commande : le client choisit alors de commander sans le code.
+     *
      * @param int                                                                    $customerId   Compte connecté.
      * @param int                                                                    $dealershipId Concession, déjà vérifiée.
      * @param DateTimeImmutable                                                      $pickupStart  Début du créneau.
      * @param DateTimeImmutable                                                      $pickupEnd    Fin du créneau.
      * @param array<int, array{variantId:int, quantity:int, optionIds:array<int, int>}> $items     Lignes déjà validées,
      *                                                                                             sans doublon de variante.
+     * @param array{id:int, code:string, discountRate:int, minAmount:float}|null      $promoCode    Code promo valable
+     *                                                                                             à ce jour, ou null.
      *
-     * @return array{orderId:?int, unavailable:array<int, int>, refusedOptions:array<int, int>}
+     * @return array{orderId:?int, unavailable:array<int, int>, refusedOptions:array<int, int>, refusedPromo:?string}
      *         orderId : la commande créée, ou null si rien n'a été enregistré ;
      *         unavailable : les variantes en rupture dans ce cas ;
-     *         refusedOptions : les variantes dont une option est refusée.
+     *         refusedOptions : les variantes dont une option est refusée ;
+     *         refusedPromo : « minimum » (montant insuffisant) ou « epuise »
+     *         (plus d'utilisation possible) si le code promo est refusé.
      */
     public function create(
         int $customerId,
@@ -76,6 +92,7 @@ final class OrderModel
         DateTimeImmutable $pickupStart,
         DateTimeImmutable $pickupEnd,
         array $items,
+        ?array $promoCode,
     ): array {
         $this->pdo->beginTransaction();
 
@@ -92,7 +109,7 @@ final class OrderModel
             if ($unavailable !== []) {
                 $this->pdo->rollBack();
 
-                return ['orderId' => null, 'unavailable' => $unavailable, 'refusedOptions' => []];
+                return ['orderId' => null, 'unavailable' => $unavailable, 'refusedOptions' => [], 'refusedPromo' => null];
             }
 
             $refusedOptions = $this->insertLines($orderId, $items, $promotedId);
@@ -100,10 +117,17 @@ final class OrderModel
             if ($refusedOptions !== []) {
                 $this->pdo->rollBack();
 
-                return ['orderId' => null, 'unavailable' => [], 'refusedOptions' => $refusedOptions];
+                return ['orderId' => null, 'unavailable' => [], 'refusedOptions' => $refusedOptions, 'refusedPromo' => null];
             }
 
-            $this->updateTotal($orderId);
+            $refusedPromo = $this->updateTotal($orderId, $promoCode);
+
+            if ($refusedPromo !== null) {
+                $this->pdo->rollBack();
+
+                return ['orderId' => null, 'unavailable' => [], 'refusedOptions' => [], 'refusedPromo' => $refusedPromo];
+            }
+
             $this->insertEvent($orderId, 'en_cours', null);
 
             $this->pdo->commit();
@@ -112,15 +136,17 @@ final class OrderModel
             throw $e;
         }
 
-        return ['orderId' => $orderId, 'unavailable' => [], 'refusedOptions' => []];
+        return ['orderId' => $orderId, 'unavailable' => [], 'refusedOptions' => [], 'refusedPromo' => null];
     }
 
     /**
-     * Une commande, avec sa concession et ses lignes.
+     * Une commande, avec sa concession, ses lignes, et le code promo utilisé
+     * avec sa remise (US PRO-a ; null et 0 sans code), déjà déduite du total.
      *
      * @param int $id Identifiant de la commande.
      *
-     * @return array{id:int, status:string, total:float, pickupStart:string, pickupEnd:string,
+     * @return array{id:int, status:string, total:float, promoCode:?string, discount:float,
+     *               pickupStart:string, pickupEnd:string,
      *               createdAt:string, dealership:array{id:int, name:string, shortName:string},
      *               lines:array<int, array{variantId:?int, name:string, label:string,
      *                                      reference:string, unitPrice:float, quantity:int,
@@ -131,6 +157,7 @@ final class OrderModel
     {
         $statement = $this->pdo->prepare(
             'SELECT customer_order.id, customer_order.status, customer_order.total,
+                    customer_order.promo_code, customer_order.discount,
                     customer_order.pickup_start, customer_order.pickup_end, customer_order.created_at,
                     dealership.id AS dealership_id, dealership.name AS dealership_name,
                     dealership.short_name AS dealership_short_name
@@ -151,6 +178,8 @@ final class OrderModel
             'id'          => (int) $row['id'],
             'status'      => $row['status'],
             'total'       => (float) $row['total'],
+            'promoCode'   => $row['promo_code'],
+            'discount'    => (float) $row['discount'],
             'pickupStart' => $row['pickup_start'],
             'pickupEnd'   => $row['pickup_end'],
             'createdAt'   => $row['created_at'],
@@ -769,20 +798,58 @@ final class OrderModel
     }
 
     /**
-     * Fige le total de la commande à partir de ses lignes.
+     * Fige le total de la commande à partir de ses lignes, moins la remise du
+     * code promo (US PRO-a), dont l'utilisation est alors comptée.
      *
-     * @param int $orderId
+     * Les montants sont calculés en centimes entiers : la remise est arrondie
+     * au centime le plus proche, comme dans le panier (front).
+     *
+     * @param int                                                                $orderId
+     * @param array{id:int, code:string, discountRate:int, minAmount:float}|null $promoCode Code promo, ou null.
+     *
+     * @return string|null « minimum » ou « epuise » si le code est refusé (rien
+     *                     n'est alors écrit), null sinon.
      */
-    private function updateTotal(int $orderId): void
+    private function updateTotal(int $orderId, ?array $promoCode): ?string
     {
-        $statement = $this->pdo->prepare(
-            'UPDATE customer_order
-                SET total = (SELECT SUM(unit_price * quantity) FROM order_line WHERE order_id = :lines)
-              WHERE id = :order'
-        );
-        $statement->bindValue(':lines', $orderId, PDO::PARAM_INT);
+        $statement = $this->pdo->prepare('SELECT SUM(unit_price * quantity) FROM order_line WHERE order_id = :order');
         $statement->bindValue(':order', $orderId, PDO::PARAM_INT);
         $statement->execute();
+        $subtotalCents = (int) round((float) $statement->fetchColumn() * 100);
+        $discountCents = 0;
+
+        if ($promoCode !== null) {
+            if ($subtotalCents < (int) round($promoCode['minAmount'] * 100)) {
+                return 'minimum';
+            }
+            if (!$this->promoCodes->consume($promoCode['id'])) {
+                return 'epuise';
+            }
+            $discountCents = intdiv($subtotalCents * $promoCode['discountRate'] + 50, 100);
+        }
+
+        $statement = $this->pdo->prepare(
+            'UPDATE customer_order
+                SET total = :total, promo_code = :code, discount = :discount
+              WHERE id = :order'
+        );
+        $statement->bindValue(':total', self::toDecimal($subtotalCents - $discountCents));
+        $statement->bindValue(':code', $promoCode['code'] ?? null, $promoCode === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
+        $statement->bindValue(':discount', self::toDecimal($discountCents));
+        $statement->bindValue(':order', $orderId, PDO::PARAM_INT);
+        $statement->execute();
+
+        return null;
+    }
+
+    /**
+     * @param int $cents Montant en centimes.
+     *
+     * @return string Montant pour une colonne DECIMAL, par exemple « 425.90 ».
+     */
+    private static function toDecimal(int $cents): string
+    {
+        return number_format($cents / 100, 2, '.', '');
     }
 
     /**

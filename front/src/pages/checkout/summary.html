@@ -1,4 +1,4 @@
-<!-- Récapitulatif (420 px dès 1024 px). Code promo : PRO-a. -->
+<!-- Récapitulatif (420 px dès 1024 px), avec la remise du code promo saisi au panier (PRO-a). -->
 <section aria-labelledby="checkout-summary-title" class="flex flex-col gap-3.5 rounded-xl bg-page p-6 sm:p-7">
   <h2 id="checkout-summary-title" class="font-display text-h3 leading-none text-ink">Récapitulatif</h2>
 
@@ -11,6 +11,12 @@
   <p data-summary-promo class="flex justify-between gap-4 text-small">
     <span class="text-ink-muted">{{promoLabel}}</span>
     <span class="font-semibold text-accent">{{promo}}</span>
+  </p>
+
+  <!-- Remise du code promo (PRO-a), déduite du total : retirée sans code appliqué. -->
+  <p data-summary-discount class="flex justify-between gap-4 text-small">
+    <span class="text-ink-muted">{{discountLabel}}</span>
+    <span class="font-semibold text-accent">{{discount}}</span>
   </p>
 
   <p class="flex justify-between gap-4 text-small">

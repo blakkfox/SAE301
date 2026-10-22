@@ -9,6 +9,7 @@ use App\Core\Response;
 use App\Model\CustomerModel;
 use App\Model\DealershipModel;
 use App\Model\OrderModel;
+use App\Model\PromoCodeModel;
 use DateTimeImmutable;
 use DateTimeZone;
 
@@ -21,7 +22,8 @@ use DateTimeZone;
  * par AuthController). Les créneaux sont calculés ici, côté serveur, et
  * recalculés à l'envoi : un créneau passé ou inventé est refusé. Quantités,
  * stock, prix et options (US OPT-a) sont revérifiés par OrderModel, dans une
- * transaction.
+ * transaction, comme le code promo (US PRO-a) : son statut est revérifié ici,
+ * son montant minimum et sa dernière utilisation dans la transaction.
  */
 final class OrderController
 {
@@ -73,16 +75,25 @@ final class OrderController
     /** Accès aux commandes. */
     private OrderModel $orders;
 
+    /** Accès aux codes promo. */
+    private PromoCodeModel $promoCodes;
+
     /**
      * @param CustomerModel   $customers   Accès aux comptes.
      * @param DealershipModel $dealerships Accès aux concessions.
      * @param OrderModel      $orders      Accès aux commandes.
+     * @param PromoCodeModel  $promoCodes  Accès aux codes promo.
      */
-    public function __construct(CustomerModel $customers, DealershipModel $dealerships, OrderModel $orders)
-    {
+    public function __construct(
+        CustomerModel $customers,
+        DealershipModel $dealerships,
+        OrderModel $orders,
+        PromoCodeModel $promoCodes,
+    ) {
         $this->customers   = $customers;
         $this->dealerships = $dealerships;
         $this->orders      = $orders;
+        $this->promoCodes  = $promoCodes;
     }
 
     /**
@@ -112,14 +123,17 @@ final class OrderController
 
     /**
      * POST /api/orders, corps JSON
-     * { dealershipId, slot, items: [{ variantId, quantity, optionIds }] }.
+     * { dealershipId, slot, items: [{ variantId, quantity, optionIds }], promoCode }.
      * optionIds (US OPT-a) est facultatif : sans lui, la ligne n'a pas d'option.
+     * promoCode (US PRO-a) est facultatif : null ou absent, pas de code.
      *
-     * Enregistre la commande et baisse les stocks : répond { order }, en 201.
+     * Enregistre la commande et baisse les stocks : répond { order }, en 201,
+     * avec le code promo utilisé et sa remise (promoCode, discount).
      * 401 si personne n'est connecté ; 400 si les articles sont invalides ;
-     * 422 (clé « champs ») si la concession ou le créneau est refusé, ou si
-     * une option n'est pas (ou plus) proposée pour son article : rien n'est
-     * alors enregistré ;
+     * 422 (clé « champs ») si la concession ou le créneau est refusé, si
+     * une option n'est pas (ou plus) proposée pour son article, ou si le code
+     * promo est refusé (champs.promoCode : inconnu, pas actif, montant
+     * minimum non atteint) : rien n'est alors enregistré ;
      * 409 (clé « indisponibles », identifiants de variantes) si un article
      * manque : rien n'est alors enregistré.
      *
@@ -140,6 +154,10 @@ final class OrderController
         $dealership   = $dealershipId === false ? null : $this->dealerships->findById($dealershipId);
         $slot         = self::findSlot($body['slot'] ?? null);
 
+        $code         = CartController::normalizePromoCode($body['promoCode'] ?? null);
+        $promoCode    = $code === '' ? null : $this->promoCodes->findByCode($code);
+        $promoRefusal = $code === '' ? null : CartController::promoCodeRefusal($promoCode, $code);
+
         $errors = [];
         if ($dealership === null) {
             $errors['dealership'] = 'Choisissez une concession de retrait.';
@@ -147,11 +165,21 @@ final class OrderController
         if ($slot === null) {
             $errors['slot'] = 'Ce créneau n\'est plus disponible : choisissez-en un autre.';
         }
+        if ($promoRefusal !== null) {
+            $errors['promoCode'] = $promoRefusal;
+        }
         if ($errors !== []) {
             Response::json(['erreur' => 'Certains choix sont à corriger.', 'champs' => $errors], 422);
         }
 
-        $result = $this->orders->create($customer['id'], $dealership['id'], $slot['start'], $slot['end'], $items);
+        $result = $this->orders->create($customer['id'], $dealership['id'], $slot['start'], $slot['end'], $items, $promoCode);
+
+        if ($result['refusedPromo'] !== null) {
+            Response::json([
+                'erreur' => 'Le code promo ne peut pas être utilisé.',
+                'champs' => ['promoCode' => self::promoRefusal($promoCode, $result['refusedPromo'])],
+            ], 422);
+        }
 
         if ($result['refusedOptions'] !== []) {
             Response::json([
@@ -254,6 +282,24 @@ final class OrderController
     public static function pickupDayOffset(string $pickupStart): int
     {
         return self::dayOffset($pickupStart, self::now()->setTime(0, 0));
+    }
+
+    /**
+     * Message d'un code promo refusé dans la transaction de la commande.
+     *
+     * @param array{code:string, minAmount:float} $promoCode
+     * @param string                              $reason    « minimum » ou « epuise » (OrderModel::create).
+     *
+     * @return string Par exemple « Le code MOTARD20 s'applique dès 80,00 € d'achat. »
+     */
+    private static function promoRefusal(array $promoCode, string $reason): string
+    {
+        if ($reason === 'minimum') {
+            return 'Le code ' . $promoCode['code'] . ' s\'applique dès '
+                . number_format($promoCode['minAmount'], 2, ',', "\u{202F}") . "\u{00A0}€ d'achat.";
+        }
+
+        return 'Le code ' . $promoCode['code'] . ' a atteint son nombre maximal d\'utilisations.';
     }
 
     /**

@@ -27,6 +27,7 @@ return [
     'GET  /api/promotion'  => [ProductController::class,   'promotion'],
     'GET  /api/categories' => [CategoryController::class,  'index'],
     'GET  /api/cart'       => [CartController::class,      'show'],
+    'GET  /api/promo-code' => [CartController::class,      'promoCode'],
     'GET  /api/me'             => [AuthController::class,      'me'],
     'POST /api/login'          => [AuthController::class,      'login'],
     'POST /api/register'       => [AuthController::class,      'register'],

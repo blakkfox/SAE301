@@ -18,9 +18,16 @@ import { getRequest } from "../lib/api-request.js";
  * Plusieurs parties de l'application affichent le panier (le compteur de
  * l'en-tête, la page Panier) : subscribe permet d'être prévenu de chaque
  * modification.
+ *
+ * Code promo (US PRO-a) : le code saisi au panier est gardé à part, seul
+ * (« BIENVENUE10 »), pour être repris à la validation de la commande. Sa
+ * réduction est toujours redemandée à l'API (fetchPromoCode), et le serveur
+ * revérifie le code à la commande.
  */
 
 const STORAGE_KEY = "honda-cart";
+
+const PROMO_STORAGE_KEY = "honda-promo-code";
 
 // Quantité maximale d'une ligne, quel que soit le stock. Le stock réel la
 // réduit encore (remainingFor, page Panier : STK-c) ; le serveur revérifie
@@ -212,12 +219,47 @@ CartData.remove = function (variantIds) {
 };
 
 /**
- * Vide le panier (commande enregistrée, CMD-a).
+ * Vide le panier et oublie le code promo (commande enregistrée, CMD-a).
  *
  * @returns {boolean} false si le panier n'a pas pu être enregistré.
  */
 CartData.clear = function () {
-  return CartData.write([]);
+  let isPromoCleared = CartData.writePromoCode(null);
+  return CartData.write([]) && isPromoCleared;
+};
+
+/**
+ * Code promo saisi au panier (US PRO-a). Un stockage indisponible ou une
+ * valeur abîmée donne null.
+ *
+ * @returns {?string} Le code, par exemple « BIENVENUE10 », ou null.
+ */
+CartData.readPromoCode = function () {
+  try {
+    let code = localStorage.getItem(PROMO_STORAGE_KEY);
+    return typeof code === "string" && code !== "" ? code : null;
+  } catch (error) {
+    return null;
+  }
+};
+
+/**
+ * Enregistre le code promo, ou l'oublie (null).
+ *
+ * @param {?string} code
+ * @returns {boolean} false si le stockage a refusé l'écriture.
+ */
+CartData.writePromoCode = function (code) {
+  try {
+    if (code === null) {
+      localStorage.removeItem(PROMO_STORAGE_KEY);
+    } else {
+      localStorage.setItem(PROMO_STORAGE_KEY, code);
+    }
+    return true;
+  } catch (error) {
+    return false;
+  }
 };
 
 /**
@@ -285,6 +327,19 @@ CartData.notify = function () {
  */
 CartData.fetchVariants = async function (variantIds) {
   return getRequest(`cart?variants=${encodeURIComponent(variantIds.join(","))}`);
+};
+
+/**
+ * Code promo utilisable aujourd'hui (US PRO-a) : GET /api/promo-code?code=…
+ *
+ * @param {string} code - Code saisi, en majuscules ou non.
+ * @returns {Promise<{promoCode: {code: string, discountRate: number, minAmount: number}}>}
+ *   discountRate : réduction en % ; minAmount : montant minimum du panier, en euros (0 : sans minimum).
+ * @throws {ErreurApi} 404 si le code n'existe pas, 422 s'il est vide ou n'est pas
+ *   actif (programmé, expiré, épuisé) ; le message à afficher est dans champs.promoCode.
+ */
+CartData.fetchPromoCode = async function (code) {
+  return getRequest(`promo-code?code=${encodeURIComponent(code)}`);
 };
 
 export { CartData };

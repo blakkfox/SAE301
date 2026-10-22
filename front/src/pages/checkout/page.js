@@ -36,6 +36,13 @@ import templateError from "./error.html?raw";
  * identifiants. Le serveur relit les suppléments en base et refuse (422) une
  * option qui n'est plus proposée.
  *
+ * Code promo (US PRO-a) : le code saisi au panier est revérifié par l'API au
+ * chargement, sa remise s'affiche au récapitulatif et le code est envoyé avec
+ * la commande. Un code devenu invalide, ou dont le montant minimum n'est plus
+ * atteint, n'est pas appliqué et la page le dit. Si le serveur le refuse à
+ * l'envoi (422), rien n'est enregistré : le code est retiré et le client
+ * confirme de nouveau, au nouveau total.
+ *
  * Découpage MVC strict :
  *   M — panier, données de validation, choix, envoi, textes et montants ;
  *   V — construction du DOM à partir des données REÇUES en paramètre ;
@@ -82,6 +89,8 @@ let M = {
   checkout: null, // { customer, dealerships, slots } renvoyé par l'API, ou null
   dealershipId: null, // concession choisie
   slotId: null, // créneau choisi (« 2026-10-21T16:00 »), ou null
+  promoCode: null, // code promo vérifié par l'API : { code, discountRate, minAmount }, ou null
+  promoNotice: null, // texte d'un code promo retiré ou non appliqué, ou null
   isLoggedOut: false, // l'API a répondu 401 : personne n'est connecté
   isSubmitting: false, // envoi de la commande en cours
   error: null, // texte de l'erreur de chargement, ou null
@@ -99,6 +108,8 @@ M.reset = function () {
   M.checkout = null;
   M.dealershipId = null;
   M.slotId = null;
+  M.promoCode = null;
+  M.promoNotice = null;
   M.isLoggedOut = false;
   M.isSubmitting = false;
   M.error = null;
@@ -127,6 +138,7 @@ M.load = async function () {
     let [checkout, cart] = await Promise.all([
       OrderData.fetchCheckout(),
       CartData.fetchVariants(M.items.map((item) => item.variantId)),
+      M.loadPromoCode(),
     ]);
     M.setCheckout(checkout);
     M.variants = cart.variants;
@@ -169,6 +181,68 @@ M.load = async function () {
   if (short.length > 0) {
     M.notice ??= { type: "erreur", texte: M.formatShortage(short.map((item) => item.variantId)) };
   }
+
+  if (M.promoCode !== null && M.getDiscountCents(M.getLinesCents()) === 0) {
+    M.promoNotice = `Le code ${M.promoCode.code} s'applique dès ${formatPrice(M.promoCode.minAmount)} d'achat : il n'est pas appliqué à cette commande.`;
+  }
+  // Ajouté à un message déjà affiché : le client doit savoir que son total a changé.
+  if (M.promoNotice !== null) {
+    M.notice = { type: "erreur", texte: M.notice === null ? M.promoNotice : `${M.notice.texte} ${M.promoNotice}` };
+  }
+};
+
+/**
+ * Revérifie auprès de l'API le code promo saisi au panier (PRO-a). Un code
+ * refusé (inconnu, programmé, expiré, épuisé) est oublié, et la raison
+ * retenue pour être affichée. Ne lève jamais d'erreur : la commande reste
+ * possible sans code.
+ *
+ * @returns {Promise<void>}
+ */
+M.loadPromoCode = async function () {
+  M.promoCode = null;
+  M.promoNotice = null;
+
+  let code = CartData.readPromoCode();
+  if (code === null) return;
+
+  try {
+    M.promoCode = (await CartData.fetchPromoCode(code)).promoCode;
+  } catch (error) {
+    if (error.statut === undefined) {
+      M.promoNotice = `Le code ${code} n'a pas pu être vérifié : il n'est pas appliqué à cette commande.`;
+    } else {
+      CartData.writePromoCode(null);
+      M.promoNotice = `${error.champs.promoCode ?? error.message} Il a été retiré de votre commande.`;
+    }
+  }
+};
+
+/**
+ * @returns {number} Montant des lignes du panier (produits et options), en centimes.
+ */
+M.getLinesCents = function () {
+  return M.items.reduce((total, item) => {
+    let variant = M.findVariant(item.variantId);
+    if (variant === undefined) return total;
+
+    let options = variant.options.filter((option) => item.optionIds.includes(option.id));
+    let unitCents = options.reduce((sum, option) => sum + M.toCents(option.price), M.toCents(variant.price));
+    return total + unitCents * item.quantity;
+  }, 0);
+};
+
+/**
+ * Remise du code promo sur un montant (PRO-a), arrondie au centime le plus
+ * proche, comme le serveur.
+ *
+ * @param {number} cents - Montant des produits et options, en centimes.
+ * @returns {number} La remise en centimes : 0 sans code, ou si le montant
+ *   minimum du code n'est pas atteint.
+ */
+M.getDiscountCents = function (cents) {
+  if (M.promoCode === null || cents < M.toCents(M.promoCode.minAmount)) return 0;
+  return Math.round((cents * M.promoCode.discountRate) / 100);
 };
 
 /**
@@ -270,6 +344,9 @@ M.submit = async function () {
         quantity: item.quantity,
         optionIds: item.optionIds,
       })),
+      // Code envoyé seulement s'il est appliqué : sous le montant minimum, le
+      // serveur refuserait toute la commande.
+      promoCode: M.getDiscountCents(M.getLinesCents()) > 0 ? M.promoCode.code : null,
     });
     M.order = response.order;
     M.notice = CartData.clear()
@@ -284,7 +361,8 @@ M.submit = async function () {
 
 /**
  * Range l'erreur d'un envoi refusé. Un créneau refusé (422) a sans doute
- * expiré : les créneaux sont alors redemandés.
+ * expiré : les créneaux sont alors redemandés. Un code promo refusé (422,
+ * PRO-a) est retiré : le récapitulatif affiche le nouveau total.
  *
  * @param {Error} error - ErreurApi, ou TypeError si le serveur est injoignable.
  * @returns {Promise<void>}
@@ -295,7 +373,13 @@ M.storeSubmitError = async function (error) {
   } else if (error.statut === 409) {
     M.unavailable = M.formatUnavailable(error.donnees?.indisponibles ?? []);
   } else if (error.statut === 422) {
-    M.notice = { type: "erreur", texte: Object.values(error.champs).join(" ") || error.message };
+    let texte = Object.values(error.champs).join(" ") || error.message;
+    if (error.champs.promoCode !== undefined) {
+      M.promoCode = null;
+      CartData.writePromoCode(null);
+      texte += " Le code a été retiré de votre commande : vérifiez le total avant de confirmer.";
+    }
+    M.notice = { type: "erreur", texte };
     try {
       M.setCheckout(await OrderData.fetchCheckout());
     } catch (reloadError) {
@@ -486,9 +570,12 @@ M.getDetailsData = function () {
  * ses options (OPT-a), listées sous l'article (texte vide sans option).
  * Le produit en promotion automatique (PRO-c) compte à son prix remisé ; la
  * ligne « Dont promotion −20 % » rappelle la remise, comme sur le panier.
+ * Le code promo (PRO-a) ajoute la ligne « Remise BIENVENUE10 (−10 %) »,
+ * déduite du total.
  *
  * @returns {{lines: Array<{text: string, options: string, total: string}>, dealershipShortName: string,
  *   promoLabel: string, promo: string, hasPromo: boolean,
+ *   discountLabel: string, discount: string, hasDiscount: boolean,
  *   total: string, confirmLabel: string, isDisabled: boolean}}
  */
 M.getSummaryData = function () {
@@ -517,6 +604,7 @@ M.getSummaryData = function () {
   }
 
   let dealership = M.checkout.dealerships.find((candidate) => candidate.id === M.dealershipId);
+  let discountCents = M.getDiscountCents(cents);
 
   return {
     lines,
@@ -524,7 +612,10 @@ M.getSummaryData = function () {
     promoLabel: promoRate === null ? "Dont promotion" : `Dont promotion −${promoRate} %`,
     promo: `−${formatPrice(promoCents / 100)}`,
     hasPromo: promoCents > 0,
-    total: formatPrice(cents / 100),
+    discountLabel: M.promoCode === null ? "" : `Remise ${M.promoCode.code} (−${M.promoCode.discountRate} %)`,
+    discount: `−${formatPrice(discountCents / 100)}`,
+    hasDiscount: discountCents > 0,
+    total: formatPrice((cents - discountCents) / 100),
     confirmLabel: M.isSubmitting ? "Envoi de la commande…" : "Confirmer la commande",
     isDisabled: M.isSubmitting || M.dealershipId === null || M.slotId === null,
   };
@@ -532,7 +623,9 @@ M.getSummaryData = function () {
 
 /**
  * @returns {{number: string, statusLabel: string, dealershipName: string, pickup: string,
- *   countLabel: string, total: string}} Données de la commande enregistrée.
+ *   countLabel: string, discountLabel: string, discount: string, hasDiscount: boolean,
+ *   total: string}} Données de la commande enregistrée ; la remise est celle
+ *   que le serveur a figée (PRO-a).
  */
 M.getConfirmedData = function () {
   return {
@@ -541,6 +634,9 @@ M.getConfirmedData = function () {
     dealershipName: M.order.dealership.name,
     pickup: M.formatPickup(M.order.pickupStart, M.order.pickupEnd).toLowerCase(),
     countLabel: M.formatCount(M.order.lines.reduce((total, line) => total + line.quantity, 0)),
+    discountLabel: `Code promo ${M.order.promoCode ?? ""}`,
+    discount: `−${formatPrice(M.order.discount)}`,
+    hasDiscount: M.order.discount > 0,
     total: formatPrice(M.order.total),
   };
 };
@@ -749,7 +845,11 @@ V.createContentFragment = function (data) {
   V.summary = null;
 
   if (data.state === "confirmed") {
-    return htmlToFragment(genericRenderer(templateConfirmed, data.confirmed));
+    let fragment = htmlToFragment(genericRenderer(templateConfirmed, data.confirmed));
+    if (!data.confirmed.hasDiscount) {
+      fragment.querySelector("[data-confirmed-discount]").remove();
+    }
+    return fragment;
   }
   if (data.state === "unavailable") {
     return htmlToFragment(genericRenderer(templateUnavailable, { text: data.unavailable }));
@@ -832,6 +932,9 @@ V.createSummaryFragment = function (summary) {
 
   if (!summary.hasPromo) {
     fragment.querySelector("[data-summary-promo]").remove();
+  }
+  if (!summary.hasDiscount) {
+    fragment.querySelector("[data-summary-discount]").remove();
   }
 
   let button = fragment.querySelector("[data-confirm]");

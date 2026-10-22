@@ -18,6 +18,11 @@
       <dt class="text-ink-muted">Articles</dt>
       <dd class="font-semibold text-ink sm:text-right">{{countLabel}}</dd>
     </div>
+    <!-- Remise du code promo figée par le serveur (PRO-a) : retirée sans code. -->
+    <div data-confirmed-discount class="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
+      <dt class="text-ink-muted">{{discountLabel}}</dt>
+      <dd class="font-semibold text-accent sm:text-right">{{discount}}</dd>
+    </div>
     <div class="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
       <dt class="text-ink-muted">Total à régler sur place</dt>
       <dd class="text-xl font-bold text-ink sm:text-right">{{total}}</dd>

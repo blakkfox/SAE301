@@ -277,6 +277,9 @@ CREATE TABLE customer (
 -- décrit. Le créneau de retrait est enregistré par son début et sa fin.
 -- status suit le cycle en_cours → disponible → retiree, ou annulee.
 -- total est figé à la commande : un prix modifié ensuite ne le change pas.
+-- Code promo (US PRO-a) : promo_code et discount COPIENT le code utilisé et
+-- la remise accordée (NULL et 0 sans code) ; total est déjà remisé. Pas de
+-- clé étrangère : supprimer un code au back-office ne change pas la commande.
 -- ---------------------------------------------------------------------------
 CREATE TABLE customer_order (
     id            INT UNSIGNED     NOT NULL AUTO_INCREMENT,
@@ -286,6 +289,8 @@ CREATE TABLE customer_order (
     pickup_end    DATETIME         NOT NULL,
     status        ENUM('en_cours', 'disponible', 'retiree', 'annulee') NOT NULL DEFAULT 'en_cours',
     total         DECIMAL(10,2)    NOT NULL DEFAULT 0,
+    promo_code    VARCHAR(20)          NULL,
+    discount      DECIMAL(10,2)    NOT NULL DEFAULT 0,
     created_at    DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     PRIMARY KEY (id),
@@ -299,6 +304,7 @@ CREATE TABLE customer_order (
         FOREIGN KEY (dealership_id) REFERENCES dealership (id)
         ON DELETE RESTRICT,
     CONSTRAINT chk_order_total CHECK (total >= 0),
+    CONSTRAINT chk_order_discount CHECK (discount >= 0),
     CONSTRAINT chk_order_pickup CHECK (pickup_end > pickup_start)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
