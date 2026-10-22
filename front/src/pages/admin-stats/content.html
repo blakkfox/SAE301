@@ -1,0 +1,52 @@
+<!--
+  Connecté en administrateur : période, indicateurs, revenus, meilleures
+  ventes, stock et alertes. Mobile First : une colonne, puis à partir de xl
+  les deux colonnes de la maquette (760 / 340 px).
+-->
+<div class="flex flex-col gap-6">
+  <header class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <h1 tabindex="-1" class="font-display text-h1-mobile leading-none text-ink">Statistiques</h1>
+    <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
+      <button type="button" data-action="export" data-focus-key="export" class="button button--outline h-12 px-6 text-small">Exporter en CSV</button>
+      <p class="text-caption text-ink-muted">{{adminLabel}}</p>
+    </div>
+  </header>
+
+  <nav aria-label="Période des statistiques">
+    <ul data-periods class="flex flex-wrap gap-2 lg:gap-3">
+      <slot name="periods"></slot>
+    </ul>
+  </nav>
+
+  <slot name="loading"></slot>
+
+  <section aria-labelledby="stats-kpi-title">
+    <h2 id="stats-kpi-title" class="sr-only">Indicateurs ({{periodLabel}})</h2>
+    <dl class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 xl:gap-5">
+      <slot name="stats"></slot>
+    </dl>
+  </section>
+
+  <div class="grid gap-6 xl:grid-cols-(--grid-admin-stats) xl:items-start">
+    <section aria-labelledby="stats-revenue-title" class="flex min-w-0 flex-col gap-6 rounded-xl bg-page p-6">
+      <h2 id="stats-revenue-title" class="font-display text-h4 leading-none text-ink">Revenus des 7 derniers jours</h2>
+      <slot name="chart"></slot>
+      <p data-chart-empty class="text-caption text-ink-muted">Aucune commande retirée ces 7 derniers jours : les revenus sont comptés au retrait, jour du paiement sur place.</p>
+    </section>
+
+    <section aria-labelledby="stats-best-title" class="flex flex-col gap-5 rounded-xl bg-page p-6">
+      <h2 id="stats-best-title" class="font-display text-h4 leading-none text-ink">Produits les plus vendus<span class="sr-only"> ({{periodLabel}})</span></h2>
+      <slot name="best-sellers"></slot>
+    </section>
+
+    <section aria-labelledby="stats-stock-title" class="flex min-w-0 flex-col gap-5 rounded-xl bg-page p-6">
+      <h2 id="stats-stock-title" class="font-display text-h4 leading-none text-ink">Stock par produit</h2>
+      <slot name="stock"></slot>
+    </section>
+
+    <section aria-labelledby="stats-alerts-title" class="flex flex-col gap-5 rounded-xl bg-page p-6">
+      <h2 id="stats-alerts-title" class="font-display text-h4 leading-none text-ink">Alertes stock faible</h2>
+      <slot name="alerts"></slot>
+    </section>
+  </div>
+</div>

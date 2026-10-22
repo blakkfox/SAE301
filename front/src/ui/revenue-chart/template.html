@@ -1,0 +1,8 @@
+<!--
+  Graphique « Revenus des 7 derniers jours » (écran 20) : une colonne par
+  jour, montant au-dessus de la barre, jour dessous. Les barres sont
+  décoratives : chaque jour est lu en entier par le texte masqué (sr-only).
+-->
+<ul aria-label="Revenus par jour" class="grid h-(--size-stats-chart) grid-cols-7 gap-2 sm:gap-4 lg:gap-5">
+  <slot name="bars"></slot>
+</ul>

@@ -10,8 +10,8 @@ use PDOStatement;
 use Throwable;
 
 /**
- * Accès aux commandes (US CMD-a), à leur gestion au back-office (US PIL-b) et
- * à l'historique du client (US SUI-c).
+ * Accès aux commandes (US CMD-a), à leur gestion au back-office (US PIL-b), à
+ * leurs statistiques (US PIL-a) et à l'historique du client (US SUI-c).
  *
  * L'enregistrement d'une commande, la baisse des stocks et leur journal
  * (US STK-a, StockModel) se font dans UNE transaction : si un seul article
@@ -541,6 +541,106 @@ final class OrderModel
         }
 
         return true;
+    }
+
+    /**
+     * Revenus encaissés de chaque jour d'une période (US PIL-a). Le paiement
+     * se fait sur place, au retrait : une commande compte le jour où elle est
+     * passée à « retirée » (ligne « retiree » de order_event, une seule par
+     * commande puisque le cycle est strict). Un jour sans retrait est absent.
+     *
+     * @param DateTimeImmutable $from Début de la période, inclus.
+     * @param DateTimeImmutable $to   Fin de la période, exclue.
+     *
+     * @return array<string, float> Revenus de chaque jour, clé « 2026-10-21 ».
+     */
+    public function findDailyRevenue(DateTimeImmutable $from, DateTimeImmutable $to): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT DATE(order_event.created_at) AS day, SUM(customer_order.total) AS revenue
+               FROM customer_order
+         INNER JOIN order_event ON order_event.order_id = customer_order.id
+                                AND order_event.status = \'retiree\'
+              WHERE customer_order.status = \'retiree\'
+                AND order_event.created_at >= :from
+                AND order_event.created_at < :to
+           GROUP BY DATE(order_event.created_at)'
+        );
+        $statement->bindValue(':from', $from->format(self::DATETIME));
+        $statement->bindValue(':to', $to->format(self::DATETIME));
+        $statement->execute();
+
+        $rows    = $statement->fetchAll();
+        $revenue = [];
+
+        for ($i = 0; $i < count($rows); $i++) {
+            $revenue[$rows[$i]['day']] = (float) $rows[$i]['revenue'];
+        }
+
+        return $revenue;
+    }
+
+    /**
+     * Commandes passées pendant une période, annulées exclues (US PIL-a).
+     *
+     * @param DateTimeImmutable $from Début de la période, inclus.
+     * @param DateTimeImmutable $to   Fin de la période, exclue.
+     *
+     * @return int
+     */
+    public function countPlaced(DateTimeImmutable $from, DateTimeImmutable $to): int
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT COUNT(*)
+               FROM customer_order
+              WHERE customer_order.status <> \'annulee\'
+                AND customer_order.created_at >= :from
+                AND customer_order.created_at < :to'
+        );
+        $statement->bindValue(':from', $from->format(self::DATETIME));
+        $statement->bindValue(':to', $to->format(self::DATETIME));
+        $statement->execute();
+
+        return (int) $statement->fetchColumn();
+    }
+
+    /**
+     * Produits les plus vendus pendant une période (US PIL-a) : quantités des
+     * lignes des commandes passées, annulées exclues. Les lignes sont
+     * regroupées par le nom copié à la commande : un produit supprimé depuis
+     * reste compté.
+     *
+     * @param DateTimeImmutable $from  Début de la période, inclus.
+     * @param DateTimeImmutable $to    Fin de la période, exclue.
+     * @param int               $limit Nombre de produits.
+     *
+     * @return array<int, array{name:string, quantity:int}> Les plus vendus d'abord.
+     */
+    public function findBestSellers(DateTimeImmutable $from, DateTimeImmutable $to, int $limit): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT order_line.product_name, SUM(order_line.quantity) AS quantity
+               FROM order_line
+         INNER JOIN customer_order ON customer_order.id = order_line.order_id
+              WHERE customer_order.status <> \'annulee\'
+                AND customer_order.created_at >= :from
+                AND customer_order.created_at < :to
+           GROUP BY order_line.product_name
+           ORDER BY quantity DESC, order_line.product_name
+              LIMIT :limit'
+        );
+        $statement->bindValue(':from', $from->format(self::DATETIME));
+        $statement->bindValue(':to', $to->format(self::DATETIME));
+        $statement->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $statement->execute();
+
+        return array_map(
+            static fn (array $row): array => [
+                'name'     => $row['product_name'],
+                'quantity' => (int) $row['quantity'],
+            ],
+            $statement->fetchAll(),
+        );
     }
 
     /**

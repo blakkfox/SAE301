@@ -15,7 +15,7 @@ use DateTimeZone;
 
 /**
  * Back-office : tableau de bord (US GOF-b), gestion des commandes (US PIL-b),
- * des catégories (US GOF-c) et des produits (US GOF-a).
+ * des catégories (US GOF-c) et des produits (US GOF-a), statistiques (US PIL-a).
  *
  * Le rôle n'est jamais lu dans la requête ni dans un cookie : le compte
  * connecté (identifiant rangé en session par AuthController) est relu en
@@ -109,6 +109,24 @@ final class AdminController
     /** Longueur maximale de la description d'une option (colonne product_option.description). */
     private const OPTION_DESCRIPTION_MAX = 120;
 
+    /**
+     * Périodes des statistiques (US PIL-a) : clé reçue => nombre de jours,
+     * aujourd'hui compris, ou null pour « cette année » (depuis le 1er janvier).
+     */
+    private const STATS_PERIODS = ['7' => 7, '30' => 30, 'year' => null];
+
+    /** Période de la maquette : « 30 jours ». */
+    private const DEFAULT_STATS_PERIOD = '30';
+
+    /** Jours du graphique « Revenus des 7 derniers jours », aujourd'hui compris. */
+    private const CHART_DAYS = 7;
+
+    /** Jour de fermeture des concessions, au format de date('N') : 7 = dimanche (comme OrderController). */
+    private const CLOSED_DAY = 7;
+
+    /** Nombre de « Produits les plus vendus ». */
+    private const BEST_SELLER_LIMIT = 5;
+
     /** Nombre de mouvements de stock affichés sur la fiche. */
     private const MOVEMENT_LIMIT = 8;
 
@@ -199,6 +217,140 @@ final class AdminController
             'stockAlerts'     => array_slice($alerts, 0, self::ALERT_LIMIT),
             'stockAlertCount' => count($alerts),
         ]);
+    }
+
+    /**
+     * GET /api/admin/stats?period=30
+     *
+     * Répond { admin, period, stats, dailyRevenue, bestSellers, stock,
+     * stockAlerts, stockAlertCount } (US PIL-a) :
+     * - period : la période appliquée (« 7 », « 30 » ou « year »), une
+     *   valeur invalide étant remplacée par DEFAULT_STATS_PERIOD ;
+     * - stats : revenue et orderCount sur la période, previousRevenue et
+     *   previousOrderCount sur la période précédente de même durée (l'an
+     *   dernier à la même date pour « year »), inProgressCount,
+     *   availableCount (en ce moment) et cancelledCount (depuis l'ouverture) ;
+     * - dailyRevenue : les CHART_DAYS derniers jours, du plus ancien à
+     *   aujourd'hui (date, revenue, isClosed : jour de fermeture) ;
+     * - bestSellers : les BEST_SELLER_LIMIT produits les plus vendus sur la
+     *   période (name, quantity) ;
+     * - stock : les produits en ligne (id, name, stock total,
+     *   lowStockThreshold), du mieux fourni au moins fourni ;
+     * - stockAlerts, stockAlertCount : comme le tableau de bord.
+     *
+     * Revenus : commandes retirées, comptées le jour du retrait (paiement sur
+     * place, voir OrderModel::findDailyRevenue). Commandes : passées sur la
+     * période, annulées exclues.
+     *
+     * 401 si personne n'est connecté, 403 si le compte n'est pas administrateur.
+     *
+     * @param Request $request Requête entrante.
+     */
+    public function stats(Request $request): void
+    {
+        $admin = $this->requireAdmin();
+
+        $period = $request->parametre('period', self::DEFAULT_STATS_PERIOD);
+        $period = array_key_exists($period, self::STATS_PERIODS) ? $period : self::DEFAULT_STATS_PERIOD;
+
+        $today    = self::today();
+        $tomorrow = $today->modify('+1 day');
+        $range    = self::statsRange(self::STATS_PERIODS[$period], $today);
+
+        $statusCounts = $this->orders->countByStatus();
+        $alerts       = $this->products->findLowStockVariants();
+
+        $stock = array_values(array_filter(
+            $this->products->findAdminList(),
+            static fn (array $product): bool => $product['isActive'],
+        ));
+        usort($stock, static fn (array $a, array $b): int => $b['stock'] <=> $a['stock'] ?: strcmp($a['name'], $b['name']));
+
+        Response::json([
+            'admin'           => ['firstName' => $admin['firstName'], 'lastName' => $admin['lastName']],
+            'period'          => $period,
+            'stats'           => [
+                'revenue'            => array_sum($this->orders->findDailyRevenue($range['from'], $tomorrow)),
+                'previousRevenue'    => array_sum($this->orders->findDailyRevenue($range['previousFrom'], $range['previousTo'])),
+                'orderCount'         => $this->orders->countPlaced($range['from'], $tomorrow),
+                'previousOrderCount' => $this->orders->countPlaced($range['previousFrom'], $range['previousTo']),
+                'inProgressCount'    => $statusCounts['en_cours'],
+                'availableCount'     => $statusCounts['disponible'],
+                'cancelledCount'     => $statusCounts['annulee'],
+            ],
+            'dailyRevenue'    => $this->dailyRevenue($today),
+            'bestSellers'     => $this->orders->findBestSellers($range['from'], $tomorrow, self::BEST_SELLER_LIMIT),
+            'stock'           => array_map(
+                static fn (array $product): array => [
+                    'id'                => $product['id'],
+                    'name'              => $product['name'],
+                    'stock'             => $product['stock'],
+                    'lowStockThreshold' => $product['lowStockThreshold'],
+                ],
+                $stock,
+            ),
+            'stockAlerts'     => array_slice($alerts, 0, self::ALERT_LIMIT),
+            'stockAlertCount' => count($alerts),
+        ]);
+    }
+
+    /**
+     * Revenus des CHART_DAYS derniers jours, un jour sans retrait valant 0.
+     *
+     * @param DateTimeImmutable $today Aujourd'hui à minuit, à l'heure de Lyon.
+     *
+     * @return array<int, array{date:string, revenue:float, isClosed:bool}>
+     *         Du plus ancien à aujourd'hui.
+     */
+    private function dailyRevenue(DateTimeImmutable $today): array
+    {
+        $from    = $today->modify('-' . (self::CHART_DAYS - 1) . ' days');
+        $revenue = $this->orders->findDailyRevenue($from, $today->modify('+1 day'));
+        $days    = [];
+
+        for ($i = 0; $i < self::CHART_DAYS; $i++) {
+            $day    = $from->modify("+{$i} days");
+            $date   = $day->format('Y-m-d');
+            $days[] = [
+                'date'     => $date,
+                'revenue'  => $revenue[$date] ?? 0.0,
+                'isClosed' => (int) $day->format('N') === self::CLOSED_DAY,
+            ];
+        }
+
+        return $days;
+    }
+
+    /**
+     * Bornes d'une période des statistiques et de la période précédente, à
+     * laquelle elle est comparée. La période se termine demain à minuit
+     * (aujourd'hui compris).
+     *
+     * @param int|null          $days  Nombre de jours (STATS_PERIODS), ou null pour l'année en cours.
+     * @param DateTimeImmutable $today Aujourd'hui à minuit, à l'heure de Lyon.
+     *
+     * @return array{from:DateTimeImmutable, previousFrom:DateTimeImmutable, previousTo:DateTimeImmutable}
+     *         Débuts inclus, fin exclue.
+     */
+    private static function statsRange(?int $days, DateTimeImmutable $today): array
+    {
+        if ($days === null) {
+            $from = $today->setDate((int) $today->format('Y'), 1, 1);
+
+            return [
+                'from'         => $from,
+                'previousFrom' => $from->modify('-1 year'),
+                'previousTo'   => $today->modify('+1 day')->modify('-1 year'),
+            ];
+        }
+
+        $from = $today->modify('-' . ($days - 1) . ' days');
+
+        return [
+            'from'         => $from,
+            'previousFrom' => $from->modify("-{$days} days"),
+            'previousTo'   => $from,
+        ];
     }
 
     /**

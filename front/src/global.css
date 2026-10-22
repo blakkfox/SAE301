@@ -188,6 +188,10 @@
     --grid-admin-product: minmax(0, 1fr) 21.25rem; /* Fiche produit : formulaire 760 / photo et publication 340 px */
     --size-admin-variants-table-min: 36rem; /* Variantes et stock (5 colonnes) : défile en dessous */
     --size-admin-options-table-min: 36rem; /* Options proposées (4 colonnes) : défile en dessous */
+    --grid-admin-stats: minmax(0, 1fr) 21.25rem; /* Statistiques : graphiques 760 / listes 340 px */
+    --grid-stats-stock: 12.5rem minmax(0, 1fr) 2.5rem; /* Stock par produit : nom 200 px / barre / valeur */
+    --grid-stats-stock-mobile: minmax(0, 1fr) 2.5rem; /* Stock par produit sur mobile : nom / valeur, barre dessous */
+    --size-stats-chart: 14rem; /* Hauteur du graphique des revenus */
   }
 
   .theme-dark {
@@ -453,5 +457,60 @@
     &[aria-invalid="true"] {
       --_border: var(--clr-action);
     }
+  }
+
+  /*
+    Barre du graphique « Revenus des 7 derniers jours » (US PIL-a). Sa
+    hauteur (--_size, en %) est la seule valeur propre à chaque barre : le
+    template la pose dans l'attribut style. Un jour à 0 garde un trait de
+    2 px (jour fermé de la maquette). Aujourd'hui passe en rouge Honda.
+  */
+  .chart-bar {
+    --_fill: var(--clr-border-strong);
+    --_size: 0%;
+
+    width: 100%;
+    height: var(--_size);
+    min-height: 2px;
+    border-radius: 0.25rem 0.25rem 0 0;
+    background-color: var(--_fill);
+  }
+
+  .chart-bar--today {
+    --_fill: var(--clr-action);
+  }
+
+  /*
+    Jauge horizontale du « Stock par produit » (US PIL-a) : une piste grise
+    et son remplissage (::before), de largeur --_size (en %, posée dans
+    l'attribut style). Un stock à 0 garde un point de 6 px. Les modifiers ne
+    font que réassigner la couleur, comme .stock-badge.
+  */
+  .meter {
+    --_fill: var(--clr-success);
+    --_size: 0%;
+
+    display: block;
+    height: 0.375rem;
+    border-radius: 999px;
+    background-color: var(--clr-border-subtle);
+
+    &::before {
+      content: "";
+      display: block;
+      width: var(--_size);
+      min-width: 0.375rem;
+      height: 100%;
+      border-radius: 999px;
+      background-color: var(--_fill);
+    }
+  }
+
+  .meter--low {
+    --_fill: var(--clr-warning);
+  }
+
+  .meter--out {
+    --_fill: var(--clr-error);
   }
 }

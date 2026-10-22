@@ -53,4 +53,5 @@ return [
     'POST /api/admin/products'        => [AdminController::class, 'createProduct'],
     'POST /api/admin/products/update' => [AdminController::class, 'updateProduct'],
     'POST /api/admin/products/delete' => [AdminController::class, 'deleteProduct'],
+    'GET  /api/admin/stats'           => [AdminController::class, 'stats'],
 ];

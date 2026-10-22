@@ -2,7 +2,7 @@ import { getRequest, postRequest } from "../lib/api-request.js";
 
 /**
  * Back-office : tableau de bord (US GOF-b), gestion des commandes (US PIL-b),
- * des catégories (US GOF-c) et des produits (US GOF-a).
+ * des catégories (US GOF-c) et des produits (US GOF-a), statistiques (US PIL-a).
  *
  * Le rôle n'est jamais connu du navigateur : c'est le serveur qui relit le
  * compte connecté et refuse le tableau de bord à tout autre qu'un
@@ -249,6 +249,29 @@ AdminData.updateProduct = async function (id, product) {
  */
 AdminData.deleteProduct = async function (id) {
   return postRequest("admin/products/delete", { id });
+};
+
+/**
+ * Statistiques : GET /api/admin/stats?period=…
+ *
+ * @param {"7"|"30"|"year"} period - Derniers 7 ou 30 jours, ou année en cours.
+ * @returns {Promise<{admin: {firstName: string, lastName: string}, period: "7"|"30"|"year",
+ *   stats: {revenue: number, previousRevenue: number, orderCount: number, previousOrderCount: number,
+ *     inProgressCount: number, availableCount: number, cancelledCount: number},
+ *   dailyRevenue: Array<{date: string, revenue: number, isClosed: boolean}>,
+ *   bestSellers: Array<{name: string, quantity: number}>,
+ *   stock: Array<{id: number, name: string, stock: number, lowStockThreshold: number}>,
+ *   stockAlerts: Array<{variantId: number, productId: number, name: string, label: string, stock: number,
+ *     lowStockThreshold: number}>,
+ *   stockAlertCount: number}>}
+ *   previous… : la période précédente de même durée (l'an dernier à la même
+ *   date pour « year ») ; dailyRevenue : les 7 derniers jours, aujourd'hui en
+ *   dernier ; stock : produits en ligne, du mieux fourni au moins fourni.
+ * @throws {ErreurApi} 401 si personne n'est connecté, 403 si le compte n'est
+ *   pas administrateur.
+ */
+AdminData.fetchStats = async function (period) {
+  return getRequest(`admin/stats?period=${encodeURIComponent(period)}`);
 };
 
 export { AdminData };

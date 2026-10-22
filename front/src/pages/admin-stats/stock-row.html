@@ -1,0 +1,8 @@
+<!-- Mobile First : nom et stock sur une ligne, jauge dessous ; à partir de
+     sm, les trois colonnes de la maquette. La jauge est décorative : le
+     texte masqué donne le stock et son état. -->
+<li class="grid grid-cols-(--grid-stats-stock-mobile) items-center gap-x-4 gap-y-1.5 text-caption sm:grid-cols-(--grid-stats-stock)">
+  <span class="min-w-0 break-words text-ink">{{name}}</span>
+  <span aria-hidden="true" class="meter {{meterClass}} order-last col-span-2 sm:order-none sm:col-span-1" style="--_size: {{size}}%"></span>
+  <span class="text-right font-semibold text-ink"><span aria-hidden="true">{{stock}}</span><span class="sr-only">{{stockDescription}}</span></span>
+</li>
