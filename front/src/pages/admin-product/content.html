@@ -1,0 +1,134 @@
+<!--
+  Fiche d'un produit (écran 19). Mobile First : une colonne ; à partir de
+  xl, la grille de la maquette (760 px / 340 px). Un seul formulaire couvre
+  les deux colonnes : « Enregistrer » (colonne de droite) envoie tout.
+  novalidate : c'est le serveur qui valide, et ses erreurs s'affichent sous
+  leur champ (applyFieldErrors).
+-->
+<div class="flex flex-col gap-6">
+  <header class="flex flex-col gap-3">
+    <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <h1 tabindex="-1" class="font-display text-h1-mobile leading-none text-ink">{{title}}</h1>
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-10">
+        <a href="/admin/produits/nouveau" data-link class="button h-12 px-6 text-small"><span aria-hidden="true">+</span> Nouveau produit</a>
+        <p class="text-caption text-ink-muted">{{adminLabel}}</p>
+      </div>
+    </div>
+    <nav aria-label="Fil d’Ariane">
+      <ol class="flex flex-wrap gap-2 text-caption text-ink-muted">
+        <li><a href="/admin/produits" data-link class="underline-offset-4 hover:text-ink hover:underline">Produits</a></li>
+        <li aria-hidden="true">/</li>
+        <li aria-current="page">{{breadcrumb}}</li>
+      </ol>
+    </nav>
+  </header>
+
+  <form novalidate class="grid gap-5 xl:grid-cols-(--grid-admin-product) xl:items-start">
+    <div class="flex min-w-0 flex-col gap-5">
+      <section aria-labelledby="product-info-title" class="flex flex-col gap-5 rounded-xl bg-page p-5 sm:p-6">
+        <h2 id="product-info-title" class="font-display text-h4 leading-none text-ink">Informations</h2>
+
+        <div class="flex flex-col gap-2">
+          <label for="product-name" class="text-small font-semibold text-ink">Nom</label>
+          <input id="product-name" name="name" type="text" maxlength="120" required value="{{name}}" aria-describedby="product-name-error" data-focus-key="product-name" class="field" />
+          <p id="product-name-error" data-error-for="name" hidden class="text-caption text-accent"></p>
+        </div>
+
+        <div class="grid gap-5 sm:grid-cols-2">
+          <div class="flex flex-col gap-2">
+            <label for="product-price" class="text-small font-semibold text-ink">Prix de base (€ TTC)</label>
+            <input id="product-price" name="price" type="text" inputmode="decimal" autocomplete="off" required value="{{price}}" placeholder="379,90" aria-describedby="product-price-error" data-focus-key="product-price" class="field" />
+            <p id="product-price-error" data-error-for="price" hidden class="text-caption text-accent"></p>
+          </div>
+
+          <div class="flex flex-col gap-2">
+            <label for="product-category" class="text-small font-semibold text-ink">Catégorie</label>
+            <select id="product-category" name="categoryId" required aria-describedby="product-category-hint product-category-error" data-focus-key="product-category" class="field">
+              <option value="">Choisir une catégorie</option>
+              <slot name="categories"></slot>
+            </select>
+            <p id="product-category-hint" data-live="category-hint" class="text-caption text-ink-muted empty:hidden"></p>
+            <p id="product-category-error" data-error-for="categoryId" hidden class="text-caption text-accent"></p>
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-2">
+          <label for="product-description" class="text-small font-semibold text-ink">Description (facultatif)</label>
+          <textarea id="product-description" name="description" rows="3" maxlength="2000" aria-describedby="product-description-error" data-focus-key="product-description" class="field h-auto py-3">{{description}}</textarea>
+          <p id="product-description-error" data-error-for="description" hidden class="text-caption text-accent"></p>
+        </div>
+
+        <div class="flex flex-col gap-2">
+          <label for="product-threshold" class="text-small font-semibold text-ink">Seuil « Bientôt épuisé » (unités)</label>
+          <input id="product-threshold" name="lowStockThreshold" type="number" min="0" max="99" step="1" inputmode="numeric" required value="{{lowStockThreshold}}" aria-describedby="product-threshold-hint product-threshold-error" data-focus-key="product-threshold" class="field" />
+          <p id="product-threshold-hint" class="text-caption text-ink-muted">Une variante est « Bientôt épuisé » jusqu’à ce nombre d’unités, dans la boutique comme dans les alertes du tableau de bord.</p>
+          <p id="product-threshold-error" data-error-for="lowStockThreshold" hidden class="text-caption text-accent"></p>
+        </div>
+
+        <fieldset class="flex min-w-0 flex-col gap-3">
+          <legend class="mb-2 text-small font-semibold text-ink">Options proposées</legend>
+          <p id="product-options-hint" class="text-caption text-ink-muted">Services ou accessoires à cocher sur la fiche, avec leur supplément (sac intérieur, pose en atelier…).</p>
+          <slot name="options"></slot>
+          <p data-error-for="options" hidden class="text-caption text-accent"></p>
+          <button type="button" data-action="add-option" data-focus-key="add-option" class="self-start text-small font-semibold text-link underline-offset-4 hover:underline"><span aria-hidden="true">+</span> Ajouter une option</button>
+        </fieldset>
+      </section>
+
+      <section aria-labelledby="product-variants-title" class="flex flex-col gap-5 rounded-xl bg-page p-5 sm:p-6">
+        <h2 id="product-variants-title" class="font-display text-h4 leading-none text-ink">Variantes et stock</h2>
+
+        <div class="flex flex-col gap-2">
+          <label for="product-axis" class="text-small font-semibold text-ink">Type de variante</label>
+          <input id="product-axis" name="variantAxis" type="text" maxlength="20" list="product-axis-suggestions" value="{{variantAxis}}" placeholder="Taille, Coloris…" aria-describedby="product-axis-hint product-axis-error" data-focus-key="product-axis" class="field sm:max-w-80" />
+          <datalist id="product-axis-suggestions">
+            <option value="Taille"></option>
+            <option value="Coloris"></option>
+            <option value="Contenance"></option>
+            <option value="Finition"></option>
+          </datalist>
+          <p id="product-axis-hint" class="text-caption text-ink-muted">Vide pour un produit sans déclinaison (une seule variante « Unique »).</p>
+          <p id="product-axis-error" data-error-for="variantAxis" hidden class="text-caption text-accent"></p>
+        </div>
+
+        <slot name="variants"></slot>
+        <p data-error-for="variants" hidden class="text-caption text-accent"></p>
+
+        <p class="text-caption text-ink-muted">Chaque modification de stock est inscrite dans les mouvements : « Réassort » s’il monte, « Ajustement » s’il baisse. Les commandes passées entre-temps sont conservées.</p>
+
+        <button type="button" data-action="add-variant" data-focus-key="add-variant" class="button button--outline h-12 self-start px-6 text-small"><span aria-hidden="true">+</span> Ajouter une variante</button>
+      </section>
+
+      <slot name="movements"></slot>
+    </div>
+
+    <div class="flex min-w-0 flex-col gap-5">
+      <section aria-labelledby="product-photo-title" class="flex flex-col gap-4 rounded-xl bg-page p-5 sm:p-6">
+        <h2 id="product-photo-title" class="font-display text-h4 leading-none text-ink">Photo</h2>
+        <div data-live="photo"></div>
+        <div class="flex flex-col gap-2">
+          <label for="product-image" class="text-small font-semibold text-ink">Fichier</label>
+          <select id="product-image" name="image" aria-describedby="product-image-hint product-image-error" data-focus-key="product-image" class="field">
+            <option value="">Aucune photo (« Photo à venir »)</option>
+            <slot name="images"></slot>
+          </select>
+          <p id="product-image-hint" class="text-caption text-ink-muted">Photos du dossier images/produits du site.</p>
+          <p id="product-image-error" data-error-for="image" hidden class="text-caption text-accent"></p>
+        </div>
+      </section>
+
+      <section aria-labelledby="product-publication-title" class="flex flex-col gap-4 rounded-xl bg-page p-5 sm:p-6">
+        <h2 id="product-publication-title" class="font-display text-h4 leading-none text-ink">Publication</h2>
+        <p class="flex items-center gap-2 text-caption text-ink-muted">Statut : <span data-live="publication"></span></p>
+        <div class="flex flex-col gap-2">
+          <label class="flex items-center gap-3 text-small text-ink">
+            <input name="isActive" type="checkbox" role="switch" aria-describedby="product-active-error" data-focus-key="product-active" class="switch" />
+            En ligne dans la boutique
+          </label>
+          <p id="product-active-error" data-error-for="isActive" hidden class="text-caption text-accent"></p>
+        </div>
+        <button type="submit" data-focus-key="product-submit" class="button h-12 w-full px-6 text-small">{{submitLabel}}</button>
+        <slot name="delete"></slot>
+      </section>
+    </div>
+  </form>
+</div>

@@ -11,7 +11,8 @@ let ProductData = {};
  *
  * variantId est la variante unique du produit (ajout au panier depuis la
  * carte, CMD-b), ou null si le produit en a plusieurs. stock est le stock
- * total de ses variantes (STK-b).
+ * total de ses variantes (STK-b), lowStockThreshold le seuil « Bientôt
+ * épuisé » du produit (GOF-a).
  *
  * sort n'est fourni qu'après un choix de l'utilisateur. Sans lui, le serveur
  * applique le tri qu'il a mémorisé (cookie), ou le tri par défaut.
@@ -24,7 +25,7 @@ let ProductData = {};
  * @param {string} [category] - Slug de la catégorie, par exemple « collection-honda ».
  * @param {boolean} [inStockOnly=false] - true pour masquer les produits épuisés.
  * @returns {Promise<{products: Array<{id: number, name: string, price: number, image: ?string,
- *   variantId: ?number, stock: number}>,
+ *   variantId: ?number, stock: number, lowStockThreshold: number}>,
  *   sort: string, page: number, pageCount: number, perPage: number, total: number}>}
  * @throws {ErreurApi} Si le serveur répond par une erreur (404 : catégorie inconnue).
  */
@@ -53,13 +54,14 @@ ProductData.fetchPage = async function (page, sort, category, inStockOnly = fals
  *
  * @param {string|number} id - Identifiant du produit (paramètre de l'URL).
  * @returns {Promise<{product: {id: number, name: string, description: ?string, price: number,
- *   image: ?string, category: {id: number, name: string, slug: string,
+ *   image: ?string, variantAxis: ?string, lowStockThreshold: number,
+ *   category: {id: number, name: string, slug: string,
  *     parent: ?{id: number, name: string, slug: string}},
  *   variants: Array<{id: number, label: string, reference: string, stock: number}>,
  *   features: Array<{label: string, value: string}>,
  *   options: Array<{id: number, label: string, description: ?string, price: number}>},
  *   related: Array<{id: number, name: string, price: number, image: ?string, variantId: ?number,
- *     stock: number}>}>}
+ *     stock: number, lowStockThreshold: number}>}>}
  * @throws {ErreurApi} 400 si l'identifiant est invalide, 404 si le produit n'existe pas.
  */
 ProductData.fetchOne = async function (id) {

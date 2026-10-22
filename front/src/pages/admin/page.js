@@ -1,6 +1,6 @@
 import { AdminData } from "../../data/admin.js";
 import { formatPrice } from "../../lib/format.js";
-import { getStockStatus, LOW_STOCK_MAX } from "../../lib/stock.js";
+import { getStockStatus } from "../../lib/stock.js";
 import { genericRenderer, htmlToFragment, replaceKeepingFocus } from "../../lib/utils.js";
 import { AdminLoginFormView } from "../../ui/admin-login-form/index.js";
 import { MessageView } from "../../ui/message/index.js";
@@ -247,7 +247,7 @@ M.getOrders = function () {
 
 /**
  * @returns {{rows: Array<{name: string, quantity: string, status: "low"|"out"}>,
- *   moreLabel: string, moreCount: number, threshold: number}}
+ *   moreLabel: string, moreCount: number}}
  *   Les alertes détaillées, puis le nombre de celles qui ne le sont pas.
  */
 M.getAlerts = function () {
@@ -258,11 +258,10 @@ M.getAlerts = function () {
       // « Unique » : produit sans déclinaison, le nom suffit.
       name: alert.label === "Unique" ? alert.name : `${alert.name} · ${alert.label}`,
       quantity: alert.stock === 0 ? "épuisé" : M.formatCount(alert.stock, "restant", "restants"),
-      status: getStockStatus(alert.stock),
+      status: getStockStatus(alert.stock, alert.lowStockThreshold),
     })),
     moreLabel: M.formatCount(moreCount, "autre variante", "autres variantes"),
     moreCount,
-    threshold: LOW_STOCK_MAX,
   };
 };
 
@@ -464,7 +463,7 @@ V.createOrderRowFragment = function (order) {
  */
 V.createAlertsFragment = function (alerts) {
   if (alerts.rows.length === 0) {
-    return htmlToFragment(genericRenderer(templateAlertsEmpty, { threshold: alerts.threshold }));
+    return htmlToFragment(templateAlertsEmpty);
   }
 
   let fragment = htmlToFragment(genericRenderer(templateAlerts, { moreLabel: alerts.moreLabel }));

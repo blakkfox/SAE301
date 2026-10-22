@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Model;
 
 use PDO;
+use PDOException;
 use PDOStatement;
+use Throwable;
 
 /**
- * Accès aux produits du catalogue.
+ * Accès aux produits du catalogue, et à leur gestion au back-office (US GOF-a).
  *
  * Cette couche ne contient aucune règle métier et ne décide de rien :
  * elle exécute les requêtes qu'on lui demande et renvoie des tableaux typés.
@@ -75,15 +77,23 @@ final class ProductModel
     private const IN_CATEGORY = 'product.category_id IN (
         SELECT category.id FROM category WHERE :category IN (category.id, category.parent_id))';
 
+    /** Code SQLSTATE d'une contrainte d'unicité violée (référence ou libellé déjà pris). */
+    private const INTEGRITY_VIOLATION = '23000';
+
     /** Connexion à la base, fournie à la construction. */
     private PDO $pdo;
 
+    /** Journal des stocks : la saisie du stock au back-office y est inscrite (US GOF-a). */
+    private StockModel $stock;
+
     /**
-     * @param PDO $pdo Connexion ouverte par Database::connexion().
+     * @param PDO        $pdo   Connexion ouverte par Database::connexion().
+     * @param StockModel $stock Mise à jour du stock, sur la même connexion (même transaction).
      */
-    public function __construct(PDO $pdo)
+    public function __construct(PDO $pdo, StockModel $stock)
     {
-        $this->pdo = $pdo;
+        $this->pdo   = $pdo;
+        $this->stock = $stock;
     }
 
     /**
@@ -122,7 +132,8 @@ final class ProductModel
      * @param bool     $inStockOnly true pour ne garder que les produits dont
      *                              une variante au moins est en stock.
      *
-     * @return array<int, array{id:int, name:string, price:float, image:?string, variantId:?int, stock:int}>
+     * @return array<int, array{id:int, name:string, price:float, image:?string, variantId:?int, stock:int,
+     *                          lowStockThreshold:int}>
      */
     public function findVisiblePage(
         string $orderBy,
@@ -134,7 +145,7 @@ final class ProductModel
         // product.id en dernier critère : deux produits au même prix gardent
         // toujours le même ordre, sinon un produit pourrait apparaître sur
         // deux pages successives.
-        $sql = 'SELECT product.id, product.name, product.price, product.image, '
+        $sql = 'SELECT product.id, product.name, product.price, product.image, product.low_stock_threshold, '
                      . self::SINGLE_VARIANT . ', ' . self::TOTAL_STOCK . '
                   FROM product
                  WHERE ' . self::VISIBLE . self::categoryFilter($categoryId) . self::stockFilter($inStockOnly) . "
@@ -157,18 +168,19 @@ final class ProductModel
      * @param int $id Identifiant du produit.
      *
      * @return array{id:int, name:string, description:?string, price:float, image:?string,
-     *               variantAxis:?string,
+     *               variantAxis:?string, lowStockThreshold:int,
      *               category:array{id:int, name:string, slug:string,
      *                              parent:?array{id:int, name:string, slug:string}}}|null
      *         null si le produit n'existe pas ou n'est pas visible ;
-     *         variantAxis : ce qui distingue ses variantes (« Taille »…), ou null (US OPT-b).
+     *         variantAxis : ce qui distingue ses variantes (« Taille »…), ou null (US OPT-b) ;
+     *         lowStockThreshold : seuil « Bientôt épuisé » du produit (US GOF-a).
      */
     public function findVisibleById(int $id): ?array
     {
         // LEFT JOIN : une catégorie de premier niveau n'a pas de parent, et le
         // produit doit tout de même être trouvé.
         $sql = 'SELECT product.id, product.name, product.description, product.price, product.image,
-                       product.variant_axis,
+                       product.variant_axis, product.low_stock_threshold,
                        category.id   AS category_id,
                        category.name AS category_name,
                        category.slug AS category_slug,
@@ -198,6 +210,8 @@ final class ProductModel
             'price'       => (float) $row['price'],
             'image'       => $row['image'],
             'variantAxis' => $row['variant_axis'],
+            // Seuil « Bientôt épuisé » du produit (US GOF-a).
+            'lowStockThreshold' => (int) $row['low_stock_threshold'],
             'category'    => [
                 'id'     => (int) $row['category_id'],
                 'name'   => $row['category_name'],
@@ -353,13 +367,14 @@ final class ProductModel
      * @param int $categoryId Catégorie du produit affiché.
      * @param int $limit      Nombre de suggestions.
      *
-     * @return array<int, array{id:int, name:string, price:float, image:?string, variantId:?int, stock:int}>
+     * @return array<int, array{id:int, name:string, price:float, image:?string, variantId:?int, stock:int,
+     *                          lowStockThreshold:int}>
      */
     public function findRelated(int $productId, int $categoryId, int $limit): array
     {
         // « product.category_id = :category » vaut 1 ou 0 : trié en DESC, il
         // place la même catégorie en tête.
-        $sql = 'SELECT product.id, product.name, product.price, product.image, '
+        $sql = 'SELECT product.id, product.name, product.price, product.image, product.low_stock_threshold, '
                      . self::SINGLE_VARIANT . ', ' . self::TOTAL_STOCK . '
                   FROM product
                  WHERE product.id <> :product
@@ -388,7 +403,8 @@ final class ProductModel
      *                                    par le contrôleur (entiers > 0, sans doublon).
      *
      * @return array<int, array{variantId:int, label:string, reference:string,
-     *                          productId:int, name:string, price:float, image:?string, stock:int}>
+     *                          productId:int, name:string, price:float, image:?string, stock:int,
+     *                          lowStockThreshold:int}>
      */
     public function findCartVariants(array $variantIds): array
     {
@@ -405,7 +421,7 @@ final class ProductModel
 
         $sql = 'SELECT variant.id AS variant_id, ' . self::VARIANT_LABEL . ' AS label,
                        variant.reference, variant.stock,
-                       product.id, product.name, product.price, product.image
+                       product.id, product.name, product.price, product.image, product.low_stock_threshold
                   FROM variant
             INNER JOIN product ON product.id = variant.product_id
                  WHERE variant.id IN (' . implode(', ', $markers) . ')
@@ -429,6 +445,7 @@ final class ProductModel
                 'price'     => (float) $row['price'],
                 'image'     => $row['image'],
                 'stock'     => (int) $row['stock'],
+                'lowStockThreshold' => (int) $row['low_stock_threshold'],
             ],
             $statement->fetchAll(),
         );
@@ -455,37 +472,477 @@ final class ProductModel
     }
 
     /**
-     * Variantes de produits visibles dont le stock est au plus $maxStock :
-     * les « Alertes stock » du back-office (US GOF-b). Les épuisées d'abord.
+     * Variantes de produits visibles dont le stock est au plus le seuil
+     * « Bientôt épuisé » de leur produit (US GOF-a) : les « Alertes stock »
+     * du back-office (US GOF-b). Les épuisées d'abord.
      *
-     * @param int $maxStock Seuil d'alerte, compris.
-     *
-     * @return array<int, array{variantId:int, productId:int, name:string, label:string, stock:int}>
+     * @return array<int, array{variantId:int, productId:int, name:string, label:string, stock:int,
+     *                          lowStockThreshold:int}>
      */
-    public function findLowStockVariants(int $maxStock): array
+    public function findLowStockVariants(): array
+    {
+        $sql = 'SELECT variant.id AS variant_id, ' . self::VARIANT_LABEL . ' AS label,
+                       variant.stock, product.id, product.name, product.low_stock_threshold
+                  FROM variant
+            INNER JOIN product ON product.id = variant.product_id
+                 WHERE variant.stock <= product.low_stock_threshold
+                   AND ' . self::VISIBLE . '
+              ORDER BY variant.stock, product.name, variant.position, variant.id';
+
+        return array_map(
+            static fn (array $row): array => [
+                'variantId'         => (int) $row['variant_id'],
+                'productId'         => (int) $row['id'],
+                'name'              => $row['name'],
+                'label'             => $row['label'],
+                'stock'             => (int) $row['stock'],
+                'lowStockThreshold' => (int) $row['low_stock_threshold'],
+            ],
+            $this->pdo->query($sql)->fetchAll(),
+        );
+    }
+
+    /**
+     * Tous les produits, en ligne ou non, pour la liste du back-office (US
+     * GOF-a), par ordre alphabétique.
+     *
+     * @return array<int, array{id:int, name:string, price:float, image:?string, isActive:bool,
+     *                          category:string, variantCount:int, stock:int, minStock:int,
+     *                          lowStockThreshold:int}>
+     *         stock : stock total ; minStock : stock de la variante la plus
+     *         basse, qui donne l'état du produit (0 s'il n'a pas de variante).
+     */
+    public function findAdminList(): array
+    {
+        $sql = 'SELECT product.id, product.name, product.price, product.image, product.is_active,
+                       product.low_stock_threshold, category.name AS category_name,
+                       (SELECT COUNT(*) FROM variant WHERE variant.product_id = product.id) AS variant_count,
+                       ' . self::TOTAL_STOCK . ',
+                       (SELECT COALESCE(MIN(variant.stock), 0)
+                          FROM variant
+                         WHERE variant.product_id = product.id) AS min_stock
+                  FROM product
+            INNER JOIN category ON category.id = product.category_id
+              ORDER BY product.name, product.id';
+
+        return array_map(
+            static fn (array $row): array => [
+                'id'                => (int) $row['id'],
+                'name'              => $row['name'],
+                'price'             => (float) $row['price'],
+                'image'             => $row['image'],
+                'isActive'          => (int) $row['is_active'] === 1,
+                'category'          => $row['category_name'],
+                'variantCount'      => (int) $row['variant_count'],
+                'stock'             => (int) $row['stock'],
+                'minStock'          => (int) $row['min_stock'],
+                'lowStockThreshold' => (int) $row['low_stock_threshold'],
+            ],
+            $this->pdo->query($sql)->fetchAll(),
+        );
+    }
+
+    /**
+     * Un produit, en ligne ou non, pour sa fiche au back-office (US GOF-a).
+     * Ses variantes et options se lisent avec findVariants et findOptions.
+     *
+     * @param int $id Identifiant du produit.
+     *
+     * @return array{id:int, categoryId:int, name:string, description:?string, price:float,
+     *               image:?string, variantAxis:?string, lowStockThreshold:int, isActive:bool}|null
+     *         null si le produit n'existe pas.
+     */
+    public function findAdminById(int $id): ?array
     {
         $statement = $this->pdo->prepare(
-            'SELECT variant.id AS variant_id, ' . self::VARIANT_LABEL . ' AS label,
-                    variant.stock, product.id, product.name
-               FROM variant
-         INNER JOIN product ON product.id = variant.product_id
-              WHERE variant.stock <= :maxStock
-                AND ' . self::VISIBLE . '
-           ORDER BY variant.stock, product.name, variant.position, variant.id'
+            'SELECT id, category_id, name, description, price, image, variant_axis,
+                    low_stock_threshold, is_active
+               FROM product
+              WHERE id = :id'
         );
-        $statement->bindValue(':maxStock', $maxStock, PDO::PARAM_INT);
+        $statement->bindValue(':id', $id, PDO::PARAM_INT);
+        $statement->execute();
+
+        $row = $statement->fetch();
+
+        if ($row === false) {
+            return null;
+        }
+
+        return [
+            'id'                => (int) $row['id'],
+            'categoryId'        => (int) $row['category_id'],
+            'name'              => $row['name'],
+            'description'       => $row['description'],
+            'price'             => (float) $row['price'],
+            'image'             => $row['image'],
+            'variantAxis'       => $row['variant_axis'],
+            'lowStockThreshold' => (int) $row['low_stock_threshold'],
+            'isActive'          => (int) $row['is_active'] === 1,
+        ];
+    }
+
+    /**
+     * Derniers mouvements de stock des variantes d'un produit (journal de
+     * STK-a), du plus récent au plus ancien.
+     *
+     * @param int $productId Identifiant du produit.
+     * @param int $limit     Nombre de mouvements.
+     *
+     * @return array<int, array{createdAt:string, reason:string, quantity:int, stockAfter:int,
+     *                          orderId:?int, label:string}>
+     *         reason : « commande », « annulation », « reassort » ou « ajustement » ;
+     *         label : libellé court de la variante (« M »).
+     */
+    public function findMovements(int $productId, int $limit): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT stock_movement.created_at, stock_movement.reason, stock_movement.quantity,
+                    stock_movement.stock_after, stock_movement.order_id, variant.label
+               FROM stock_movement
+         INNER JOIN variant ON variant.id = stock_movement.variant_id
+              WHERE variant.product_id = :product
+           ORDER BY stock_movement.created_at DESC, stock_movement.id DESC
+              LIMIT :limit'
+        );
+        $statement->bindValue(':product', $productId, PDO::PARAM_INT);
+        $statement->bindValue(':limit', $limit, PDO::PARAM_INT);
         $statement->execute();
 
         return array_map(
             static fn (array $row): array => [
-                'variantId' => (int) $row['variant_id'],
-                'productId' => (int) $row['id'],
-                'name'      => $row['name'],
-                'label'     => $row['label'],
-                'stock'     => (int) $row['stock'],
+                'createdAt'  => $row['created_at'],
+                'reason'     => $row['reason'],
+                'quantity'   => (int) $row['quantity'],
+                'stockAfter' => (int) $row['stock_after'],
+                'orderId'    => $row['order_id'] === null ? null : (int) $row['order_id'],
+                'label'      => $row['label'],
             ],
             $statement->fetchAll(),
         );
+    }
+
+    /**
+     * @param string $slug
+     *
+     * @return bool true si un produit porte déjà ce slug.
+     */
+    public function slugExists(string $slug): bool
+    {
+        $statement = $this->pdo->prepare('SELECT 1 FROM product WHERE slug = :slug LIMIT 1');
+        $statement->bindValue(':slug', $slug);
+        $statement->execute();
+
+        return $statement->fetchColumn() !== false;
+    }
+
+    /**
+     * Références déjà portées par une variante d'un autre produit : la
+     * référence est unique dans tout le catalogue.
+     *
+     * @param array<int, string> $references Références saisies, liste indexée à partir de 0.
+     * @param int|null           $productId  Produit enregistré (ses propres variantes ne
+     *                                       comptent pas), ou null à la création.
+     *
+     * @return array<int, string> Les références déjà prises.
+     */
+    public function findTakenReferences(array $references, ?int $productId): array
+    {
+        if ($references === []) {
+            return [];
+        }
+
+        // Un marqueur par référence, comme findCartVariants.
+        $markers = array_map(
+            static fn (int $index): string => ':r' . $index,
+            array_keys($references),
+        );
+
+        $statement = $this->pdo->prepare(
+            'SELECT reference FROM variant WHERE reference IN (' . implode(', ', $markers) . ')'
+            . ($productId === null ? '' : ' AND product_id <> :product')
+        );
+
+        for ($i = 0; $i < count($references); $i++) {
+            $statement->bindValue($markers[$i], $references[$i]);
+        }
+        if ($productId !== null) {
+            $statement->bindValue(':product', $productId, PDO::PARAM_INT);
+        }
+
+        $statement->execute();
+
+        return $statement->fetchAll(PDO::FETCH_COLUMN);
+    }
+
+    /**
+     * Variantes d'un produit présentes dans une commande « en cours » ou
+     * « disponible » : elles ne peuvent pas être retirées, ni leur produit
+     * supprimé, tant que la commande n'est pas retirée ou annulée (son
+     * annulation doit pouvoir recréditer le stock).
+     *
+     * @param int $productId Identifiant du produit.
+     *
+     * @return array<int, int> Identifiants des variantes concernées.
+     */
+    public function findVariantsInOpenOrders(int $productId): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT DISTINCT variant.id
+               FROM variant
+         INNER JOIN order_line ON order_line.variant_id = variant.id
+         INNER JOIN customer_order ON customer_order.id = order_line.order_id
+              WHERE variant.product_id = :product
+                AND customer_order.status IN (\'en_cours\', \'disponible\')'
+        );
+        $statement->bindValue(':product', $productId, PDO::PARAM_INT);
+        $statement->execute();
+
+        return array_map('intval', $statement->fetchAll(PDO::FETCH_COLUMN));
+    }
+
+    /**
+     * Crée un produit avec ses variantes et ses options (US GOF-a), dans une
+     * transaction : le stock initial de chaque variante est inscrit au
+     * journal comme un réassort.
+     *
+     * @param array{categoryId:int, name:string, description:?string, price:string, image:?string,
+     *              variantAxis:?string, lowStockThreshold:int, isActive:bool,
+     *              variants:array<int, array{id:?int, label:string, reference:string, stockDelta:int}>,
+     *              options:array<int, array{id:?int, label:string, description:?string, price:string}>} $product
+     *        Saisie déjà validée par le contrôleur (variantes et options sans id).
+     * @param string $slug Slug libre, calculé par le contrôleur.
+     *
+     * @return int|null L'identifiant du produit créé, ou null si une
+     *                  référence ou un libellé est déjà pris (rien n'est enregistré).
+     */
+    public function create(array $product, string $slug): ?int
+    {
+        $this->pdo->beginTransaction();
+
+        try {
+            $statement = $this->pdo->prepare(
+                'INSERT INTO product (category_id, name, slug, description, price, image, variant_axis,
+                                      low_stock_threshold, is_active)
+                 VALUES (:category, :name, :slug, :description, :price, :image, :axis, :threshold, :active)'
+            );
+            self::bindProduct($statement, $product);
+            $statement->bindValue(':slug', $slug);
+            $statement->execute();
+
+            $id = (int) $this->pdo->lastInsertId();
+
+            $this->saveVariants($id, $product['variants']);
+            $this->saveOptions($id, $product['options']);
+
+            $this->pdo->commit();
+        } catch (PDOException $e) {
+            $this->pdo->rollBack();
+            if ($e->getCode() === self::INTEGRITY_VIOLATION) {
+                return null;
+            }
+            throw $e;
+        } catch (Throwable $e) {
+            $this->pdo->rollBack();
+            throw $e;
+        }
+
+        return $id;
+    }
+
+    /**
+     * Enregistre un produit, ses variantes et ses options (US GOF-a), dans
+     * une transaction. Les variantes et options absentes de la saisie sont
+     * supprimées, celles sans id sont créées. Le stock d'une variante reçoit
+     * l'écart saisi (StockModel::adjust), jamais une valeur absolue.
+     *
+     * @param int   $id      Produit existant.
+     * @param array $product Saisie déjà validée, comme pour create() ; les id
+     *                       des variantes et options appartiennent au produit.
+     *
+     * @return bool false si une référence ou un libellé est déjà pris (rien
+     *              n'est enregistré).
+     */
+    public function update(int $id, array $product): bool
+    {
+        $this->pdo->beginTransaction();
+
+        try {
+            $statement = $this->pdo->prepare(
+                'UPDATE product
+                    SET category_id = :category, name = :name, description = :description, price = :price,
+                        image = :image, variant_axis = :axis, low_stock_threshold = :threshold,
+                        is_active = :active
+                  WHERE id = :id'
+            );
+            self::bindProduct($statement, $product);
+            $statement->bindValue(':id', $id, PDO::PARAM_INT);
+            $statement->execute();
+
+            // Suppressions d'abord : une variante créée peut reprendre le
+            // libellé ou la référence d'une variante retirée.
+            $this->deleteMissing('variant', $id, array_column($product['variants'], 'id'));
+            $this->deleteMissing('product_option', $id, array_column($product['options'], 'id'));
+
+            $this->saveVariants($id, $product['variants']);
+            $this->saveOptions($id, $product['options']);
+
+            $this->pdo->commit();
+        } catch (PDOException $e) {
+            $this->pdo->rollBack();
+            if ($e->getCode() === self::INTEGRITY_VIOLATION) {
+                return false;
+            }
+            throw $e;
+        } catch (Throwable $e) {
+            $this->pdo->rollBack();
+            throw $e;
+        }
+
+        return true;
+    }
+
+    /**
+     * Supprime un produit. Ses variantes, caractéristiques, options et leur
+     * journal de stock partent avec lui (ON DELETE CASCADE) ; les lignes de
+     * commande gardent leur copie du nom et du prix (variant_id à NULL).
+     *
+     * @param int $id Identifiant du produit.
+     *
+     * @return bool false si le produit n'existait plus.
+     */
+    public function delete(int $id): bool
+    {
+        $statement = $this->pdo->prepare('DELETE FROM product WHERE id = :id');
+        $statement->bindValue(':id', $id, PDO::PARAM_INT);
+        $statement->execute();
+
+        return $statement->rowCount() > 0;
+    }
+
+    /**
+     * Crée ou modifie les variantes d'un produit, dans l'ordre reçu, et
+     * applique à leur stock l'écart saisi. Appelée dans la transaction de
+     * create() ou update().
+     *
+     * @param int                                                                            $productId
+     * @param array<int, array{id:?int, label:string, reference:string, stockDelta:int}> $variants
+     */
+    private function saveVariants(int $productId, array $variants): void
+    {
+        $insert = $this->pdo->prepare(
+            'INSERT INTO variant (product_id, reference, label, stock, position)
+             VALUES (:product, :reference, :label, 0, :position)'
+        );
+        $update = $this->pdo->prepare(
+            'UPDATE variant SET reference = :reference, label = :label, position = :position
+              WHERE id = :id AND product_id = :product'
+        );
+
+        for ($i = 0; $i < count($variants); $i++) {
+            $statement = $variants[$i]['id'] === null ? $insert : $update;
+
+            $statement->bindValue(':product', $productId, PDO::PARAM_INT);
+            $statement->bindValue(':reference', $variants[$i]['reference']);
+            $statement->bindValue(':label', $variants[$i]['label']);
+            $statement->bindValue(':position', $i + 1, PDO::PARAM_INT);
+            if ($variants[$i]['id'] !== null) {
+                $statement->bindValue(':id', $variants[$i]['id'], PDO::PARAM_INT);
+            }
+            $statement->execute();
+
+            // Une variante créée part de 0 : son stock initial est un réassort.
+            $variantId = $variants[$i]['id'] ?? (int) $this->pdo->lastInsertId();
+            if ($variants[$i]['stockDelta'] !== 0) {
+                $this->stock->adjust($variantId, $variants[$i]['stockDelta']);
+            }
+        }
+    }
+
+    /**
+     * Crée ou modifie les options d'un produit (US OPT-c), dans l'ordre reçu.
+     * Appelée dans la transaction de create() ou update().
+     *
+     * @param int                                                                            $productId
+     * @param array<int, array{id:?int, label:string, description:?string, price:string}> $options
+     */
+    private function saveOptions(int $productId, array $options): void
+    {
+        $insert = $this->pdo->prepare(
+            'INSERT INTO product_option (product_id, label, description, price, position)
+             VALUES (:product, :label, :description, :price, :position)'
+        );
+        $update = $this->pdo->prepare(
+            'UPDATE product_option SET label = :label, description = :description, price = :price, position = :position
+              WHERE id = :id AND product_id = :product'
+        );
+
+        for ($i = 0; $i < count($options); $i++) {
+            $statement = $options[$i]['id'] === null ? $insert : $update;
+
+            $statement->bindValue(':product', $productId, PDO::PARAM_INT);
+            $statement->bindValue(':label', $options[$i]['label']);
+            $statement->bindValue(
+                ':description',
+                $options[$i]['description'],
+                $options[$i]['description'] === null ? PDO::PARAM_NULL : PDO::PARAM_STR,
+            );
+            $statement->bindValue(':price', $options[$i]['price']);
+            $statement->bindValue(':position', $i + 1, PDO::PARAM_INT);
+            if ($options[$i]['id'] !== null) {
+                $statement->bindValue(':id', $options[$i]['id'], PDO::PARAM_INT);
+            }
+            $statement->execute();
+        }
+    }
+
+    /**
+     * Supprime les lignes d'un produit absentes de la saisie.
+     *
+     * @param string               $table     « variant » ou « product_option » : jamais une
+     *                                        valeur reçue, seulement ces deux constantes.
+     * @param int                  $productId
+     * @param array<int, int|null> $keptIds   Identifiants saisis (null : ligne à créer).
+     */
+    private function deleteMissing(string $table, int $productId, array $keptIds): void
+    {
+        $keptIds = array_values(array_filter($keptIds, static fn (?int $id): bool => $id !== null));
+        $markers = array_map(
+            static fn (int $index): string => ':k' . $index,
+            array_keys($keptIds),
+        );
+
+        $statement = $this->pdo->prepare(
+            "DELETE FROM {$table} WHERE product_id = :product"
+            . ($keptIds === [] ? '' : ' AND id NOT IN (' . implode(', ', $markers) . ')')
+        );
+        $statement->bindValue(':product', $productId, PDO::PARAM_INT);
+        for ($i = 0; $i < count($keptIds); $i++) {
+            $statement->bindValue($markers[$i], $keptIds[$i], PDO::PARAM_INT);
+        }
+        $statement->execute();
+    }
+
+    /**
+     * Lie les colonnes du produit aux marqueurs de create() et update().
+     *
+     * @param PDOStatement         $statement
+     * @param array<string, mixed> $product   Saisie validée.
+     */
+    private static function bindProduct(PDOStatement $statement, array $product): void
+    {
+        $statement->bindValue(':category', $product['categoryId'], PDO::PARAM_INT);
+        $statement->bindValue(':name', $product['name']);
+        $statement->bindValue(
+            ':description',
+            $product['description'],
+            $product['description'] === null ? PDO::PARAM_NULL : PDO::PARAM_STR,
+        );
+        $statement->bindValue(':price', $product['price']);
+        $statement->bindValue(':image', $product['image'], $product['image'] === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
+        $statement->bindValue(':axis', $product['variantAxis'], $product['variantAxis'] === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
+        $statement->bindValue(':threshold', $product['lowStockThreshold'], PDO::PARAM_INT);
+        $statement->bindValue(':active', $product['isActive'] ? 1 : 0, PDO::PARAM_INT);
     }
 
     /**
@@ -531,22 +988,25 @@ final class ProductModel
      * DECIMAL et les entiers sous forme de chaînes : on les type pour que le
      * JSON contienne de vrais nombres.
      *
-     * @param array{id:string, name:string, price:string, image:?string, single_variant_id:?string,
-     *              stock:string} $row
+     * @param array{id:string, name:string, price:string, image:?string, low_stock_threshold:string,
+     *              single_variant_id:?string, stock:string} $row
      *
-     * @return array{id:int, name:string, price:float, image:?string, variantId:?int, stock:int}
+     * @return array{id:int, name:string, price:float, image:?string, variantId:?int, stock:int,
+     *               lowStockThreshold:int}
      *         variantId : la variante unique du produit, ou null s'il en a plusieurs ;
-     *         stock : le stock total de ses variantes (US STK-b).
+     *         stock : le stock total de ses variantes (US STK-b) ;
+     *         lowStockThreshold : seuil « Bientôt épuisé » du produit (US GOF-a).
      */
     private static function toCard(array $row): array
     {
         return [
-            'id'        => (int) $row['id'],
-            'name'      => $row['name'],
-            'price'     => (float) $row['price'],
-            'image'     => $row['image'],
-            'variantId' => $row['single_variant_id'] === null ? null : (int) $row['single_variant_id'],
-            'stock'     => (int) $row['stock'],
+            'id'                => (int) $row['id'],
+            'name'              => $row['name'],
+            'price'             => (float) $row['price'],
+            'image'             => $row['image'],
+            'variantId'         => $row['single_variant_id'] === null ? null : (int) $row['single_variant_id'],
+            'stock'             => (int) $row['stock'],
+            'lowStockThreshold' => (int) $row['low_stock_threshold'],
         ];
     }
 }

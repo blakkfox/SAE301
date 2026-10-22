@@ -1,0 +1,18 @@
+<!-- Défile horizontalement sur petit écran plutôt que de casser ses colonnes. -->
+<div class="overflow-x-auto rounded-xl bg-page">
+  <table class="w-full min-w-(--size-admin-products-table-min) text-left text-small text-ink">
+    <caption class="sr-only">{{caption}}</caption>
+    <thead class="bg-section text-caption font-semibold text-ink-muted">
+      <tr>
+        <th scope="col" class="px-5 py-3">Produit</th>
+        <th scope="col" class="px-3 py-3">Catégorie</th>
+        <th scope="col" class="px-3 py-3 text-right">Prix</th>
+        <th scope="col" class="px-3 py-3 text-right">Stock</th>
+        <th scope="col" class="px-3 py-3">État</th>
+        <th scope="col" class="px-3 py-3">Statut</th>
+        <th scope="col" class="px-3 py-3"><span class="sr-only">Actions</span></th>
+      </tr>
+    </thead>
+    <tbody data-product-rows class="divide-y divide-line-subtle"></tbody>
+  </table>
+</div>

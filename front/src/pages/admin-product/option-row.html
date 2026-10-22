@@ -1,0 +1,21 @@
+<!-- Une option. Les libellés ne sont lus que par les lecteurs d'écran : l'en-tête du tableau les montre. -->
+<tr>
+  <td class="py-2 pr-2 pl-4 align-top">
+    <label for="option-{{index}}-label" class="sr-only">Libellé de l’option {{number}}</label>
+    <input id="option-{{index}}-label" name="options.{{index}}.label" type="text" maxlength="60" value="{{label}}" aria-describedby="option-{{index}}-label-error" data-focus-key="option-{{index}}-label" class="field" />
+    <p id="option-{{index}}-label-error" data-error-for="options.{{index}}.label" hidden class="mt-1 text-caption text-accent"></p>
+  </td>
+  <td class="px-2 py-2 align-top">
+    <label for="option-{{index}}-description" class="sr-only">Description de l’option {{number}}</label>
+    <input id="option-{{index}}-description" name="options.{{index}}.description" type="text" maxlength="120" value="{{description}}" aria-describedby="option-{{index}}-description-error" data-focus-key="option-{{index}}-description" class="field" />
+    <p id="option-{{index}}-description-error" data-error-for="options.{{index}}.description" hidden class="mt-1 text-caption text-accent"></p>
+  </td>
+  <td class="px-2 py-2 align-top">
+    <label for="option-{{index}}-price" class="sr-only">Supplément de l’option {{number}}, en euros</label>
+    <input id="option-{{index}}-price" name="options.{{index}}.price" type="text" inputmode="decimal" autocomplete="off" value="{{price}}" aria-describedby="option-{{index}}-price-error" data-focus-key="option-{{index}}-price" class="field w-28" />
+    <p id="option-{{index}}-price-error" data-error-for="options.{{index}}.price" hidden class="mt-1 text-caption text-accent"></p>
+  </td>
+  <td class="px-3 py-2 align-top">
+    <button type="button" data-action="remove-option" data-index="{{index}}" data-focus-key="remove-option-{{index}}" class="h-12 text-small text-accent underline-offset-4 hover:underline">Retirer<span class="sr-only"> l’option {{number}}</span></button>
+  </td>
+</tr>

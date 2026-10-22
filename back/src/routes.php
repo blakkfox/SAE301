@@ -48,4 +48,9 @@ return [
     'POST /api/admin/categories'        => [AdminController::class, 'createCategory'],
     'POST /api/admin/categories/update' => [AdminController::class, 'updateCategory'],
     'POST /api/admin/categories/delete' => [AdminController::class, 'deleteCategory'],
+    'GET  /api/admin/products'        => [AdminController::class, 'products'],
+    'GET  /api/admin/product'         => [AdminController::class, 'product'],
+    'POST /api/admin/products'        => [AdminController::class, 'createProduct'],
+    'POST /api/admin/products/update' => [AdminController::class, 'updateProduct'],
+    'POST /api/admin/products/delete' => [AdminController::class, 'deleteProduct'],
 ];

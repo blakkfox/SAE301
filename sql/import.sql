@@ -100,6 +100,8 @@ CREATE TABLE category (
 -- variant_axis (US OPT-b) nomme ce qui distingue ses variantes (« Taille »,
 -- « Coloris »…) : la fiche affiche « Taille : M » et le panier « Taille M ».
 -- NULL pour un produit à variante unique, qui n'a rien à choisir.
+-- low_stock_threshold (US GOF-a) : nombre d'unités jusqu'auquel une variante
+-- est « Bientôt épuisé » (STK-b) ; 3 par défaut, comme la légende du catalogue.
 -- Les index sur price et created_at servent les tris du catalogue.
 -- ---------------------------------------------------------------------------
 CREATE TABLE product (
@@ -111,6 +113,7 @@ CREATE TABLE product (
     price       DECIMAL(8,2)      NOT NULL,
     image       VARCHAR(120)          NULL,
     variant_axis VARCHAR(20)          NULL,
+    low_stock_threshold TINYINT UNSIGNED NOT NULL DEFAULT 3,
     is_active   TINYINT(1)        NOT NULL DEFAULT 1,
     created_at  DATETIME          NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -123,7 +126,8 @@ CREATE TABLE product (
     CONSTRAINT fk_product_category
         FOREIGN KEY (category_id) REFERENCES category (id)
         ON DELETE RESTRICT,
-    CONSTRAINT chk_product_price CHECK (price >= 0)
+    CONSTRAINT chk_product_price CHECK (price >= 0),
+    CONSTRAINT chk_product_threshold CHECK (low_stock_threshold <= 99)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
   COLLATE = utf8mb4_unicode_ci;
@@ -369,9 +373,10 @@ CREATE TABLE order_line_option (
 -- Journal des mouvements de stock (US STK-a)
 --
 -- Une ligne par variante et par mouvement, écrite dans la même transaction
--- que la baisse (commande) ou le recrédit (annulation, PIL-b) : le journal
--- ne peut pas contredire le stock. quantity est signée : -2 pour 2 unités
--- vendues, +2 pour 2 unités recréditées. stock_after est le stock de la
+-- que la baisse (commande), le recrédit (annulation, PIL-b) ou la saisie du
+-- stock au back-office (US GOF-a : « reassort » s'il monte, « ajustement »
+-- s'il baisse, order_id NULL) : le journal ne peut pas contredire le stock.
+-- quantity est signée : -2 pour 2 unités vendues, +2 pour 2 unités recréditées. stock_after est le stock de la
 -- variante juste après le mouvement, pour retracer son évolution.
 -- Le journal survit à la suppression de la commande (order_id à NULL).
 -- ---------------------------------------------------------------------------
@@ -379,7 +384,7 @@ CREATE TABLE stock_movement (
     id          INT UNSIGNED                      NOT NULL AUTO_INCREMENT,
     variant_id  SMALLINT UNSIGNED                 NOT NULL,
     order_id    INT UNSIGNED                          NULL,
-    reason      ENUM('commande', 'annulation')    NOT NULL,
+    reason      ENUM('commande', 'annulation', 'reassort', 'ajustement') NOT NULL,
     quantity    INT                               NOT NULL,
     stock_after INT UNSIGNED                      NOT NULL,
     created_at  DATETIME                          NOT NULL DEFAULT CURRENT_TIMESTAMP,

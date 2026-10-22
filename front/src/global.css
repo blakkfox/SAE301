@@ -184,6 +184,10 @@
     --size-admin-orders-table-min: 40rem; /* Liste des commandes (6 colonnes) : défile en dessous */
     --grid-admin-categories: minmax(0, 1fr) 23.75rem; /* Catégories : liste / formulaire 380 px */
     --size-admin-categories-table-min: 34rem; /* Liste des catégories (4 colonnes) : défile en dessous */
+    --size-admin-products-table-min: 48rem; /* Liste des produits (7 colonnes) : défile en dessous */
+    --grid-admin-product: minmax(0, 1fr) 21.25rem; /* Fiche produit : formulaire 760 / photo et publication 340 px */
+    --size-admin-variants-table-min: 36rem; /* Variantes et stock (5 colonnes) : défile en dessous */
+    --size-admin-options-table-min: 36rem; /* Options proposées (4 colonnes) : défile en dessous */
   }
 
   .theme-dark {

@@ -1,0 +1,11 @@
+<!-- Confirmation de la suppression : rien n'est supprimé sans ce second clic. -->
+<div class="flex flex-col gap-3">
+  <button type="button" data-action="ask-delete" data-focus-key="ask-delete" class="button button--outline h-12 w-full px-6 text-small" disabled>Supprimer le produit</button>
+  <div class="flex flex-col gap-3 rounded-lg bg-error-soft px-3 py-3">
+    <p id="product-delete-title" tabindex="-1" class="text-caption text-accent">Supprimer {{name}} ? Ses variantes, options et mouvements de stock seront supprimés. Cette action est définitive.</p>
+    <div class="flex flex-wrap items-center gap-4">
+      <button type="button" data-action="confirm-delete" data-focus-key="confirm-delete" class="text-caption font-semibold text-accent underline underline-offset-4">{{confirmLabel}}</button>
+      <button type="button" data-action="close-delete" data-focus-key="close-delete" class="text-caption font-semibold text-ink underline-offset-4 hover:underline">Annuler</button>
+    </div>
+  </div>
+</div>

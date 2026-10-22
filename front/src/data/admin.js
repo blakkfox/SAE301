@@ -1,8 +1,8 @@
 import { getRequest, postRequest } from "../lib/api-request.js";
 
 /**
- * Back-office : tableau de bord (US GOF-b), gestion des commandes (US PIL-b)
- * et gestion des catégories (US GOF-c).
+ * Back-office : tableau de bord (US GOF-b), gestion des commandes (US PIL-b),
+ * des catégories (US GOF-c) et des produits (US GOF-a).
  *
  * Le rôle n'est jamais connu du navigateur : c'est le serveur qui relit le
  * compte connecté et refuse le tableau de bord à tout autre qu'un
@@ -33,7 +33,8 @@ AdminData.login = async function (email, password) {
  *     inProgressCount: number, availableCount: number, soldOut: Array<{id: number, name: string}>},
  *   upcomingOrders: Array<{id: number, status: string, total: number, pickupStart: string,
  *     dayOffset: number, customer: {firstName: string, lastName: string}}>,
- *   stockAlerts: Array<{variantId: number, productId: number, name: string, label: string, stock: number}>,
+ *   stockAlerts: Array<{variantId: number, productId: number, name: string, label: string, stock: number,
+ *     lowStockThreshold: number}>,
  *   stockAlertCount: number}>}
  *   dayOffset vaut 0 aujourd'hui, 1 demain, -1 hier ; stockAlerts ne détaille
  *   que les premières alertes, stockAlertCount les compte toutes.
@@ -164,6 +165,90 @@ AdminData.updateCategory = async function (id, category) {
  */
 AdminData.deleteCategory = async function (id) {
   return postRequest("admin/categories/delete", { id });
+};
+
+/**
+ * Liste des produits, en ligne ou non : GET /api/admin/products
+ *
+ * @returns {Promise<{admin: {firstName: string, lastName: string},
+ *   products: Array<{id: number, name: string, price: number, image: ?string, isActive: boolean,
+ *     category: string, variantCount: number, stock: number, minStock: number,
+ *     lowStockThreshold: number}>}>}
+ *   minStock est le stock de la variante la plus basse.
+ * @throws {ErreurApi} 401 si personne n'est connecté, 403 si le compte n'est
+ *   pas administrateur.
+ */
+AdminData.fetchProducts = async function () {
+  return getRequest("admin/products");
+};
+
+/**
+ * Fiche d'un produit au back-office : GET /api/admin/product?id=…, ou sans
+ * id pour un nouveau produit (product vaut alors null).
+ *
+ * @param {?number} id
+ * @returns {Promise<{admin: {firstName: string, lastName: string},
+ *   product: ?{id: number, categoryId: number, name: string, description: ?string, price: number,
+ *     image: ?string, variantAxis: ?string, lowStockThreshold: number, isActive: boolean,
+ *     variants: Array<{id: number, label: string, reference: string, stock: number}>,
+ *     options: Array<{id: number, label: string, description: ?string, price: number}>,
+ *     movements: Array<{createdAt: string, reason: "commande"|"annulation"|"reassort"|"ajustement",
+ *       quantity: number, stockAfter: number, orderId: ?number, label: string}>},
+ *   categories: Array<{id: number, name: string, parentName: ?string, isVisible: boolean}>,
+ *   images: string[]}>}
+ * @throws {ErreurApi} 400 si l'identifiant est invalide, 404 si le produit
+ *   n'existe pas ; 401, 403 comme fetchProducts.
+ */
+AdminData.fetchProduct = async function (id) {
+  return getRequest(id === null ? "admin/product" : `admin/product?id=${encodeURIComponent(id)}`);
+};
+
+/**
+ * Création d'un produit : POST /api/admin/products
+ *
+ * Prix, seuil et stocks sont envoyés tels que saisis (« 379,90 ») : le
+ * serveur les valide.
+ *
+ * @param {{name: string, description: string, price: string, categoryId: ?number, image: ?string,
+ *   variantAxis: string, lowStockThreshold: string, isActive: boolean,
+ *   variants: Array<{id: null, label: string, reference: string, stock: string}>,
+ *   options: Array<{id: null, label: string, description: string, price: string}>}} product
+ * @returns {Promise<{product: Object}>} La fiche créée, comme fetchProduct.
+ * @throws {ErreurApi} 422 si la saisie est invalide, 409 si une référence est
+ *   déjà prise (erreurs par champ dans champs, « variants.0.reference »…) ;
+ *   401, 403 comme fetchProducts.
+ */
+AdminData.createProduct = async function (product) {
+  return postRequest("admin/products", product);
+};
+
+/**
+ * Enregistrement d'un produit : POST /api/admin/products/update
+ *
+ * Chaque variante existante envoie previousStock, le stock affiché au
+ * chargement : le serveur n'applique que l'écart saisi.
+ *
+ * @param {number} id
+ * @param {Object} product - Comme createProduct, avec l'id et previousStock
+ *   des variantes et options existantes.
+ * @returns {Promise<{product: Object}>} La fiche enregistrée, comme fetchProduct.
+ * @throws {ErreurApi} 404 si le produit n'existe pas ; 422, 409, 401, 403
+ *   comme createProduct.
+ */
+AdminData.updateProduct = async function (id, product) {
+  return postRequest("admin/products/update", { id, ...product });
+};
+
+/**
+ * Suppression d'un produit : POST /api/admin/products/delete
+ *
+ * @param {number} id
+ * @returns {Promise<{deleted: {id: number, name: string}}>}
+ * @throws {ErreurApi} 404 si le produit n'existe pas, 409 s'il est dans une
+ *   commande en cours ou disponible ; 401, 403 comme fetchProducts.
+ */
+AdminData.deleteProduct = async function (id) {
+  return postRequest("admin/products/delete", { id });
 };
 
 export { AdminData };

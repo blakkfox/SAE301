@@ -13,6 +13,8 @@ import { AccountOrderPage } from "./pages/account-order/page.js";
 import { AdminPage } from "./pages/admin/page.js";
 import { AdminOrdersPage } from "./pages/admin-orders/page.js";
 import { AdminCategoriesPage } from "./pages/admin-categories/page.js";
+import { AdminProductsPage } from "./pages/admin-products/page.js";
+import { AdminProductPage } from "./pages/admin-product/page.js";
 import { The404Page } from "./pages/404/page.js";
 
 // base : chemin du projet sur le serveur (BASE dans vite.config.js).
@@ -58,6 +60,11 @@ router.addRoute("/admin/commandes", AdminOrdersPage);
 
 // GOF-c — Gestion des catégories (écran Figma n° 12).
 router.addRoute("/admin/categories", AdminCategoriesPage);
+
+// GOF-a — Gestion des produits : liste (non maquettée), puis fiche (écran
+// Figma n° 19). params.id dans la page : un identifiant, ou « nouveau ».
+router.addRoute("/admin/produits", AdminProductsPage);
+router.addRoute("/admin/produits/:id", AdminProductPage);
 
 // En dernier : toute adresse qui ne correspond à aucune route.
 router.addRoute("*", The404Page);

@@ -118,7 +118,7 @@ M.loadPage = async function (page, sort) {
  * Prépare un produit de l'API pour la carte produit.
  *
  * @param {{id: number, name: string, price: number, image: ?string, variantId: ?number,
- *   stock: number}} product
+ *   stock: number, lowStockThreshold: number}} product
  * @returns {{id: number, name: string, price: number, imageUrl: ?string,
  *   variantId: ?number, stockStatus: "in"|"low"|"out", isAdded: boolean}}
  */
@@ -129,7 +129,7 @@ M.toCardData = function (product) {
     price: product.price,
     imageUrl: ProductData.imageUrl(product.image),
     variantId: product.variantId,
-    stockStatus: getStockStatus(product.stock),
+    stockStatus: getStockStatus(product.stock, product.lowStockThreshold),
     isAdded: product.id === M.addedProductId,
   };
 };
@@ -184,14 +184,15 @@ M.formatSummary = function (total) {
 };
 
 /**
- * Textes de la légende des pastilles, d'après le seuil de lib/stock.js.
+ * Textes de la légende des pastilles. Le seuil est propre à chaque produit
+ * (US GOF-a) : la légende cite celui par défaut de lib/stock.js.
  *
  * @returns {{inText: string, lowText: string, outText: string}}
  */
 M.getLegendData = function () {
   return {
-    inText: `plus de ${LOW_STOCK_MAX} unités`,
-    lowText: `${LOW_STOCK_MAX} unités ou moins`,
+    inText: `au-dessus du seuil d’alerte (${LOW_STOCK_MAX} unités en général)`,
+    lowText: "seuil d’alerte atteint, quelques unités restantes",
     outText: "0 unité, ajout au panier impossible",
   };
 };
