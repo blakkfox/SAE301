@@ -1,0 +1,19 @@
+<!--
+  Connecté en administrateur : tous les produits, en ligne ou non. La
+  maquette ne montre que la fiche (écran 19) : cette liste reprend la mise en
+  page de la gestion des catégories (écran 12).
+-->
+<div class="flex flex-col gap-6">
+  <header class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <h1 tabindex="-1" class="font-display text-h1-mobile leading-none text-ink">Produits</h1>
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-10">
+      <a href="/admin/produits/nouveau" data-link class="button h-12 px-6 text-small"><span aria-hidden="true">+</span> Nouveau produit</a>
+      <p class="text-caption text-ink-muted">{{adminLabel}}</p>
+    </div>
+  </header>
+
+  <section aria-labelledby="products-list-title" class="flex min-w-0 flex-col gap-4">
+    <h2 id="products-list-title" class="sr-only">Liste des produits</h2>
+    <slot name="list"></slot>
+  </section>
+</div>

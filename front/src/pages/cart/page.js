@@ -379,7 +379,7 @@ M.getLine = function (variantId) {
     quantity: item.quantity,
     maxQuantity: Math.max(1, Math.min(variant.stock, CartData.MAX_QUANTITY)),
     total: formatPrice(((M.toCents(variant.price) + optionsCents) * item.quantity) / 100),
-    stockStatus: getStockStatus(variant.stock),
+    stockStatus: getStockStatus(variant.stock, variant.lowStockThreshold),
     isSoldOut: M.isSoldOut(variant),
     stockNote: M.adjusted.includes(variantId)
       ? `Quantité ajustée à ${item.quantity} : stock maximum disponible`

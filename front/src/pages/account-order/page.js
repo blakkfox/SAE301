@@ -366,7 +366,7 @@ M.getLine = function (line) {
 
   let availability = null;
   if (M.variants !== null) {
-    availability = variant === undefined ? "removed" : getStockStatus(variant.stock);
+    availability = variant === undefined ? "removed" : getStockStatus(variant.stock, variant.lowStockThreshold);
   }
 
   let isUnavailable = availability === "out" || availability === "removed";

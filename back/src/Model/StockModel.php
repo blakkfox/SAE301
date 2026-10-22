@@ -12,8 +12,9 @@ use PDO;
  *
  * Chaque baisse ou recrédit du stock d'une variante est inscrit dans le
  * journal stock_movement. Ces méthodes n'ouvrent pas de transaction : elles
- * s'exécutent dans celle de l'appelant (OrderModel), qui enregistre la
- * commande ou son annulation en même temps. Si l'appelant annule, stock et
+ * s'exécutent dans celle de l'appelant (OrderModel, qui enregistre la
+ * commande ou son annulation en même temps ; ProductModel, qui enregistre la
+ * fiche produit au back-office, US GOF-a). Si l'appelant annule, stock et
  * journal reviennent ensemble à leur état précédent.
  */
 final class StockModel
@@ -143,6 +144,61 @@ final class StockModel
         $log->execute();
 
         return $log->rowCount();
+    }
+
+    /**
+     * Applique au stock d'une variante l'écart saisi au back-office (US
+     * GOF-a), et journalise le mouvement : « reassort » s'il monte,
+     * « ajustement » s'il baisse.
+     *
+     * C'est un écart, et non une valeur absolue, qui est reçu : une commande
+     * passée pendant que l'administrateur modifiait la fiche n'est pas
+     * effacée par l'enregistrement. Le stock ne descend jamais sous 0.
+     *
+     * @param int $variantId Variante du produit enregistré.
+     * @param int $delta     Unités ajoutées (> 0) ou retirées (< 0).
+     *
+     * @return int L'écart réellement appliqué (0 si rien n'a changé).
+     */
+    public function adjust(int $variantId, int $delta): int
+    {
+        $this->requireTransaction();
+
+        // FOR UPDATE : la ligne reste verrouillée jusqu'à la fin de la
+        // transaction, une commande simultanée attend son tour.
+        $select = $this->pdo->prepare('SELECT stock FROM variant WHERE id = :variant FOR UPDATE');
+        $select->bindValue(':variant', $variantId, PDO::PARAM_INT);
+        $select->execute();
+
+        $current = $select->fetchColumn();
+        if ($current === false) {
+            return 0;
+        }
+
+        // Calcul en PHP : stock est UNSIGNED, « stock + -5 » échouerait en SQL.
+        $stock   = max(0, (int) $current + $delta);
+        $applied = $stock - (int) $current;
+
+        if ($applied === 0) {
+            return 0;
+        }
+
+        $update = $this->pdo->prepare('UPDATE variant SET stock = :stock WHERE id = :variant');
+        $update->bindValue(':stock', $stock, PDO::PARAM_INT);
+        $update->bindValue(':variant', $variantId, PDO::PARAM_INT);
+        $update->execute();
+
+        $log = $this->pdo->prepare(
+            'INSERT INTO stock_movement (variant_id, order_id, reason, quantity, stock_after)
+             VALUES (:variant, NULL, :reason, :delta, :stock)'
+        );
+        $log->bindValue(':variant', $variantId, PDO::PARAM_INT);
+        $log->bindValue(':reason', $applied > 0 ? 'reassort' : 'ajustement');
+        $log->bindValue(':delta', $applied, PDO::PARAM_INT);
+        $log->bindValue(':stock', $stock, PDO::PARAM_INT);
+        $log->execute();
+
+        return $applied;
     }
 
     /**

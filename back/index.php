@@ -70,14 +70,14 @@ try {
     // Les dépendances sont créées explicitement : le modèle reçoit la connexion,
     // le contrôleur reçoit le modèle. Aucune magie, tout est lisible ici.
     $controleurs = [
-        CatalogueController::class => new CatalogueController(new ProductModel($pdo), new CategoryModel($pdo), $config['chemin']),
-        ProductController::class   => new ProductController(new ProductModel($pdo)),
-        CategoryController::class  => new CategoryController(new CategoryModel($pdo), new ProductModel($pdo)),
-        CartController::class      => new CartController(new ProductModel($pdo)),
+        CatalogueController::class => new CatalogueController(new ProductModel($pdo, new StockModel($pdo)), new CategoryModel($pdo), $config['chemin']),
+        ProductController::class   => new ProductController(new ProductModel($pdo, new StockModel($pdo))),
+        CategoryController::class  => new CategoryController(new CategoryModel($pdo), new ProductModel($pdo, new StockModel($pdo))),
+        CartController::class      => new CartController(new ProductModel($pdo, new StockModel($pdo))),
         AuthController::class      => new AuthController(new CustomerModel($pdo)),
         OrderController::class     => new OrderController(new CustomerModel($pdo), new DealershipModel($pdo), new OrderModel($pdo, new StockModel($pdo))),
         AccountController::class   => new AccountController(new CustomerModel($pdo), new DealershipModel($pdo), new OrderModel($pdo, new StockModel($pdo))),
-        AdminController::class     => new AdminController(new CustomerModel($pdo), new ProductModel($pdo), new CategoryModel($pdo), new OrderModel($pdo, new StockModel($pdo))),
+        AdminController::class     => new AdminController(new CustomerModel($pdo), new ProductModel($pdo, new StockModel($pdo)), new CategoryModel($pdo), new OrderModel($pdo, new StockModel($pdo)), __DIR__ . '/../front/dist/images/produits'),
     ];
 
     $routes = require __DIR__ . '/src/routes.php';

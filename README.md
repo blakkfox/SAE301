@@ -165,7 +165,7 @@ Une page dynamique suit le découpage Modèle / Contrôleur / Vue :
 | `POST /api/account` | modification des informations, corps JSON `{firstName, lastName, email, phone, preferredDealershipId}` (`null` : aucune préférence). Répond `customer`. 422 si saisie invalide, 409 si l'e-mail est celui d'un autre compte |
 | `POST /api/account/password` | changement de mot de passe, corps JSON `{currentPassword, password, passwordConfirm}`. 422 si le mot de passe actuel est faux ou le nouveau invalide |
 | `POST /api/admin/login` | connexion du back-office (US GOF-b), corps JSON `{"email": …, "password": …}`. 401 si identifiants incorrects **ou compte client** |
-| `GET /api/admin/dashboard` | tableau de bord : indicateurs (`stats`), prochaines commandes (`upcomingOrders`), alertes stock (`stockAlerts`, `stockAlertCount`). 401 sans session, 403 pour un compte client |
+| `GET /api/admin/dashboard` | tableau de bord : indicateurs (`stats`), prochaines commandes (`upcomingOrders`), alertes stock (`stockAlerts`, `stockAlertCount` : variantes au plus au seuil « Bientôt épuisé » de leur produit, US GOF-a). 401 sans session, 403 pour un compte client |
 | `GET /api/admin/orders?status=en_cours&q=dupont&sort=total_desc&page=2` | gestion des commandes (US PIL-b) : une page de 20 commandes (`orders`), nombre par statut (`counts`, avec `all`) selon la recherche, réglages appliqués. Tris : `pickup_desc` (défaut), `pickup_asc`, `customer_asc`, `customer_desc`, `total_desc`, `total_asc`, `status_asc`, `status_desc`. 401, 403 comme le tableau de bord |
 | `GET /api/admin/order?id=142` | détail d'une commande : lignes (avec leurs `options`, US OPT-a), client, concession, journal des statuts (`events`). 400 si `id` invalide, 404 si introuvable |
 | `POST /api/admin/orders/status` | corps JSON `{"ids": [142, 141], "status": "disponible" \| "retiree"}` : passage en lot, seulement depuis le statut précédent du cycle. Répond `updated` et `skipped` |
@@ -174,6 +174,11 @@ Une page dynamique suit le découpage Modèle / Contrôleur / Vue :
 | `POST /api/admin/categories` | création, corps JSON `{name, description, isVisible, parentId}` (slug calculé depuis le nom). 422 si saisie invalide, 409 si le nom est déjà pris (erreurs par champ dans `champs`) |
 | `POST /api/admin/categories/update` | modification, même corps avec `id` (le slug ne change pas). Une catégorie qui a des sous-catégories reste au premier niveau. 404 si introuvable |
 | `POST /api/admin/categories/delete` | suppression, corps JSON `{"id": 15}`. 409 si la catégorie contient encore des produits ou des sous-catégories |
+| `GET /api/admin/products` | gestion des produits (US GOF-a) : tous les produits, en ligne ou non (`isActive`), avec catégorie, nombre de variantes, stock total, stock de la variante la plus basse (`minStock`) et seuil « Bientôt épuisé » (`lowStockThreshold`). 401, 403 comme le tableau de bord |
+| `GET /api/admin/product?id=13` | fiche d'un produit : informations, `variants`, `options`, 8 derniers mouvements de stock (`movements`), et pour le formulaire `categories` (masquées comprises) et `images` (fichiers de `front/dist/images/produits/`). Sans `id` : `product` vaut `null` (nouveau produit). 400, 404 |
+| `POST /api/admin/products` | création, corps JSON `{name, description, price, categoryId, image, variantAxis, lowStockThreshold, isActive, variants: [{id: null, label, reference, stock}], options: [{id: null, label, description, price}]}` (slug calculé depuis le nom). Le stock initial est journalisé (`reassort`). 422 si saisie invalide (erreurs par champ, `variants.0.reference`…), 409 si une référence est déjà prise |
+| `POST /api/admin/products/update` | enregistrement, même corps avec `id` ; chaque variante existante envoie son `id` et `previousStock` (stock affiché au chargement) : seul l'écart est appliqué et journalisé (`reassort` ou `ajustement`). Variantes et options absentes du corps supprimées, sauf une variante présente dans une commande en cours ou disponible (422). 404 si introuvable |
+| `POST /api/admin/products/delete` | suppression, corps JSON `{"id": 13}` (variantes, options et journal avec). 409 si le produit est dans une commande en cours ou disponible |
 
 Tris acceptés : `price_asc` (défaut), `price_desc`, `name_asc`, `newest`.
 `sort` est facultatif : sans lui, le serveur applique le tri mémorisé dans le
@@ -197,5 +202,6 @@ cookie, qui est en `HttpOnly`. Les photos sont dans
 | Un listing de dossiers, ou une erreur 404 sur la racine | le `.htaccess` n'a pas été déposé, ou `front/dist/` est absent (lancer `npm run build`) |
 | Page blanche, fichiers `assets/…` en 404 | `BASE` de `vite.config.js` ne correspond pas au dossier de dépôt |
 | « Impossible de charger le catalogue » | identifiants de `config.php`, ou `sql/import.sql` non importé |
+| `Unknown column … low_stock_threshold` (ou `variant_axis`) | base antérieure à GOF-a (ou OPT-b) : réimporter `sql/import.sql` |
 | Les réglages ne sont jamais retenus, la connexion ne tient pas | `chemin` de `config.php` ne correspond pas au dossier de dépôt |
 | En développement, l'API répond 404 | le back n'est pas déployé sur le serveur, ou `BASE` est faux |

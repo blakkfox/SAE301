@@ -14,8 +14,8 @@ use DateTimeImmutable;
 use DateTimeZone;
 
 /**
- * Back-office : tableau de bord (US GOF-b), gestion des commandes (US PIL-b)
- * et gestion des catégories (US GOF-c).
+ * Back-office : tableau de bord (US GOF-b), gestion des commandes (US PIL-b),
+ * des catégories (US GOF-c) et des produits (US GOF-a).
  *
  * Le rôle n'est jamais lu dans la requête ni dans un cookie : le compte
  * connecté (identifiant rangé en session par AuthController) est relu en
@@ -25,9 +25,6 @@ final class AdminController
 {
     /** Fuseau des concessions : « aujourd'hui » est celui de Lyon (comme OrderController). */
     private const TIMEZONE = 'Europe/Paris';
-
-    /** Seuil d'alerte de stock, comme LOW_STOCK_MAX dans front/src/lib/stock.js. */
-    private const LOW_STOCK_MAX = 3;
 
     /** Nombre d'alertes de stock détaillées (les autres sont seulement comptées). */
     private const ALERT_LIMIT = 6;
@@ -79,6 +76,45 @@ final class AdminController
     /** Longueur maximale de la description d'une catégorie (colonne category.description). */
     private const CATEGORY_DESCRIPTION_MAX = 160;
 
+    /** Longueur maximale du nom d'un produit (colonne product.name). */
+    private const PRODUCT_NAME_MAX = 120;
+
+    /** Longueur maximale de la description d'un produit. */
+    private const PRODUCT_DESCRIPTION_MAX = 2000;
+
+    /** Longueur maximale du type de variante (colonne product.variant_axis). */
+    private const VARIANT_AXIS_MAX = 20;
+
+    /** Seuil « Bientôt épuisé » maximal (contrainte chk_product_threshold). */
+    private const THRESHOLD_MAX = 99;
+
+    /** Nombre maximal de variantes d'un produit. */
+    private const VARIANTS_MAX = 30;
+
+    /** Longueur maximale du libellé d'une variante (colonne variant.label). */
+    private const VARIANT_LABEL_MAX = 60;
+
+    /** Longueur maximale d'une référence (colonne variant.reference). */
+    private const REFERENCE_MAX = 40;
+
+    /** Stock maximal saisi pour une variante. */
+    private const STOCK_MAX = 9999;
+
+    /** Nombre maximal d'options d'un produit. */
+    private const OPTIONS_MAX = 10;
+
+    /** Longueur maximale du libellé d'une option (colonne product_option.label). */
+    private const OPTION_LABEL_MAX = 60;
+
+    /** Longueur maximale de la description d'une option (colonne product_option.description). */
+    private const OPTION_DESCRIPTION_MAX = 120;
+
+    /** Nombre de mouvements de stock affichés sur la fiche. */
+    private const MOVEMENT_LIMIT = 8;
+
+    /** Nom de fichier accepté comme photo produit : pas de chemin, extension d'image. */
+    private const IMAGE_PATTERN = '/^[a-z0-9][a-z0-9._-]*\.(jpe?g|png|webp)$/i';
+
     /** Lettres accentuées et ligatures, pour calculer un slug sans l'extension intl. */
     private const SLUG_LETTERS = [
         'à' => 'a', 'â' => 'a', 'ä' => 'a', 'ç' => 'c', 'é' => 'e', 'è' => 'e', 'ê' => 'e', 'ë' => 'e',
@@ -98,22 +134,28 @@ final class AdminController
     /** Accès aux commandes. */
     private OrderModel $orders;
 
+    /** Dossier des photos produit sur le serveur (US GOF-a). */
+    private string $imageDir;
+
     /**
      * @param CustomerModel $customers  Accès aux comptes.
      * @param ProductModel  $products   Accès aux produits.
      * @param CategoryModel $categories Accès aux catégories.
      * @param OrderModel    $orders     Accès aux commandes.
+     * @param string        $imageDir   Dossier des photos produit, front/dist/images/produits.
      */
     public function __construct(
         CustomerModel $customers,
         ProductModel $products,
         CategoryModel $categories,
         OrderModel $orders,
+        string $imageDir,
     ) {
         $this->customers  = $customers;
         $this->products   = $products;
         $this->categories = $categories;
         $this->orders     = $orders;
+        $this->imageDir   = $imageDir;
     }
 
     /**
@@ -126,7 +168,8 @@ final class AdminController
      *   (produits épuisés : id, name) ;
      * - upcomingOrders : commandes « en cours » ou « disponibles », par début
      *   de créneau, avec dayOffset (0 aujourd'hui, 1 demain, -1 hier…) ;
-     * - stockAlerts : variantes dont le stock est au plus LOW_STOCK_MAX, les
+     * - stockAlerts : variantes dont le stock est au plus le seuil « Bientôt
+     *   épuisé » de leur produit (lowStockThreshold, US GOF-a), les
      *   ALERT_LIMIT premières ; stockAlertCount : leur nombre total.
      *
      * 401 si personne n'est connecté, 403 si le compte n'est pas administrateur.
@@ -136,7 +179,7 @@ final class AdminController
         $admin = $this->requireAdmin();
 
         $statusCounts = $this->orders->countByStatus();
-        $alerts       = $this->products->findLowStockVariants(self::LOW_STOCK_MAX);
+        $alerts       = $this->products->findLowStockVariants();
         $today        = self::today();
 
         Response::json([
@@ -353,7 +396,10 @@ final class AdminController
         $this->requireAdmin();
 
         $category = $this->validateCategory($request->corps(), null);
-        $id       = $this->categories->create($category, $this->freeSlug($category['name']));
+        $id       = $this->categories->create(
+            $category,
+            $this->freeSlug($category['name'], 'categorie', self::CATEGORY_NAME_MAX, fn (string $slug): bool => $this->categories->slugExists($slug)),
+        );
 
         if ($id === null) {
             self::duplicateName();
@@ -424,6 +470,548 @@ final class AdminController
         }
 
         Response::json(['deleted' => ['id' => $category['id'], 'name' => $name]]);
+    }
+
+    /**
+     * GET /api/admin/products
+     *
+     * Répond { admin, products } : tous les produits, en ligne ou non, par
+     * ordre alphabétique, avec leur catégorie, leur nombre de variantes, leur
+     * stock total, le stock de leur variante la plus basse (minStock) et leur
+     * seuil « Bientôt épuisé » (US GOF-a).
+     *
+     * 401 si personne n'est connecté, 403 si le compte n'est pas administrateur.
+     */
+    public function products(): void
+    {
+        $admin = $this->requireAdmin();
+
+        Response::json([
+            'admin'    => ['firstName' => $admin['firstName'], 'lastName' => $admin['lastName']],
+            'products' => $this->products->findAdminList(),
+        ]);
+    }
+
+    /**
+     * GET /api/admin/product?id=13, ou sans id pour un nouveau produit.
+     *
+     * Répond { admin, product, categories, images } :
+     * - product : la fiche (voir productDetail), ou null sans id ;
+     * - categories : toutes les catégories, masquées comprises (id, name,
+     *   parentName, isVisible : visible, parente comprise) ;
+     * - images : les photos disponibles (noms de fichier).
+     *
+     * 400 si id est invalide, 404 si le produit n'existe pas ; 401, 403
+     * comme products().
+     *
+     * @param Request $request Requête entrante.
+     */
+    public function product(Request $request): void
+    {
+        $admin = $this->requireAdmin();
+
+        $id = $request->parametre('id');
+
+        Response::json([
+            'admin'      => ['firstName' => $admin['firstName'], 'lastName' => $admin['lastName']],
+            'product'    => $id === null ? null : $this->productDetail($this->findProductOrFail($id)['id']),
+            'categories' => $this->categoryChoices(),
+            'images'     => $this->productImages(),
+        ]);
+    }
+
+    /**
+     * POST /api/admin/products, corps JSON
+     * { name, description, price, categoryId, image, variantAxis,
+     *   lowStockThreshold, isActive, variants: [{ id: null, label, reference,
+     *   stock }], options: [{ id: null, label, description, price }] }.
+     *
+     * Crée le produit (slug calculé depuis le nom) et répond { product }, en
+     * 201. Le stock initial de chaque variante est journalisé (réassort).
+     * 422 (clé « champs ») si la saisie est invalide ; 409 (clé « champs »)
+     * si une référence est déjà prise ; 401, 403 comme products().
+     *
+     * @param Request $request Requête entrante.
+     */
+    public function createProduct(Request $request): void
+    {
+        $this->requireAdmin();
+
+        $product = $this->validateProduct($request->corps(), null);
+        $id      = $this->products->create(
+            $product,
+            $this->freeSlug($product['name'], 'produit', self::PRODUCT_NAME_MAX, fn (string $slug): bool => $this->products->slugExists($slug)),
+        );
+
+        if ($id === null) {
+            self::duplicateVariant();
+        }
+
+        Response::json(['product' => $this->productDetail($id)], 201);
+    }
+
+    /**
+     * POST /api/admin/products/update, corps JSON comme createProduct, avec
+     * id, et pour chaque variante existante son id et previousStock (le stock
+     * affiché au chargement de la fiche).
+     *
+     * Enregistre le produit (son slug ne change pas) et répond { product }.
+     * Le stock d'une variante reçoit l'écart stock − previousStock : une
+     * commande passée entre-temps n'est pas effacée. Les variantes et options
+     * absentes du corps sont supprimées, sauf une variante présente dans une
+     * commande en cours ou disponible (422).
+     * 400 si id est invalide, 404 si le produit n'existe pas ; 422, 409, 401,
+     * 403 comme createProduct().
+     *
+     * @param Request $request Requête entrante.
+     */
+    public function updateProduct(Request $request): void
+    {
+        $this->requireAdmin();
+
+        $body    = $request->corps();
+        $current = $this->findProductOrFail($body['id'] ?? null);
+        $product = $this->validateProduct($body, $current['id']);
+
+        if (!$this->products->update($current['id'], $product)) {
+            self::duplicateVariant();
+        }
+
+        Response::json(['product' => $this->productDetail($current['id'])]);
+    }
+
+    /**
+     * POST /api/admin/products/delete, corps JSON { id }.
+     *
+     * Supprime le produit, ses variantes, ses options et leur journal de
+     * stock ; les commandes passées gardent leur copie du nom et du prix.
+     * Répond { deleted: { id, name } }.
+     * 400 si id est invalide, 404 si le produit n'existe pas ; 409 s'il est
+     * dans une commande en cours ou disponible ; 401, 403 comme products().
+     *
+     * @param Request $request Requête entrante.
+     */
+    public function deleteProduct(Request $request): void
+    {
+        $this->requireAdmin();
+
+        $product = $this->findProductOrFail($request->corps()['id'] ?? null);
+
+        if ($this->products->findVariantsInOpenOrders($product['id']) !== []) {
+            Response::erreur(
+                "Suppression impossible : {$product['name']} est dans une commande en cours ou disponible. "
+                . 'Mettez-le hors ligne, puis supprimez-le une fois la commande retirée ou annulée.',
+                409,
+            );
+        }
+        if (!$this->products->delete($product['id'])) {
+            Response::erreur('Produit introuvable', 404);
+        }
+
+        Response::json(['deleted' => ['id' => $product['id'], 'name' => $product['name']]]);
+    }
+
+    /**
+     * Produit désigné par $id. Répond 400 (identifiant invalide) ou 404
+     * (produit introuvable), et s'arrête, sinon.
+     *
+     * @param mixed $id Paramètre ou valeur « id » du corps JSON.
+     *
+     * @return array<string, mixed> Le produit de ProductModel::findAdminById.
+     */
+    private function findProductOrFail(mixed $id): array
+    {
+        $id = filter_var($id, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+
+        if ($id === false) {
+            Response::erreur('Identifiant de produit invalide', 400);
+        }
+
+        $product = $this->products->findAdminById($id);
+
+        if ($product === null) {
+            Response::erreur('Produit introuvable', 404);
+        }
+
+        return $product;
+    }
+
+    /**
+     * Fiche complète d'un produit existant, pour le back-office.
+     *
+     * @param int $id Produit existant.
+     *
+     * @return array<string, mixed> Le produit de findAdminById, avec variants
+     *                              (id, label, reference, stock), options
+     *                              (id, label, description, price) et
+     *                              movements (MOVEMENT_LIMIT derniers mouvements de stock).
+     */
+    private function productDetail(int $id): array
+    {
+        return $this->products->findAdminById($id) + [
+            'variants'  => $this->products->findVariants($id),
+            'options'   => $this->products->findOptions($id),
+            'movements' => $this->products->findMovements($id, self::MOVEMENT_LIMIT),
+        ];
+    }
+
+    /**
+     * @return array<int, array{id:int, name:string, parentName:?string, isVisible:bool}>
+     *         Toutes les catégories, chaque parente suivie de ses
+     *         sous-catégories ; isVisible tient compte de la parente.
+     */
+    private function categoryChoices(): array
+    {
+        $tree    = $this->categories->findAdminTree();
+        $choices = [];
+
+        for ($i = 0; $i < count($tree); $i++) {
+            $choices[] = ['id' => $tree[$i]['id'], 'name' => $tree[$i]['name'], 'parentName' => null, 'isVisible' => $tree[$i]['isVisible']];
+
+            for ($j = 0; $j < count($tree[$i]['children']); $j++) {
+                $child     = $tree[$i]['children'][$j];
+                $choices[] = [
+                    'id'         => $child['id'],
+                    'name'       => $child['name'],
+                    'parentName' => $tree[$i]['name'],
+                    'isVisible'  => $child['isVisible'] && $tree[$i]['isVisible'],
+                ];
+            }
+        }
+
+        return $choices;
+    }
+
+    /**
+     * Photos proposées au back-office : les fichiers déjà présents dans le
+     * dossier des photos produit (front/public/images/produits, copié dans
+     * front/dist par npm run build). C'est aussi la liste blanche des noms
+     * acceptés pour la colonne product.image.
+     *
+     * @return array<int, string> Noms de fichier, par ordre alphabétique.
+     */
+    private function productImages(): array
+    {
+        $files = is_dir($this->imageDir) ? scandir($this->imageDir) : false;
+
+        if ($files === false) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            $files,
+            fn (string $file): bool => preg_match(self::IMAGE_PATTERN, $file) === 1 && is_file($this->imageDir . '/' . $file),
+        ));
+    }
+
+    /**
+     * Valide la saisie d'un produit. Répond 422 (erreurs par champ, clés
+     * « variants.2.reference »… pour les lignes) ou 409 (référence déjà
+     * prise), et s'arrête, si elle est refusée.
+     *
+     * - name : obligatoire, au plus PRODUCT_NAME_MAX caractères ;
+     * - description : facultative, au plus PRODUCT_DESCRIPTION_MAX caractères ;
+     * - price : prix TTC positif, « 379,90 » ou 379.9 ;
+     * - categoryId : une catégorie existante, masquée ou non ;
+     * - image : null, ou une photo de productImages() ;
+     * - variantAxis : facultatif, obligatoire dès deux variantes ;
+     * - lowStockThreshold : entier de 0 à THRESHOLD_MAX ;
+     * - isActive : booléen ;
+     * - variants : de 1 à VARIANTS_MAX lignes (voir validateVariants) ;
+     * - options : au plus OPTIONS_MAX lignes (voir validateOptions).
+     *
+     * @param array<string, mixed> $body      Corps JSON reçu.
+     * @param int|null             $productId Produit modifié, ou null à la création.
+     *
+     * @return array{categoryId:int, name:string, description:?string, price:string, image:?string,
+     *               variantAxis:?string, lowStockThreshold:int, isActive:bool,
+     *               variants:array<int, array{id:?int, label:string, reference:string, stockDelta:int}>,
+     *               options:array<int, array{id:?int, label:string, description:?string, price:string}>}
+     */
+    private function validateProduct(array $body, ?int $productId): array
+    {
+        $errors = [];
+
+        $name = self::cleanText($body['name'] ?? null);
+        if ($name === null || $name === '') {
+            $errors['name'] = 'Donnez un nom au produit.';
+        } elseif (mb_strlen($name) > self::PRODUCT_NAME_MAX) {
+            $errors['name'] = 'Le nom ne doit pas dépasser ' . self::PRODUCT_NAME_MAX . ' caractères.';
+        }
+
+        // La description garde ses retours à la ligne : seuls les bords sont nettoyés.
+        $description = is_string($body['description'] ?? '') ? trim($body['description'] ?? '') : null;
+        if ($description === null) {
+            $errors['description'] = 'Description invalide.';
+        } elseif (mb_strlen($description) > self::PRODUCT_DESCRIPTION_MAX) {
+            $errors['description'] = 'La description ne doit pas dépasser ' . self::PRODUCT_DESCRIPTION_MAX . ' caractères.';
+        }
+
+        $price = self::parsePrice($body['price'] ?? null);
+        if ($price === null) {
+            $errors['price'] = 'Indiquez un prix en euros, par exemple 379,90.';
+        }
+
+        $categoryId = filter_var($body['categoryId'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($categoryId === false || $this->categories->findById($categoryId) === null) {
+            $errors['categoryId'] = 'Choisissez une catégorie.';
+        }
+
+        $image = $body['image'] ?? null;
+        $image = $image === '' ? null : $image;
+        if ($image !== null && (!is_string($image) || !in_array($image, $this->productImages(), true))) {
+            $errors['image'] = 'Choisissez une photo de la liste.';
+        }
+
+        $threshold = filter_var(
+            $body['lowStockThreshold'] ?? null,
+            FILTER_VALIDATE_INT,
+            ['options' => ['min_range' => 0, 'max_range' => self::THRESHOLD_MAX]],
+        );
+        if ($threshold === false) {
+            $errors['lowStockThreshold'] = 'Indiquez un nombre d\'unités entre 0 et ' . self::THRESHOLD_MAX . '.';
+        }
+
+        $isActive = $body['isActive'] ?? null;
+        if (!is_bool($isActive)) {
+            $errors['isActive'] = 'Indiquez si le produit est en ligne.';
+        }
+
+        $variants = $this->validateVariants($body['variants'] ?? null, $productId, $errors);
+        $options  = $this->validateOptions($body['options'] ?? null, $productId, $errors);
+
+        $variantAxis = self::cleanText($body['variantAxis'] ?? '');
+        if ($variantAxis === null || mb_strlen($variantAxis) > self::VARIANT_AXIS_MAX) {
+            $errors['variantAxis'] = 'Le type de variante ne doit pas dépasser ' . self::VARIANT_AXIS_MAX . ' caractères.';
+        } elseif ($variantAxis === '' && count($variants) > 1) {
+            $errors['variantAxis'] = 'Indiquez ce qui distingue les variantes : Taille, Coloris…';
+        }
+
+        if ($errors !== []) {
+            Response::json(['erreur' => 'Certains champs sont à corriger.', 'champs' => $errors], 422);
+        }
+
+        // Référence unique dans tout le catalogue : vérifiée après la saisie,
+        // comme le nom d'une catégorie.
+        $taken = $this->products->findTakenReferences(array_column($variants, 'reference'), $productId);
+        if ($taken !== []) {
+            $champs = [];
+            for ($i = 0; $i < count($variants); $i++) {
+                if (in_array($variants[$i]['reference'], $taken, true)) {
+                    $champs["variants.{$i}.reference"] = 'Cette référence est déjà celle d\'un autre produit.';
+                }
+            }
+            Response::json(['erreur' => 'Une référence est déjà utilisée par un autre produit.', 'champs' => $champs], 409);
+        }
+
+        return [
+            'categoryId'        => $categoryId,
+            'name'              => $name,
+            'description'       => $description === '' ? null : $description,
+            'price'             => $price,
+            'image'             => $image,
+            'variantAxis'       => $variantAxis === '' ? null : $variantAxis,
+            'lowStockThreshold' => $threshold,
+            'isActive'          => $isActive,
+            'variants'          => $variants,
+            'options'           => $options,
+        ];
+    }
+
+    /**
+     * Valide les variantes saisies. Chaque ligne :
+     * - id : null (variante à créer), ou une variante du produit, une seule fois ;
+     * - label : obligatoire, au plus VARIANT_LABEL_MAX caractères, unique dans le produit ;
+     * - reference : obligatoire, lettres, chiffres et tirets (mise en
+     *   majuscules), au plus REFERENCE_MAX caractères, unique ;
+     * - stock : entier de 0 à STOCK_MAX ; previousStock (variante existante) :
+     *   le stock affiché au chargement, dont on tire l'écart à appliquer.
+     * Une variante retirée ne doit pas être dans une commande en cours ou disponible.
+     *
+     * @param mixed                 $variants  Valeur « variants » du corps JSON.
+     * @param int|null              $productId Produit modifié, ou null.
+     * @param array<string, string> $errors    Erreurs par champ, complétées ici.
+     *
+     * @return array<int, array{id:?int, label:string, reference:string, stockDelta:int}>
+     */
+    private function validateVariants(mixed $variants, ?int $productId, array &$errors): array
+    {
+        if (!is_array($variants) || !array_is_list($variants) || $variants === []) {
+            $errors['variants'] = 'Ajoutez au moins une variante (« Unique » pour un produit sans déclinaison).';
+            return [];
+        }
+        if (count($variants) > self::VARIANTS_MAX) {
+            $errors['variants'] = 'Un produit a au plus ' . self::VARIANTS_MAX . ' variantes.';
+            return [];
+        }
+
+        $existingIds = $productId === null ? [] : array_column($this->products->findVariants($productId), 'id');
+        $valid       = [];
+        $labels      = [];
+        $references  = [];
+
+        for ($i = 0; $i < count($variants); $i++) {
+            $row = is_array($variants[$i]) ? $variants[$i] : [];
+            $key = "variants.{$i}";
+
+            $id = $row['id'] ?? null;
+            if ($id !== null) {
+                $id = filter_var($id, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+                if ($id === false || !in_array($id, $existingIds, true) || in_array($id, array_column($valid, 'id'), true)) {
+                    $errors[$key . '.label'] = 'Cette variante n\'appartient pas au produit : rechargez la page.';
+                    continue;
+                }
+            }
+
+            $label = self::cleanText($row['label'] ?? null);
+            if ($label === null || $label === '') {
+                $errors[$key . '.label'] = 'Donnez un libellé (S, Noir, 1 L, Unique…).';
+            } elseif (mb_strlen($label) > self::VARIANT_LABEL_MAX) {
+                $errors[$key . '.label'] = 'Au plus ' . self::VARIANT_LABEL_MAX . ' caractères.';
+            } elseif (in_array(mb_strtolower($label), $labels, true)) {
+                $errors[$key . '.label'] = 'Deux variantes ont ce libellé.';
+            }
+
+            $reference = is_string($row['reference'] ?? null) ? strtoupper(trim($row['reference'])) : '';
+            if ($reference === '') {
+                $errors[$key . '.reference'] = 'Donnez une référence.';
+            } elseif (strlen($reference) > self::REFERENCE_MAX || preg_match('/^[A-Z0-9][A-Z0-9-]*$/', $reference) !== 1) {
+                $errors[$key . '.reference'] = 'Lettres, chiffres et tirets, au plus ' . self::REFERENCE_MAX . ' caractères.';
+            } elseif (in_array($reference, $references, true)) {
+                $errors[$key . '.reference'] = 'Deux variantes ont cette référence.';
+            }
+
+            $stockRange = ['options' => ['min_range' => 0, 'max_range' => self::STOCK_MAX]];
+            $stock      = filter_var($row['stock'] ?? null, FILTER_VALIDATE_INT, $stockRange);
+            $previous   = $id === null ? 0 : filter_var($row['previousStock'] ?? null, FILTER_VALIDATE_INT, $stockRange);
+            if ($stock === false || $previous === false) {
+                $errors[$key . '.stock'] = 'Un nombre entier, de 0 à ' . self::STOCK_MAX . '.';
+            }
+
+            $labels[]     = mb_strtolower($label ?? '');
+            $references[] = $reference;
+            $valid[]      = [
+                'id'         => $id,
+                'label'      => $label ?? '',
+                'reference'  => $reference,
+                'stockDelta' => is_int($stock) && is_int($previous) ? $stock - $previous : 0,
+            ];
+        }
+
+        if ($productId !== null) {
+            $removed = array_diff($existingIds, array_column($valid, 'id'));
+            $locked  = array_intersect($removed, $this->products->findVariantsInOpenOrders($productId));
+            if ($locked !== []) {
+                $errors['variants'] = 'Une variante retirée est dans une commande en cours ou disponible : '
+                    . 'gardez-la jusqu\'au retrait ou à l\'annulation de la commande.';
+            }
+        }
+
+        return $valid;
+    }
+
+    /**
+     * Valide les options saisies (US OPT-c). Chaque ligne :
+     * - id : null (option à créer), ou une option du produit, une seule fois ;
+     * - label : obligatoire, au plus OPTION_LABEL_MAX caractères, unique dans le produit ;
+     * - description : facultative, au plus OPTION_DESCRIPTION_MAX caractères ;
+     * - price : supplément TTC positif.
+     *
+     * @param mixed                 $options   Valeur « options » du corps JSON.
+     * @param int|null              $productId Produit modifié, ou null.
+     * @param array<string, string> $errors    Erreurs par champ, complétées ici.
+     *
+     * @return array<int, array{id:?int, label:string, description:?string, price:string}>
+     */
+    private function validateOptions(mixed $options, ?int $productId, array &$errors): array
+    {
+        $options = $options ?? [];
+
+        if (!is_array($options) || !array_is_list($options) || count($options) > self::OPTIONS_MAX) {
+            $errors['options'] = 'Un produit propose au plus ' . self::OPTIONS_MAX . ' options.';
+            return [];
+        }
+
+        $existingIds = $productId === null ? [] : array_column($this->products->findOptions($productId), 'id');
+        $valid       = [];
+        $labels      = [];
+
+        for ($i = 0; $i < count($options); $i++) {
+            $row = is_array($options[$i]) ? $options[$i] : [];
+            $key = "options.{$i}";
+
+            $id = $row['id'] ?? null;
+            if ($id !== null) {
+                $id = filter_var($id, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+                if ($id === false || !in_array($id, $existingIds, true) || in_array($id, array_column($valid, 'id'), true)) {
+                    $errors[$key . '.label'] = 'Cette option n\'appartient pas au produit : rechargez la page.';
+                    continue;
+                }
+            }
+
+            $label = self::cleanText($row['label'] ?? null);
+            if ($label === null || $label === '') {
+                $errors[$key . '.label'] = 'Donnez un libellé (Pose en atelier…).';
+            } elseif (mb_strlen($label) > self::OPTION_LABEL_MAX) {
+                $errors[$key . '.label'] = 'Au plus ' . self::OPTION_LABEL_MAX . ' caractères.';
+            } elseif (in_array(mb_strtolower($label), $labels, true)) {
+                $errors[$key . '.label'] = 'Deux options ont ce libellé.';
+            }
+
+            $description = self::cleanText($row['description'] ?? '');
+            if ($description === null || mb_strlen($description) > self::OPTION_DESCRIPTION_MAX) {
+                $errors[$key . '.description'] = 'Au plus ' . self::OPTION_DESCRIPTION_MAX . ' caractères.';
+            }
+
+            $price = self::parsePrice($row['price'] ?? null);
+            if ($price === null) {
+                $errors[$key . '.price'] = 'Un supplément en euros, par exemple 30.';
+            }
+
+            $labels[] = mb_strtolower($label ?? '');
+            $valid[]  = [
+                'id'          => $id,
+                'label'       => $label ?? '',
+                'description' => $description === '' ? null : $description,
+                'price'       => $price ?? '0.00',
+            ];
+        }
+
+        return $valid;
+    }
+
+    /**
+     * Répond 409 (référence ou libellé déjà pris entre la validation et
+     * l'enregistrement) et s'arrête.
+     */
+    private static function duplicateVariant(): void
+    {
+        Response::erreur('Une référence ou un libellé vient d\'être pris : vérifiez les variantes et options, puis réessayez.', 409);
+    }
+
+    /**
+     * @param mixed $price Prix reçu : nombre, ou texte « 379,90 », « 379,90 € ».
+     *
+     * @return string|null Le prix pour une colonne DECIMAL(8,2), « 379.90 »,
+     *                     ou null s'il est invalide ou négatif.
+     */
+    private static function parsePrice(mixed $price): ?string
+    {
+        if (is_int($price) || is_float($price)) {
+            $price = (string) $price;
+        }
+        if (!is_string($price)) {
+            return null;
+        }
+
+        // Espaces (insécables comprises) et symbole retirés, virgule décimale acceptée.
+        $price = str_replace([',', '€'], ['.', ''], preg_replace('/\s+/u', '', $price) ?? '');
+
+        if (preg_match('/^\d{1,6}(\.\d{1,2})?$/', $price) !== 1) {
+            return null;
+        }
+
+        return number_format((float) $price, 2, '.', '');
     }
 
     /**
@@ -556,18 +1144,21 @@ final class AdminController
      * Slug libre calculé depuis le nom : « Équipement et confort » donne
      * « equipement-et-confort », puis « equipement-et-confort-2 » s'il est pris.
      *
-     * @param string $name Nom déjà validé.
+     * @param string                  $name      Nom déjà validé.
+     * @param string                  $fallback  Slug d'un nom sans lettre ni chiffre.
+     * @param int                     $maxLength Longueur de la colonne slug.
+     * @param callable(string): bool  $isTaken   Le slug est-il déjà pris ?
      *
      * @return string
      */
-    private function freeSlug(string $name): string
+    private function freeSlug(string $name, string $fallback, int $maxLength, callable $isTaken): string
     {
         $base = strtr(mb_strtolower($name), self::SLUG_LETTERS);
         $base = trim(preg_replace('/[^a-z0-9]+/', '-', $base) ?? '', '-');
-        $base = $base === '' ? 'categorie' : substr($base, 0, self::CATEGORY_NAME_MAX - 4);
+        $base = $base === '' ? $fallback : substr($base, 0, $maxLength - 4);
 
         $slug = $base;
-        for ($suffix = 2; $this->categories->slugExists($slug); $suffix++) {
+        for ($suffix = 2; $isTaken($slug); $suffix++) {
             $slug = "{$base}-{$suffix}";
         }
 

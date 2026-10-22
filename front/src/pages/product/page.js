@@ -211,14 +211,14 @@ M.getFullLabel = function (variant) {
 
 /**
  * Stock restant de la variante choisie, s'il est bas (OPT-b) : « Plus qu'1
- * en taille M ». Le nombre exact aide à se décider ; au-delà de
- * LOW_STOCK_MAX, « En stock » suffit et rien n'est affiché.
+ * en taille M ». Le nombre exact aide à se décider ; au-delà du seuil
+ * « Bientôt épuisé » du produit, « En stock » suffit et rien n'est affiché.
  *
  * @returns {?string} Le texte, ou null.
  */
 M.getStockNote = function () {
   let selected = M.getSelectedVariant();
-  if (selected === null || getStockStatus(selected.stock) !== "low") return null;
+  if (selected === null || getStockStatus(selected.stock, M.product.lowStockThreshold) !== "low") return null;
 
   // Élision devant « 1 » (« un ») seulement.
   let count = selected.stock === 1 ? "Plus qu'1" : `Plus que ${selected.stock}`;
@@ -248,7 +248,7 @@ M.getStockStatus = function () {
   let stock = selected === null
     ? M.product.variants.reduce((total, variant) => total + variant.stock, 0)
     : selected.stock;
-  return getStockStatus(stock);
+  return getStockStatus(stock, M.product.lowStockThreshold);
 };
 
 /**
@@ -433,7 +433,7 @@ M.getPickerData = function () {
       id: variant.id,
       label: variant.label,
       isSelected: variant.id === M.selectedVariantId,
-      stockStatus: getStockStatus(variant.stock),
+      stockStatus: getStockStatus(variant.stock, M.product.lowStockThreshold),
     })),
   };
 };
@@ -495,7 +495,7 @@ M.getPurchaseData = function () {
  * Prépare un produit du bloc « Vous aimerez aussi » pour la carte produit.
  *
  * @param {{id: number, name: string, price: number, image: ?string, variantId: ?number,
- *   stock: number}} product
+ *   stock: number, lowStockThreshold: number}} product
  * @returns {{id: number, name: string, price: number, imageUrl: ?string,
  *   variantId: ?number, stockStatus: "in"|"low"|"out", isAdded: boolean}}
  */
@@ -506,7 +506,7 @@ M.toCardData = function (product) {
     price: product.price,
     imageUrl: ProductData.imageUrl(product.image),
     variantId: product.variantId,
-    stockStatus: getStockStatus(product.stock),
+    stockStatus: getStockStatus(product.stock, product.lowStockThreshold),
     isAdded: product.id === M.addedProductId,
   };
 };

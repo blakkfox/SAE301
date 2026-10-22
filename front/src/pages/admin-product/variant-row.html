@@ -1,0 +1,22 @@
+<!-- Une variante. data-live="variant-status" reçoit la pastille de stock, recalculée pendant la saisie. -->
+<tr>
+  <td class="py-2 pr-2 pl-4 align-top">
+    <label for="variant-{{index}}-label" class="sr-only">Libellé de la variante {{number}}</label>
+    <input id="variant-{{index}}-label" name="variants.{{index}}.label" type="text" maxlength="60" value="{{label}}" aria-describedby="variant-{{index}}-label-error" data-focus-key="variant-{{index}}-label" class="field w-28 font-semibold" />
+    <p id="variant-{{index}}-label-error" data-error-for="variants.{{index}}.label" hidden class="mt-1 text-caption text-accent"></p>
+  </td>
+  <td class="px-2 py-2 align-top">
+    <label for="variant-{{index}}-reference" class="sr-only">Référence de la variante {{number}}</label>
+    <input id="variant-{{index}}-reference" name="variants.{{index}}.reference" type="text" maxlength="40" autocomplete="off" spellcheck="false" value="{{reference}}" aria-describedby="variant-{{index}}-reference-error" data-focus-key="variant-{{index}}-reference" class="field uppercase" />
+    <p id="variant-{{index}}-reference-error" data-error-for="variants.{{index}}.reference" hidden class="mt-1 text-caption text-accent"></p>
+  </td>
+  <td class="px-2 py-2 align-top">
+    <label for="variant-{{index}}-stock" class="sr-only">Stock de la variante {{number}}</label>
+    <input id="variant-{{index}}-stock" name="variants.{{index}}.stock" type="number" min="0" max="9999" step="1" inputmode="numeric" value="{{stock}}" aria-describedby="variant-{{index}}-stock-error" data-focus-key="variant-{{index}}-stock" class="field w-24" />
+    <p id="variant-{{index}}-stock-error" data-error-for="variants.{{index}}.stock" hidden class="mt-1 text-caption text-accent"></p>
+  </td>
+  <td class="px-3 py-2 align-top"><span data-live="variant-status" data-index="{{index}}" class="flex h-12 items-center"></span></td>
+  <td class="px-3 py-2 align-top">
+    <button type="button" data-action="remove-variant" data-index="{{index}}" data-focus-key="remove-variant-{{index}}" class="h-12 text-small text-accent underline-offset-4 hover:underline">Retirer<span class="sr-only"> la variante {{number}}</span></button>
+  </td>
+</tr>

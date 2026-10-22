@@ -244,7 +244,7 @@ M.toCardData = function (product) {
     price: product.price,
     imageUrl: ProductData.imageUrl(product.image),
     variantId: product.variantId,
-    stockStatus: getStockStatus(product.stock),
+    stockStatus: getStockStatus(product.stock, product.lowStockThreshold),
     isAdded: product.id === M.addedProductId,
   };
 };

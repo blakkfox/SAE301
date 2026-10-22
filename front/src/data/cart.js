@@ -275,6 +275,7 @@ CartData.notify = function () {
  * @param {number[]} variantIds
  * @returns {Promise<{variants: Array<{variantId: number, label: string, reference: string,
  *   productId: number, name: string, price: number, image: ?string, stock: number,
+ *   lowStockThreshold: number,
  *   options: Array<{id: number, label: string, description: ?string, price: number}>}>}>}
  * @throws {ErreurApi} Si le serveur répond par une erreur.
  */
