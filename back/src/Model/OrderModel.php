@@ -571,9 +571,10 @@ final class OrderModel
     }
 
     /**
-     * Copie, pour chaque ligne, le nom, la variante, la référence et le prix
-     * tels qu'ils sont en base, puis ses options (US OPT-a) : leur libellé et
-     * leur supplément, ajouté au prix unitaire de la ligne.
+     * Copie, pour chaque ligne, le nom, la variante (libellé complet,
+     * « Taille M », US OPT-b), la référence et le prix tels qu'ils sont en
+     * base, puis ses options (US OPT-a) : leur libellé et leur supplément,
+     * ajouté au prix unitaire de la ligne.
      *
      * Une option n'est copiée que si elle appartient au produit de la
      * variante : MySQL le vérifie par la jointure, si bien qu'un identifiant
@@ -588,7 +589,8 @@ final class OrderModel
     {
         $line = $this->pdo->prepare(
             'INSERT INTO order_line (order_id, variant_id, product_name, variant_label, reference, unit_price, quantity)
-             SELECT :order, variant.id, product.name, variant.label, variant.reference, product.price, :quantity
+             SELECT :order, variant.id, product.name, ' . ProductModel::VARIANT_LABEL . ',
+                    variant.reference, product.price, :quantity
                FROM variant
          INNER JOIN product ON product.id = variant.product_id
               WHERE variant.id = :variant'
