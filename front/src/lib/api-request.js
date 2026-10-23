@@ -74,4 +74,24 @@ let postRequest = function (uri, data = {}) {
   });
 };
 
-export { getRequest, postRequest, ErreurApi };
+/**
+ * Envoi d'un fichier, en formulaire multipart. Le navigateur pose lui-même
+ * l'en-tête Content-Type, avec la frontière qui sépare les parties. Par
+ * exemple : await postFileRequest("admin/products/images", "image", fichier)
+ *
+ * @param {string} uri - Route de l'API.
+ * @param {string} field - Nom du champ qui porte le fichier.
+ * @param {File} file - Fichier choisi par l'utilisateur.
+ */
+let postFileRequest = function (uri, field, file) {
+  let body = new FormData();
+  body.append(field, file);
+
+  return request(uri, {
+    method: "POST",
+    headers: { Accept: "application/json" },
+    body,
+  });
+};
+
+export { getRequest, postRequest, postFileRequest, ErreurApi };

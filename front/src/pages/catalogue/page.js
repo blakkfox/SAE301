@@ -170,15 +170,16 @@ M.loadPage = async function (page, sort) {
 /**
  * Prépare un produit de l'API pour la carte produit.
  *
- * @param {{id: number, name: string, price: number, priceFrom: boolean, originalPrice: ?number,
+ * @param {{id: number, slug: string, name: string, price: number, priceFrom: boolean, originalPrice: ?number,
  *   discountRate: ?number, image: ?string, variantId: ?number, stock: number, lowStockThreshold: number}} product
- * @returns {{id: number, name: string, price: number, priceFrom: boolean, originalPrice: ?number,
+ * @returns {{id: number, slug: string, name: string, price: number, priceFrom: boolean, originalPrice: ?number,
  *   discountRate: ?number, imageUrl: ?string, variantId: ?number,
  *   stockStatus: "in"|"low"|"out", isAdded: boolean}}
  */
 M.toCardData = function (product) {
   return {
     id: product.id,
+    slug: product.slug,
     name: product.name,
     price: product.price,
     priceFrom: product.priceFrom,

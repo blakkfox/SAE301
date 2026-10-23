@@ -1,6 +1,6 @@
 /**
  * Routeur côté client : associe une adresse à une page, et change de page sans
- * recharger le navigateur. Il gère les paramètres d'URL (/produits/:id), les
+ * recharger le navigateur. Il gère les paramètres d'URL (/produits/:slug), les
  * layouts et la page 404.
  *
  * Les liens internes portent l'attribut data-link et un chemin de route, sans
@@ -14,7 +14,9 @@
  *
  * Après chaque changement de page, le titre de l'onglet reprend le <h1> de la
  * page, et le focus y est placé (sauf au premier affichage) : un lecteur
- * d'écran annonce la nouvelle page.
+ * d'écran annonce la nouvelle page. La meta description est celle que la page
+ * donne dans un attribut data-meta-description (fiche produit), sinon celle
+ * du site, écrite dans index.html.
  *
  * Une page dont un formulaire est modifié sans être enregistré le signale
  * par l'attribut data-unsaved : le routeur demande alors confirmation avant
@@ -43,6 +45,11 @@ class Router {
     // Chemin de route et adresse complète de la page affichée.
     this.path = null;
     this.currentUrl = window.location.href;
+
+    // Meta description du site (index.html), rétablie sur les pages qui
+    // n'en donnent pas.
+    this.metaDescription = document.querySelector('meta[name="description"]');
+    this.siteDescription = this.metaDescription?.getAttribute("content") ?? "";
 
     // Boutons Précédent / Suivant du navigateur. L'adresse a déjà changé :
     // si l'utilisateur renonce à quitter la page, on la rétablit.
@@ -236,9 +243,13 @@ class Router {
     this.announcePage(isFirstRender);
   }
 
-  // Titre de l'onglet d'après le <h1> de la page, et focus sur ce titre après
-  // une navigation (au premier affichage, le focus reste en haut du document).
+  // Titre de l'onglet d'après le <h1> de la page, meta description, et focus
+  // sur ce titre après une navigation (au premier affichage, le focus reste
+  // en haut du document).
   announcePage(isFirstRender) {
+    const description = this.root.querySelector("[data-meta-description]")?.dataset.metaDescription;
+    this.metaDescription?.setAttribute("content", description || this.siteDescription);
+
     const heading = this.root.querySelector("main h1") ?? this.root.querySelector("h1");
     if (heading === null) {
       document.title = SITE_TITLE;

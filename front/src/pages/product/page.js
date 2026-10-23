@@ -22,7 +22,12 @@ import templatePurchase from "./purchase.html?raw";
 import templateFeedback from "./feedback.html?raw";
 
 /**
- * Page « Fiche produit » — US DEC-c (écran Figma n° 2), route /produits/:id.
+ * Page « Fiche produit » — US DEC-c (écran Figma n° 2), route /produits/:slug
+ * (« /produits/blouson-cuir-maine »). Un ancien lien par identifiant
+ * (« /produits/13 ») affiche la même fiche, et l'adresse prend le slug.
+ *
+ * SEO : le titre de l'onglet reprend le nom du produit (<h1>, voir
+ * lib/router.js), et la meta description le début de sa description.
  *
  * Comme les pages du starter, C.init attend la réponse de l'API avant de
  * rendre la page : le routeur l'insère ensuite et complète lui-même ses liens
@@ -56,6 +61,10 @@ import templateFeedback from "./feedback.html?raw";
  *   V — construction du DOM à partir des données REÇUES en paramètre ;
  *   C — réaction aux actions de l'utilisateur, seul lien entre M et V.
  */
+
+// Longueur maximale de la meta description, au-delà de laquelle les moteurs
+// de recherche la coupent.
+const META_DESCRIPTION_MAX = 155;
 
 // Classes du prix, écrites en entier : rouge des promotions pour le produit
 // en promotion automatique (PRO-c).
@@ -100,12 +109,13 @@ M.reset = function () {
 /**
  * Charge la fiche d'un produit et range la réponse dans le modèle.
  *
- * @param {string} id - Identifiant lu dans l'adresse (/produits/:id).
+ * @param {string} key - Slug lu dans l'adresse (/produits/:slug), ou
+ *   identifiant d'un ancien lien (/produits/13).
  * @returns {Promise<void>}
  */
-M.loadProduct = async function (id) {
+M.loadProduct = async function (key) {
   try {
-    let response = await ProductData.fetchOne(id);
+    let response = /^\d+$/.test(key) ? await ProductData.fetchOne(key) : await ProductData.fetchBySlug(key);
     M.product = response.product;
     M.related = response.related;
 
@@ -518,15 +528,16 @@ M.getPurchaseData = function () {
 /**
  * Prépare un produit du bloc « Vous aimerez aussi » pour la carte produit.
  *
- * @param {{id: number, name: string, price: number, priceFrom: boolean, originalPrice: ?number,
+ * @param {{id: number, slug: string, name: string, price: number, priceFrom: boolean, originalPrice: ?number,
  *   discountRate: ?number, image: ?string, variantId: ?number, stock: number, lowStockThreshold: number}} product
- * @returns {{id: number, name: string, price: number, priceFrom: boolean, originalPrice: ?number,
+ * @returns {{id: number, slug: string, name: string, price: number, priceFrom: boolean, originalPrice: ?number,
  *   discountRate: ?number, imageUrl: ?string, variantId: ?number,
  *   stockStatus: "in"|"low"|"out", isAdded: boolean}}
  */
 M.toCardData = function (product) {
   return {
     id: product.id,
+    slug: product.slug,
     name: product.name,
     price: product.price,
     priceFrom: product.priceFrom,
@@ -575,9 +586,34 @@ M.getRelatedCard = function (productId) {
 };
 
 /**
+ * @returns {?string} Adresse propre de la fiche (« /produits/blouson-cuir-maine »),
+ *   ou null si le produit n'a pas été trouvé.
+ */
+M.getCanonicalPath = function () {
+  return M.product === null ? null : `/produits/${M.product.slug}`;
+};
+
+/**
+ * Meta description de la fiche : le début de la description du produit,
+ * coupé entre deux mots, ou une phrase construite avec son nom.
+ *
+ * @returns {string}
+ */
+M.getMetaDescription = function () {
+  let text = (M.product.description ?? "").replace(/\s+/g, " ").trim();
+  if (text === "") {
+    return `${M.product.name} : à commander en ligne et à retirer chez Honda Moto Lyon Centre.`;
+  }
+  if (text.length <= META_DESCRIPTION_MAX) return text;
+
+  let cut = text.slice(0, META_DESCRIPTION_MAX - 1);
+  return `${cut.slice(0, cut.lastIndexOf(" ")).replace(/[\s,;:.]+$/, "")}…`;
+};
+
+/**
  * Rassemble tout ce que la Vue doit afficher, déjà préparé.
  *
- * @returns {{error: ?{title: string, text: string}, page: ?{name: string,
+ * @returns {{error: ?{title: string, text: string}, page: ?{name: string, metaDescription: string,
  *   subtitle: string, price: ReturnType<typeof M.getPriceData>, stockStatus: "in"|"low"|"out",
  *   categoryName: string, categoryUrl: string},
  *   parent: ?{name: string, url: string}, description: ?string, gallery: ?Object,
@@ -605,6 +641,7 @@ M.getViewData = function () {
     error: null,
     page: {
       name: M.product.name,
+      metaDescription: M.getMetaDescription(),
       subtitle: M.getSubtitle(),
       price: M.getPriceData(),
       stockStatus: M.getStockStatus(),
@@ -630,12 +667,16 @@ let C = {};
  * Point d'entrée de la page, appelé par le routeur avec les paramètres de
  * l'adresse. Le routeur attend la promesse avant d'afficher la page.
  *
- * @param {{id: string}} params - Paramètres de la route /produits/:id.
+ * @param {{slug: string}} params - Paramètres de la route /produits/:slug.
  * @returns {Promise<DocumentFragment>}
  */
 C.init = async function (params) {
   M.reset();
-  await M.loadProduct(params.id);
+  await M.loadProduct(params.slug);
+
+  let canonicalPath = M.getCanonicalPath();
+  if (canonicalPath !== null) V.replaceUrl(params.slug, canonicalPath);
+
   return V.init(M.getViewData());
 };
 
@@ -736,6 +777,22 @@ V.init = function (data) {
     return htmlToFragment(genericRenderer(templateError, data.error));
   }
   return V.createPageFragment(data);
+};
+
+/**
+ * Remplace l'adresse par l'adresse propre de la fiche, sans nouvelle entrée
+ * d'historique (ancien lien par identifiant). Rien si l'utilisateur est allé
+ * ailleurs pendant le chargement : l'adresse est alors celle d'une autre page.
+ *
+ * @param {string} key - Slug ou identifiant de l'adresse demandée.
+ * @param {string} path - Adresse propre, par exemple « /produits/blouson-cuir-maine ».
+ */
+V.replaceUrl = function (key, path) {
+  let current = decodeURIComponent(window.location.pathname).replace(/\/+$/, "");
+  if (!current.endsWith(`/produits/${key}`)) return;
+
+  let url = import.meta.env.BASE_URL + path.replace(/^\//, "");
+  if (url !== window.location.pathname) window.history.replaceState(window.history.state, "", url);
 };
 
 /**
@@ -932,7 +989,7 @@ V.createPageFragment = function (data) {
 /**
  * Page exportée vers le routeur (voir main.js).
  *
- * @param {{id: string}} params - Paramètres de la route /produits/:id.
+ * @param {{slug: string}} params - Paramètres de la route /produits/:slug.
  * @returns {Promise<DocumentFragment>}
  */
 export function ProductPage(params) {

@@ -179,7 +179,7 @@ final class ProductModel
      * @param array<int, string> $words Mots de la recherche (voir self::searchFilter()),
      *                                  ou liste vide pour ne pas filtrer.
      *
-     * @return array<int, array{id:int, name:string, price:float, originalPrice:?float, discountRate:?int,
+     * @return array<int, array{id:int, name:string, slug:string, price:float, originalPrice:?float, discountRate:?int,
      *                          priceFrom:bool, image:?string, variantId:?int, stock:int,
      *                          lowStockThreshold:int}>
      */
@@ -217,7 +217,7 @@ final class ProductModel
      *
      * @param int $id Identifiant du produit.
      *
-     * @return array{id:int, name:string, description:?string, price:float, originalPrice:?float,
+     * @return array{id:int, name:string, slug:string, description:?string, price:float, originalPrice:?float,
      *               discountRate:?int, priceFrom:bool,
      *               variantAxis:?string, lowStockThreshold:int,
      *               category:array{id:int, name:string, slug:string,
@@ -233,7 +233,7 @@ final class ProductModel
     {
         // LEFT JOIN : une catégorie de premier niveau n'a pas de parent, et le
         // produit doit tout de même être trouvé.
-        $sql = 'SELECT product.id, product.name, product.description, ' . self::MIN_PRICE . ' AS price,
+        $sql = 'SELECT product.id, product.name, product.slug, product.description, ' . self::MIN_PRICE . ' AS price,
                        ' . self::PRICE_RANGE . ', product.variant_axis, product.low_stock_threshold,
                        ' . self::promotionColumns(self::MIN_PRICE) . ',
                        category.id   AS category_id,
@@ -261,6 +261,7 @@ final class ProductModel
         return [
             'id'          => (int) $row['id'],
             'name'        => $row['name'],
+            'slug'        => $row['slug'],
             'description' => $row['description'],
         ] + self::toPrices($row) + [
             'priceFrom'   => (int) $row['has_price_range'] === 1,
@@ -278,6 +279,24 @@ final class ProductModel
                 ],
             ],
         ];
+    }
+
+    /**
+     * Identifiant d'un produit visible à partir de son slug, celui de
+     * l'adresse de sa fiche (« /produits/blouson-cuir-maine », US DEC-c).
+     *
+     * @param string $slug Slug lu dans l'adresse.
+     *
+     * @return int|null null si aucun produit visible n'a ce slug.
+     */
+    public function findVisibleIdBySlug(string $slug): ?int
+    {
+        $statement = $this->pdo->prepare('SELECT product.id FROM product WHERE product.slug = :slug AND ' . self::VISIBLE);
+        $statement->bindValue(':slug', $slug);
+        $statement->execute();
+        $id = $statement->fetchColumn();
+
+        return $id === false ? null : (int) $id;
     }
 
     /**
@@ -481,7 +500,7 @@ final class ProductModel
      * @param int $categoryId Catégorie du produit affiché.
      * @param int $limit      Nombre de suggestions.
      *
-     * @return array<int, array{id:int, name:string, price:float, originalPrice:?float, discountRate:?int,
+     * @return array<int, array{id:int, name:string, slug:string, price:float, originalPrice:?float, discountRate:?int,
      *                          priceFrom:bool, image:?string, variantId:?int, stock:int,
      *                          lowStockThreshold:int}>
      */
@@ -519,7 +538,7 @@ final class ProductModel
      *                                    par le contrôleur (entiers > 0, sans doublon).
      *
      * @return array<int, array{variantId:int, label:string, reference:string,
-     *                          productId:int, name:string, price:float, originalPrice:?float,
+     *                          productId:int, slug:string, name:string, price:float, originalPrice:?float,
      *                          discountRate:?int, image:?string, stock:int,
      *                          lowStockThreshold:int}>
      */
@@ -538,7 +557,7 @@ final class ProductModel
 
         $sql = 'SELECT variant.id AS variant_id, ' . self::VARIANT_LABEL . ' AS label,
                        variant.reference, variant.price, variant.stock,
-                       product.id, product.name, ' . self::MAIN_IMAGE . ', product.low_stock_threshold,
+                       product.id, product.name, product.slug, ' . self::MAIN_IMAGE . ', product.low_stock_threshold,
                        ' . self::promotionColumns('variant.price') . '
                   FROM variant
             INNER JOIN product ON product.id = variant.product_id
@@ -559,6 +578,7 @@ final class ProductModel
                 'label'     => $row['label'],
                 'reference' => $row['reference'],
                 'productId' => (int) $row['id'],
+                'slug'      => $row['slug'],
                 'name'      => $row['name'],
             ] + self::toPrices($row) + [
                 'image'     => $row['image'],
@@ -1098,14 +1118,14 @@ final class ProductModel
     /**
      * Le produit en promotion automatique (US PRO-c), pour le bandeau du site.
      *
-     * @return array{id:int, name:string, price:float, originalPrice:?float, discountRate:?int}|null
+     * @return array{id:int, name:string, slug:string, price:float, originalPrice:?float, discountRate:?int}|null
      *         null si aucun produit n'est en promotion ; price est le prix
      *         remisé de sa variante la moins chère.
      */
     public function findPromotion(): ?array
     {
         $row = $this->pdo->query(
-            'SELECT product.id, product.name, ' . self::MIN_PRICE . ' AS price,
+            'SELECT product.id, product.name, product.slug, ' . self::MIN_PRICE . ' AS price,
                     ' . self::promotionColumns(self::MIN_PRICE) . '
                FROM product
               WHERE product.id = ' . self::PROMOTED_ID
@@ -1115,7 +1135,7 @@ final class ProductModel
             return null;
         }
 
-        return ['id' => (int) $row['id'], 'name' => $row['name']] + self::toPrices($row);
+        return ['id' => (int) $row['id'], 'name' => $row['name'], 'slug' => $row['slug']] + self::toPrices($row);
     }
 
     /**
@@ -1267,7 +1287,7 @@ final class ProductModel
      */
     private static function cardColumns(): string
     {
-        return 'product.id, product.name, ' . self::MIN_PRICE . ' AS price, ' . self::PRICE_RANGE . ', '
+        return 'product.id, product.name, product.slug, ' . self::MIN_PRICE . ' AS price, ' . self::PRICE_RANGE . ', '
             . self::MAIN_IMAGE . ', product.low_stock_threshold, ' . self::SINGLE_VARIANT . ', '
             . self::TOTAL_STOCK . ', ' . self::promotionColumns(self::MIN_PRICE);
     }
@@ -1277,11 +1297,11 @@ final class ProductModel
      * DECIMAL et les entiers sous forme de chaînes : on les type pour que le
      * JSON contienne de vrais nombres.
      *
-     * @param array{id:string, name:string, price:string, sale_price:string, is_promoted:string,
+     * @param array{id:string, name:string, slug:string, price:string, sale_price:string, is_promoted:string,
      *              has_price_range:string, image:?string, low_stock_threshold:string,
      *              single_variant_id:?string, stock:string} $row
      *
-     * @return array{id:int, name:string, price:float, originalPrice:?float, discountRate:?int,
+     * @return array{id:int, name:string, slug:string, price:float, originalPrice:?float, discountRate:?int,
      *               priceFrom:bool, image:?string, variantId:?int, stock:int,
      *               lowStockThreshold:int}
      *         price : celui de la variante la moins chère ; priceFrom : les
@@ -1296,6 +1316,7 @@ final class ProductModel
         return [
             'id'                => (int) $row['id'],
             'name'              => $row['name'],
+            'slug'              => $row['slug'],
         ] + self::toPrices($row) + [
             'priceFrom'         => (int) $row['has_price_range'] === 1,
             'image'             => $row['image'],

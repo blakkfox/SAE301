@@ -132,7 +132,7 @@ M.getPromotionData = function () {
 
   return {
     text: `Promo du moment : −${M.promotion.discountRate} % sur ${M.promotion.name}, notre produit le plus en stock`,
-    url: `/produits/${M.promotion.id}`,
+    url: `/produits/${M.promotion.slug}`,
   };
 };
 

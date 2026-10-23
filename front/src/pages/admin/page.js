@@ -21,7 +21,7 @@ import templateError from "./error.html?raw";
  * Page « Tableau de bord » — US GOF-b (écran Figma n° 10), route /admin.
  *
  * Connecté en administrateur : quatre indicateurs (produits en ligne,
- * commandes depuis l'ouverture, commandes en cours, produits épuisés), les
+ * commandes depuis l'ouverture, commandes en cours, variantes épuisées), les
  * prochaines commandes à préparer et les alertes de stock. Sinon : la
  * connexion administrateur, séparée de celle des clients.
  *
@@ -193,13 +193,18 @@ M.formatPickup = function (pickupStart, dayOffset) {
 };
 
 /**
- * @param {Array<{name: string}>} soldOut - Produits épuisés.
- * @returns {string} Précision de la carte « Produits épuisés ».
+ * Précision de la carte « Variantes épuisées » : les produits qui n'ont plus
+ * aucune variante en stock, et ne sont donc plus commandables du tout.
+ *
+ * @param {number} variantCount - Nombre de variantes épuisées.
+ * @param {Array<{name: string}>} soldOut - Produits épuisés dans toutes leurs variantes.
+ * @returns {string}
  */
-M.formatSoldOutCaption = function (soldOut) {
-  if (soldOut.length === 0) return "Tous les produits sont en stock";
-  if (soldOut.length === 1) return soldOut[0].name;
-  return `${soldOut[0].name} et ${M.formatCount(soldOut.length - 1, "autre", "autres")}`;
+M.formatSoldOutCaption = function (variantCount, soldOut) {
+  if (variantCount === 0) return "Toutes les variantes sont en stock";
+  if (soldOut.length === 0) return "Aucun produit épuisé en totalité";
+  if (soldOut.length === 1) return `${soldOut[0].name} : épuisé en totalité`;
+  return `dont ${soldOut.length} produits épuisés en totalité`;
 };
 
 /**
@@ -224,10 +229,11 @@ M.getStats = function () {
       tone: "default",
     },
     {
-      label: "Produits épuisés",
-      value: String(stats.soldOut.length),
-      caption: M.formatSoldOutCaption(stats.soldOut),
-      tone: stats.soldOut.length > 0 ? "alert" : "default",
+      // Même compte que les « épuisé » des alertes stock, juste en dessous.
+      label: "Variantes épuisées",
+      value: String(stats.soldOutVariantCount),
+      caption: M.formatSoldOutCaption(stats.soldOutVariantCount, stats.soldOut),
+      tone: stats.soldOutVariantCount > 0 ? "alert" : "default",
     },
   ];
 };

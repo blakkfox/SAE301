@@ -26,7 +26,7 @@ const PRICE_CLASSES = {
 // juste après un ajout au panier.
 let ProductCardView = {
   /**
-   * @param {{id: number, name: string, price: number, priceFrom: boolean, originalPrice: ?number,
+   * @param {{id: number, slug: string, name: string, price: number, priceFrom: boolean, originalPrice: ?number,
    *   discountRate: ?number, imageUrl: ?string, variantId: ?number,
    *   stockStatus: "in"|"low"|"out", isAdded: boolean}} product
    * @param {2|3} [headingLevel=2] - Niveau du titre de la carte (h2 ou h3).
@@ -38,6 +38,7 @@ let ProductCardView = {
     let isPromo = product.originalPrice !== null;
     return genericRenderer(template, {
       id: product.id,
+      slug: product.slug,
       name: product.name,
       price: `${product.priceFrom ? "dès " : ""}${formatPrice(product.price)}`,
       originalPrice: isPromo ? formatPrice(product.originalPrice) : "",
@@ -48,7 +49,7 @@ let ProductCardView = {
   },
 
   /**
-   * @param {{id: number, name: string, price: number, priceFrom: boolean, originalPrice: ?number,
+   * @param {{id: number, slug: string, name: string, price: number, priceFrom: boolean, originalPrice: ?number,
    *   discountRate: ?number, imageUrl: ?string, variantId: ?number,
    *   stockStatus: "in"|"low"|"out", isAdded: boolean}} product
    * @param {2|3} headingLevel - Niveau du titre de la carte (h2 ou h3).

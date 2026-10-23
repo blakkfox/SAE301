@@ -55,6 +55,7 @@ return [
     'POST /api/admin/products'        => [AdminController::class, 'createProduct'],
     'POST /api/admin/products/update' => [AdminController::class, 'updateProduct'],
     'POST /api/admin/products/delete' => [AdminController::class, 'deleteProduct'],
+    'POST /api/admin/products/images' => [AdminController::class, 'uploadImage'],
     'GET  /api/admin/stats'           => [AdminController::class, 'stats'],
     'GET  /api/admin/promo-codes'        => [AdminController::class, 'promoCodes'],
     'POST /api/admin/promo-codes'        => [AdminController::class, 'createPromoCode'],

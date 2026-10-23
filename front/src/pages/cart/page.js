@@ -501,6 +501,7 @@ M.getLine = function (variantId) {
   return {
     variantId: variant.variantId,
     productId: variant.productId,
+    productSlug: variant.slug,
     name: variant.name,
     label: variant.label,
     details: details.join(" · "),

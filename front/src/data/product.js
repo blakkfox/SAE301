@@ -29,7 +29,7 @@ let ProductData = {};
  * @param {boolean} [inStockOnly=false] - true pour masquer les produits épuisés.
  * @param {string} [search=""] - Recherche de l'en-tête : les produits dont le
  *   nom, la description ou la catégorie contient chacun des mots ; vide pour tous.
- * @returns {Promise<{products: Array<{id: number, name: string, price: number,
+ * @returns {Promise<{products: Array<{id: number, slug: string, name: string, price: number,
  *   originalPrice: ?number, discountRate: ?number, image: ?string,
  *   variantId: ?number, stock: number, lowStockThreshold: number}>,
  *   sort: string, page: number, pageCount: number, perPage: number, total: number, q: string,
@@ -79,6 +79,18 @@ ProductData.fetchPage = async function (page, sort, category, inStockOnly = fals
  */
 ProductData.fetchOne = async function (id) {
   return getRequest(`product?id=${encodeURIComponent(id)}`);
+};
+
+/**
+ * La fiche d'un produit par son slug, celui de l'adresse de la fiche :
+ * GET /api/product?slug=…  Même réponse que fetchOne.
+ *
+ * @param {string} slug - Slug lu dans l'adresse, par exemple « blouson-cuir-maine ».
+ * @returns {ReturnType<typeof ProductData.fetchOne>}
+ * @throws {ErreurApi} 404 si aucun produit visible n'a ce slug.
+ */
+ProductData.fetchBySlug = async function (slug) {
+  return getRequest(`product?slug=${encodeURIComponent(slug)}`);
 };
 
 /**

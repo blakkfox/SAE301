@@ -82,6 +82,14 @@ const SERVER_DOWN = "Le serveur ne répond pas. Vérifiez votre connexion, puis 
 // Emplacements de photos : ceux de la galerie de la fiche (IMAGES_MAX côté serveur).
 const IMAGE_SLOTS = 4;
 
+// Téléversement : formats et poids acceptés, comme UPLOAD_TYPES et
+// UPLOAD_SIZE_MAX côté serveur (qui revérifie le contenu du fichier).
+const UPLOAD_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const UPLOAD_SIZE_MAX = 5 * 1024 * 1024;
+
+// Couleur du message du téléversement, classes écrites en entier.
+const UPLOAD_CLASSES = { erreur: "text-accent", succes: "text-ink" };
+
 // ---------------------------------------------------------------------------
 // M — Modèle
 // ---------------------------------------------------------------------------
@@ -94,6 +102,8 @@ let M = {
   notice: null, // { type, texte } au-dessus du contenu, ou null
   values: null, // saisie du formulaire (voir M.toValues)
   isDirty: false, // la saisie a changé depuis le chargement ou le dernier enregistrement
+  isUploading: false, // un téléversement de photo est en cours
+  upload: null, // { type, text } : résultat du dernier téléversement, ou null
   errors: {}, // erreurs du formulaire, par champ (« variants.0.reference »…)
   isSubmitting: false, // un enregistrement est en cours
   deletion: null, // { blockedMessage } : suppression demandée, ou null
@@ -114,6 +124,8 @@ M.reset = function (id) {
   M.notice = null;
   M.values = null;
   M.isDirty = false;
+  M.isUploading = false;
+  M.upload = null;
   M.errors = {};
   M.isSubmitting = false;
   M.deletion = null;
@@ -421,6 +433,69 @@ M.submit = async function () {
 };
 
 /**
+ * Vérifie la photo choisie avant de l'envoyer : format et poids. Le serveur
+ * refait ces contrôles, et lit en plus le contenu du fichier.
+ *
+ * @param {File} file - Fichier choisi.
+ * @returns {boolean} true si l'envoi peut commencer.
+ */
+M.startUpload = function (file) {
+  if (M.isUploading) return false;
+
+  if (!UPLOAD_TYPES.includes(file.type)) {
+    M.upload = { type: "erreur", text: "Choisissez une photo au format JPEG, PNG ou WebP." };
+    return false;
+  }
+  if (file.size > UPLOAD_SIZE_MAX) {
+    M.upload = { type: "erreur", text: `La photo dépasse ${UPLOAD_SIZE_MAX / 1024 / 1024} Mo.` };
+    return false;
+  }
+
+  M.upload = null;
+  M.isUploading = true;
+  return true;
+};
+
+/**
+ * Téléverse la photo. Elle rejoint la liste des photos proposées et prend le
+ * premier emplacement libre de la galerie ; la fiche est alors modifiée, à
+ * enregistrer pour que le produit la garde.
+ *
+ * @param {File} file - Fichier vérifié par M.startUpload.
+ * @returns {Promise<void>}
+ */
+M.uploadImage = async function (file) {
+  try {
+    let response = await AdminData.uploadProductImage(file);
+    let slot = M.values.images.indexOf("");
+    M.response.images = response.images;
+
+    if (slot === -1) {
+      M.upload = {
+        type: "succes",
+        text: `Photo « ${response.image} » ajoutée à la liste : les ${IMAGE_SLOTS} emplacements sont pris, choisissez lequel remplacer.`,
+      };
+    } else {
+      M.values.images = M.values.images.map((image, index) => (index === slot ? response.image : image));
+      M.isDirty = true;
+      M.upload = {
+        type: "succes",
+        text: `Photo ajoutée en emplacement ${slot + 1}. Enregistrez la fiche pour la rattacher au produit.`,
+      };
+    }
+  } catch (error) {
+    if (!M.handleAccessError(error)) {
+      M.upload = {
+        type: "erreur",
+        text: error.statut === undefined ? SERVER_DOWN : (error.champs.image ?? error.message),
+      };
+    }
+  }
+
+  M.isUploading = false;
+};
+
+/**
  * « Supprimer le produit » : affiche la confirmation.
  */
 M.askDelete = function () {
@@ -569,6 +644,9 @@ M.getFormData = function () {
       value: image,
     })),
     isActive: values.isActive,
+    isUploading: M.isUploading,
+    uploadStatus: M.isUploading ? "Envoi de la photo…" : (M.upload?.text ?? ""),
+    uploadClasses: M.upload === null || M.isUploading ? "text-ink-muted" : UPLOAD_CLASSES[M.upload.type],
     categories: M.response.categories.map((category) => ({
       id: category.id,
       label:
@@ -722,6 +800,26 @@ C.handler_submit = async function (values) {
   } else {
     V.focusFirstError();
   }
+};
+
+/**
+ * Photo choisie dans « Téléverser une photo » : vérification, envoi, puis
+ * la fiche affiche la photo dans son emplacement et le résultat.
+ *
+ * @param {File} file - Fichier choisi.
+ * @returns {Promise<void>}
+ */
+C.handler_uploadImage = async function (file) {
+  let canUpload = M.startUpload(file);
+  V.render(M.getViewData());
+  if (!canUpload) {
+    V.focusKey("image-upload");
+    return;
+  }
+
+  await M.uploadImage(file);
+  V.render(M.getViewData());
+  V.focusKey("image-upload");
 };
 
 /**
@@ -920,10 +1018,19 @@ V.createFormFragment = function (data) {
   // Lu par le routeur : confirmation avant de quitter une fiche modifiée.
   form.toggleAttribute("data-unsaved", data.isDirty);
   form.querySelector('[type="submit"]').disabled = data.isSubmitting;
+
+  let upload = form.querySelector("[data-image-upload]");
+  upload.disabled = data.isUploading;
+  upload.addEventListener("change", () => {
+    if (upload.files.length > 0) C.handler_uploadImage(upload.files[0]);
+  });
   applyFieldErrors(form, data.errors);
   V.applyLive(fragment, data.live);
 
-  form.addEventListener("input", () => C.handler_formChange(V.readValues(form)));
+  // Le choix d'un fichier n'est pas une saisie : c'est le téléversement réussi qui modifie la fiche.
+  form.addEventListener("input", (ev) => {
+    if (ev.target !== upload) C.handler_formChange(V.readValues(form));
+  });
   form.addEventListener("submit", (ev) => {
     ev.preventDefault();
     C.handler_submit(V.readValues(form));

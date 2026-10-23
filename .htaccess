@@ -22,6 +22,14 @@ RewriteRule ^api/ back/index.php [END,QSA]
 RewriteCond %{REQUEST_FILENAME} -f
 RewriteRule ^front/dist/ - [END]
 
+#    Photo produit téléversée depuis le back-office (US GOF-a) après le
+#    dernier build : PHP l'enregistre dans front/public/images/produits/, que
+#    npm run build recopie dans front/dist/. En attendant, elle est servie
+#    depuis front/public/ — ce dossier ne reçoit que des images réencodées.
+RewriteCond %{REQUEST_FILENAME} ^(.+)/front/dist/images/produits/([^/]+)$
+RewriteCond %1/front/public/images/produits/%2 -f
+RewriteRule ^front/dist/images/produits/([^/]+)$ front/public/images/produits/$1 [END]
+
 #    Sinon, c'est une adresse de l'application (/admin, /films/12…) : seul le
 #    routeur du front la connaît. On sert la page d'entrée, et le routeur
 #    affichera la bonne page — ou la page 404.

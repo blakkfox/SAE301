@@ -79,7 +79,7 @@ try {
         AuthController::class      => new AuthController(new CustomerModel($pdo), new LoginAttemptModel($pdo)),
         OrderController::class     => new OrderController(new CustomerModel($pdo), new DealershipModel($pdo), new OrderModel($pdo, new StockModel($pdo), new PromoCodeModel($pdo)), new PromoCodeModel($pdo)),
         AccountController::class   => new AccountController(new CustomerModel($pdo), new DealershipModel($pdo), new OrderModel($pdo, new StockModel($pdo), new PromoCodeModel($pdo))),
-        AdminController::class     => new AdminController(new CustomerModel($pdo), new ProductModel($pdo, new StockModel($pdo)), new CategoryModel($pdo), new OrderModel($pdo, new StockModel($pdo), new PromoCodeModel($pdo)), new PromoCodeModel($pdo), __DIR__ . '/../front/dist/images/produits'),
+        AdminController::class     => new AdminController(new CustomerModel($pdo), new ProductModel($pdo, new StockModel($pdo)), new CategoryModel($pdo), new OrderModel($pdo, new StockModel($pdo), new PromoCodeModel($pdo)), new PromoCodeModel($pdo), __DIR__ . '/../front/public/images/produits'),
     ];
 
     $routes = require __DIR__ . '/src/routes.php';

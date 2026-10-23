@@ -98,7 +98,14 @@
         <h2 id="product-photo-title" class="font-display text-h4 leading-none text-ink">Photos</h2>
         <!-- Aperçu de la photo 1, celle des cartes et du panier. -->
         <div data-live="photo"></div>
-        <p id="product-images-hint" class="text-caption text-ink-muted">Photos du dossier images/produits du site. La photo 1 est celle des cartes et du panier ; les suivantes complètent la galerie de la fiche.</p>
+        <p id="product-images-hint" class="text-caption text-ink-muted">La photo 1 est celle des cartes et du panier ; les suivantes complètent la galerie de la fiche.</p>
+        <!-- Téléversement (GOF-a) : la photo envoyée prend le premier emplacement libre. -->
+        <div class="flex flex-col gap-2">
+          <label for="product-image-upload" class="text-small font-semibold text-ink">Téléverser une photo</label>
+          <input id="product-image-upload" type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="product-image-upload-hint product-image-upload-status" data-image-upload data-focus-key="image-upload" class="block w-full text-small text-ink file:mr-3 file:cursor-pointer file:rounded-lg file:border file:border-line-strong file:bg-page file:px-4 file:py-2.5 file:text-small file:font-semibold file:text-ink hover:file:border-ink disabled:cursor-wait disabled:opacity-60" />
+          <p id="product-image-upload-hint" class="text-caption text-ink-muted">JPEG, PNG ou WebP, 5 Mo au plus. Les grandes photos sont réduites à 1600 px.</p>
+          <p id="product-image-upload-status" role="status" class="text-caption {{uploadClasses}}">{{uploadStatus}}</p>
+        </div>
         <!-- Un sélecteur par emplacement de la galerie (image-field.html). -->
         <slot name="image-fields"></slot>
         <p data-error-for="images" hidden class="text-caption text-accent"></p>

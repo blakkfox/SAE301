@@ -1,4 +1,4 @@
-import { getRequest, postRequest } from "../lib/api-request.js";
+import { getRequest, postFileRequest, postRequest } from "../lib/api-request.js";
 
 /**
  * Back-office : tableau de bord (US GOF-b), gestion des commandes (US PIL-b),
@@ -31,7 +31,8 @@ AdminData.login = async function (email, password) {
  *
  * @returns {Promise<{admin: {firstName: string, lastName: string},
  *   stats: {productCount: number, categoryCount: number, orderCount: number,
- *     inProgressCount: number, availableCount: number, soldOut: Array<{id: number, name: string}>},
+ *     inProgressCount: number, availableCount: number, soldOutVariantCount: number,
+ *     soldOut: Array<{id: number, name: string}>},
  *   upcomingOrders: Array<{id: number, status: string, total: number, pickupStart: string,
  *     dayOffset: number, customer: {firstName: string, lastName: string}}>,
  *   stockAlerts: Array<{variantId: number, productId: number, name: string, label: string, stock: number,
@@ -250,6 +251,21 @@ AdminData.updateProduct = async function (id, product) {
  */
 AdminData.deleteProduct = async function (id) {
   return postRequest("admin/products/delete", { id });
+};
+
+/**
+ * Téléversement d'une photo produit : POST /api/admin/products/images. Le
+ * serveur la réduit et l'ajoute au dossier des photos ; elle est rattachée
+ * au produit à l'enregistrement de sa fiche.
+ *
+ * @param {File} file - Photo JPEG, PNG ou WebP.
+ * @returns {Promise<{image: string, images: string[]}>} Le nom du fichier créé
+ *   et la liste à jour des photos disponibles.
+ * @throws {ErreurApi} 422 si le fichier est refusé (trop lourd, format), avec
+ *   l'erreur dans champs.image ; 401, 403 comme fetchProducts.
+ */
+AdminData.uploadProductImage = async function (file) {
+  return postFileRequest("admin/products/images", "image", file);
 };
 
 /**

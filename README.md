@@ -11,6 +11,130 @@ client. Charte Honda (tokens Figma) en Tailwind CSS 4.
 - connexion, création de compte et mot de passe oublié (US CMD-c), par
   session serveur ; comptes en base, mots de passe hachés.
 
+## Analyse des user stories
+
+### 1. Méthode
+
+Pour chaque user story (US), je me suis posé une question : **« qu'est-ce qui
+doit déjà exister pour que je puisse la faire et la tester ? »**
+
+Deux types de liens en ressortent :
+
+- **dépendance forte** : sans l'autre US, celle-ci est impossible. Exemple :
+  pas de validation de commande (CMD-a) sans panier (CMD-b) ;
+- **dépendance faible** : on pourrait commencer, mais au risque de reprendre
+  du code ensuite. Exemple : la gestion des produits (GOF-a) peut exister sans
+  les variantes, mais son formulaire serait à réécrire quand elles arrivent.
+
+Le poids des US n'étant pas communiqué, j'ai estimé la **complexité** de
+chacune : **S** simple, **M** moyenne, **L** lourde.
+
+### 2. Graphe des dépendances
+
+➡️ **[Graphe des dépendances sur Figma](https://www.figma.com/board/5PTZmJMqai9nXtXoEgggTL/Graphe-des-d%C3%A9pendances?node-id=0-1&t=6ghxUZFYXHuKymCi-1)**
+
+Une flèche `A → B` signifie que **B a besoin de A** ; la lettre sous chaque US
+est sa complexité. Le tableau contient trois vues : le graphe complet, puis
+la partie administration et la partie client, isolées pour être plus lisibles.
+
+Ce que montre le graphe :
+
+- **DEC-b (Catalogue) est la racine** : sans produits en base, aucune autre US
+  ne fonctionne. Elle passe en premier.
+- **CMD-a (Validation de commande) est le nœud central** : stocks, gestion
+  des commandes, historique, options et codes promo en dépendent. La faire
+  tôt débloque la moitié du projet.
+- **CMD-c (Authentification) n'a aucun prérequis** : elle pourrait être faite
+  à tout moment. Je la place juste avant CMD-a, qui en a besoin.
+- **GOF-b (Back-office) est la porte d'entrée de toute l'administration.**
+- **OPT-b (Variantes) arrive en bout de chaîne** et dépend de trois US : c'est
+  la plus risquée, car elle modifie du code déjà écrit.
+- **Un cycle apparent entre STK-a et PIL-b** : STK-a doit remettre en stock
+  une commande annulée, mais c'est PIL-b qui permet d'annuler. Je l'ai cassé
+  ainsi : STK-a écrit et teste la fonction de remise en stock, PIL-b se
+  contente de l'appeler.
+
+### 3. Dépendances de chaque US
+
+| N° | US | Titre | Complexité | A besoin de |
+|---|---|---|---|---|
+| 1 | DEC-b | Catalogue | M | — |
+| 2 | DEC-c | Détail produit | M | DEC-b |
+| 3 | DEC-a | Navigation par catégories | S | DEC-b |
+| 4 | CMD-b | Panier | M | DEC-c |
+| 5 | CMD-c | Authentification | M | — |
+| 6 | CMD-a | Validation de commande | L | CMD-b, CMD-c |
+| 7 | STK-b | Affichage des stocks | S | DEC-c |
+| 8 | STK-c | Contraintes de stock | M | STK-b, CMD-a |
+| 9 | STK-a | Mise à jour auto des stocks | L | STK-b, CMD-a |
+| 10 | GOF-b | Back-office | M | DEC-b |
+| 11 | PIL-b | Gestion des commandes | L | GOF-b, STK-a |
+| 12 | GOF-c | Gestion des catégories | S | GOF-b, DEC-a |
+| 13 | SUI-c | Historique des commandes | M | CMD-a *(faible : PIL-b, pour que les statuts évoluent)* |
+| 14 | SUI-b | Espace personnel | S | SUI-c, CMD-c |
+| 15 | SUI-a | Commander à nouveau | M | SUI-c, STK-c *(faible : OPT-a)* |
+| 16 | OPT-c | Choix des options | M | DEC-c |
+| 17 | OPT-a | Options dans le panier et les commandes | M | OPT-c, CMD-a |
+| 18 | OPT-b | Variantes et stock par variante | L | OPT-c, STK-a, STK-c |
+| 19 | GOF-a | Gestion des produits | L | GOF-b, STK-b *(faible : OPT-b)* |
+| 20 | PIL-a | Statistiques | M | PIL-b |
+| 21 | PRO-c | Promotions automatiques | S | STK-b |
+| 22 | PRO-b | Gestion des codes promo | S | GOF-b |
+| 23 | PRO-a | Codes promotionnels | S | PRO-b, CMD-a |
+
+Le numéro est l'ordre de réalisation ; c'est aussi celui des branches
+`US-001` à `US-023`.
+
+### 4. Ordre de réalisation
+
+Le travail est découpé en **lots**. Chaque lot se termine par un site qui
+fonctionne : à court de temps, je m'arrête à la fin d'un lot avec un travail
+propre.
+
+| Lot | US | Pourquoi |
+|---|---|---|
+| **0. Préparation** | Maquettes, base de données | La base est conçue dès le départ **avec variantes** : chaque produit a au moins une variante, et c'est elle qui porte le stock. Quand OPT-b arrive, le panier, les commandes et les stocks n'ont pas à être réécrits. |
+| **1. Vitrine** | DEC-b → DEC-c → DEC-a | Le catalogue est la racine ; le détail produit suit, car le panier et les options en ont besoin. |
+| **2. Commande** | CMD-b → CMD-c → CMD-a | Après 6 US, le site fonctionne de bout en bout (catalogue, panier, connexion, commande) : c'est le cœur du click & collect. |
+| **3. Stocks** | STK-b → STK-c → STK-a | De la plus simple à la plus technique : STK-b ajoute les champs de stock, STK-c bloque les commandes impossibles, STK-a gère les transactions. |
+| **4. Admin de base** | GOF-b → PIL-b → GOF-c | PIL-b permet au magasin de traiter et d'annuler les commandes, ce qui termine la remise en stock de STK-a. GOF-c est un CRUD simple. |
+| **5. Espace client** | SUI-c → SUI-b → SUI-a | Les commandes et leurs statuts existent maintenant. SUI-c fournit la liste des commandes réutilisée par les deux autres. |
+| **6. Options** | OPT-c → OPT-a → OPT-b | La partie la plus risquée, faite quand le reste est stable. Grâce au lot 0, OPT-b ne demande pas de tout réécrire. |
+| **7. Admin avancée** | GOF-a → PIL-a | GOF-a attend les variantes pour n'écrire le formulaire produit qu'une fois (en attendant, les produits sont insérés en base). PIL-a exploite toutes les données. |
+| **8. Bonus** | PRO-c → PRO-b → PRO-a | Les promotions, seulement une fois tout le reste terminé et propre. |
+
+### 5. Justification
+
+- **Dépendances techniques** : aucune US n'est faite avant une US dont elle a
+  besoin.
+- **Valeur pour l'utilisateur** : le parcours client (lots 1 et 2) passe avant
+  tout le reste.
+- **Complexité et risque** : CMD-a, lourde mais centrale, est faite tôt. OPT-b
+  et STK-a, lourdes mais en bout de chaîne, sont faites quand le code qu'elles
+  touchent est stable.
+- **Risque de reprendre du code** : la base avec variantes est anticipée dès le
+  lot 0, et GOF-a attend les variantes.
+- **Livrable à tout moment** : chaque lot laisse un site cohérent, comme le
+  conseille le sujet (« en faire un peu moins mais très bien »).
+
+### 6. Autres ordres possibles
+
+- **L'administration juste après le catalogue**, pour gérer les produits
+  depuis l'interface. Écarté : cela retarde le parcours client et oblige à
+  reprendre GOF-a quand les variantes arrivent.
+- **L'espace client avant l'administration.** Possible, mais les statuts des
+  commandes resteraient bloqués sur « en cours » tant que PIL-b n'existe pas.
+
+### 7. Bilan
+
+Les 23 US ont été réalisées dans cet ordre, bonus compris. Le pari du lot 0 a
+tenu : OPT-b n'a pas obligé à réécrire le panier ni les commandes, déjà
+identifiés par variante. Une reprise a tout de même été nécessaire en fin de
+projet : le **prix**, d'abord porté par le produit, a été déplacé sur la
+variante (un bidon d'huile de 4 L ne coûte pas le prix d'un bidon de 1 L), et
+les photos sont passées dans une table dédiée pour la galerie. Le modèle par
+variante a limité cette reprise aux requêtes de prix et au formulaire produit.
+
 ## Arborescence
 
 ```
@@ -153,7 +277,7 @@ Une page dynamique suit le découpage Modèle / Contrôleur / Vue :
 | `GET /api/products?category=collection-honda` | une page des produits d'une catégorie, sous-catégories comprises. 404 si la catégorie n'existe pas |
 | `GET /api/categories` | arbre des catégories visibles (une catégorie masquée, ou dont la parente est masquée, en est absente avec ses produits) (`children` : sous-catégories) avec leur nombre de produits (`productCount`), et `total` du catalogue |
 | `GET /api/promotion` | promotion automatique (US PRO-c) : `promotion` (`id`, `name`, `price` remisé, `originalPrice`, `discountRate`), le produit visible au plus grand stock total (plus petit `id` en cas d'égalité) remisé de 20 % (`ProductModel::PROMO_RATE`), ou `null` si aucun produit n'a de stock. Recalculée à chaque requête. Les cartes produit, la fiche et les variantes du panier portent aussi `originalPrice` et `discountRate` (`null` hors promotion), `price` étant toujours le prix à payer |
-| `GET /api/product?id=13` | fiche d'un produit : catégorie, photos (`images`, dans l'ordre de la galerie), variantes avec leur prix (`price`, `originalPrice`, `discountRate`), caractéristiques, options à cocher (`options` : `id`, `label`, `description`, supplément `price`, US OPT-c), et 4 suggestions (`related`). 400 si `id` invalide, 404 si produit introuvable |
+| `GET /api/product?slug=blouson-cuir-maine` | fiche d'un produit par le slug de son adresse (`/produits/blouson-cuir-maine`) ; `?id=13` reste accepté pour les anciens liens. Contenu : catégorie, photos (`images`, dans l'ordre de la galerie), variantes avec leur prix (`price`, `originalPrice`, `discountRate`), caractéristiques, options à cocher (`options` : `id`, `label`, `description`, supplément `price`, US OPT-c), et 4 suggestions (`related`). 400 si `id` invalide, 404 si produit introuvable |
 | `GET /api/me` | compte connecté (`customer`), ou `null` |
 | `POST /api/login` | connexion, corps JSON `{"email": …, "password": …}`. 401 si identifiants incorrects, 429 après 5 échecs en 15 minutes pour cette adresse depuis la même IP (ou 20 depuis l'IP) |
 | `POST /api/register` | création de compte puis connexion, corps JSON `{firstName, lastName, email, phone, password, passwordConfirm}`. 422 si saisie invalide, 409 si e-mail déjà pris (erreurs par champ dans `champs`) |
@@ -181,6 +305,7 @@ Une page dynamique suit le découpage Modèle / Contrôleur / Vue :
 | `GET /api/admin/product?id=13` | fiche d'un produit : informations, `images` (photos choisies, dans l'ordre), `variants` (avec leur `price`), `options`, 8 derniers mouvements de stock (`movements`), et pour le formulaire `categories` (masquées comprises) et `images` (fichiers de `front/dist/images/produits/`). Sans `id` : `product` vaut `null` (nouveau produit). 400, 404 |
 | `POST /api/admin/products` | création, corps JSON `{name, description, categoryId, images: ["photo.jpg"…], variantAxis, lowStockThreshold, isActive, variants: [{id: null, label, reference, price, stock}], options: [{id: null, label, description, price}]}` (au plus 4 photos, la première est celle des cartes) (slug calculé depuis le nom). Le stock initial est journalisé (`reassort`). 422 si saisie invalide (erreurs par champ, `variants.0.reference`…), 409 si une référence est déjà prise |
 | `POST /api/admin/products/update` | enregistrement, même corps avec `id` ; chaque variante existante envoie son `id` et `previousStock` (stock affiché au chargement) : seul l'écart est appliqué et journalisé (`reassort` ou `ajustement`). Variantes et options absentes du corps supprimées, sauf une variante présente dans une commande en cours ou disponible (422). 404 si introuvable |
+| `POST /api/admin/products/images` | téléversement d'une photo produit (US GOF-a), formulaire multipart avec le champ `image` : JPEG, PNG ou WebP (contenu vérifié), 5 Mo au plus, réencodée et réduite à 1600 px. Enregistrée dans `front/public/images/produits/` (servie aussitôt grâce au `.htaccess`, recopiée dans `front/dist/` au prochain build). Répond 201 `{image, images}`. 422 si refusée (`champs.image`) ; 401, 403 |
 | `POST /api/admin/products/delete` | suppression, corps JSON `{"id": 13}` (variantes, photos, options et journal avec). 409 si le produit est dans une commande en cours ou disponible |
 | `GET /api/admin/promo-codes` | gestion des codes promo (US PRO-b) : tous les codes (`promoCodes`), du plus récent au plus ancien : `code`, `discountRate` (%), `minAmount` (montant minimum du panier, 0 : sans minimum), `startsOn` / `endsOn` (« 2026-12-31 », `null` : sans borne, jours compris), `maxUses` (`null` : illimité), `useCount`, et `status` calculé à la date du jour : `actif`, `programme` (début à venir), `expire` (fin passée) ou `epuise` (`useCount` a atteint `maxUses`). 401, 403 comme le tableau de bord |
 | `POST /api/admin/promo-codes` | création, corps JSON `{code, discountRate, minAmount, startsOn, endsOn, maxUses}` (valeurs telles que saisies : `"50,00"`, `""` pour sans minimum, sans date ou illimité). Le code est mis en majuscules : 3 à 20 lettres sans accent et chiffres ; réduction entière de 1 à 90 % ; fin au plus tôt le jour du début, et pas déjà passée. 422 si saisie invalide, 409 si le code existe déjà (erreurs par champ dans `champs`) |
@@ -196,6 +321,56 @@ cookie `sort`. La réponse rappelle les réglages appliqués (`sort`, `page`,
 variantes n'ont pas toutes ce prix, `image` : la première photo) : le front n'a jamais besoin de lire le
 cookie, qui est en `HttpOnly`. Les photos sont dans
 `front/public/images/produits/`.
+
+## Test de concurrence (STK-a)
+
+**Scénario** : deux clients valident en même temps une commande portant sur
+la **dernière unité** d'une variante. Un seul doit l'obtenir, et le stock ne
+doit jamais devenir négatif.
+
+**Pourquoi c'est sûr** (`OrderModel::create`, `StockModel::decrementForOrder`) :
+
+1. la commande est enregistrée dans **une transaction** ;
+2. le stock est baissé par une seule requête conditionnelle,
+   `UPDATE variant SET stock = stock - :quantity WHERE id = :variant AND stock >= :needed`.
+   MySQL verrouille la ligne : la seconde requête attend la fin de la
+   première, puis relit le stock déjà à 0 ;
+3. pour la seconde commande, aucune ligne n'est modifiée (`rowCount() === 0`) :
+   la variante est signalée indisponible, la transaction est annulée
+   (`rollBack`) et rien n'est enregistré, ni commande, ni ligne, ni
+   mouvement de stock ;
+4. le client reçoit un **409** « Certains articles ne sont plus disponibles
+   en quantité suffisante », avec la liste des variantes en cause ;
+5. dernier rempart : la colonne `variant.stock` est `UNSIGNED`, MySQL refuse
+   toute valeur négative.
+
+**Protocole** (variante à stock 1 du jeu de données : T-shirt CBR Fireblade,
+taille M, `variantId` 10) :
+
+```bash
+API=https://mmi.unilim.fr/~accini1/SAE301-Starter/api
+
+# 1. Deux sessions connectées (deux comptes, ou deux fois le même)
+curl -s -c a.txt -H 'Content-Type: application/json' \
+  -d '{"email":"alice@exemple.fr","password":"azerty"}' $API/login
+curl -s -c b.txt -H 'Content-Type: application/json' \
+  -d '{"email":"alice@exemple.fr","password":"azerty"}' $API/login
+
+# 2. Un créneau proposé
+SLOT=$(curl -s -b a.txt $API/checkout | grep -o '"id": "[^"]*T[^"]*"' | head -1 | cut -d'"' -f4)
+BODY="{\"items\":[{\"variantId\":10,\"quantity\":1}],\"dealershipId\":1,\"slot\":\"$SLOT\"}"
+
+# 3. Les deux commandes lancées en même temps
+curl -s -o r1.json -w 'A : %{http_code}\n' -b a.txt -H 'Content-Type: application/json' -d "$BODY" $API/orders &
+curl -s -o r2.json -w 'B : %{http_code}\n' -b b.txt -H 'Content-Type: application/json' -d "$BODY" $API/orders &
+wait
+```
+
+**Résultat attendu** : une réponse **201** (commande créée) et une **409**. La
+fiche du T-shirt affiche « Épuisé » en taille M, le stock vaut 0, et le
+journal des mouvements (fiche produit du back-office) ne contient qu'une
+sortie de 1. Annuler la commande depuis le back-office (PIL-b) recrédite
+l'unité et ajoute un mouvement « annulation » de +1.
 
 ## Comptes
 
