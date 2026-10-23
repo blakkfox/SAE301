@@ -11,6 +11,11 @@
     <p id="variant-{{index}}-reference-error" data-error-for="variants.{{index}}.reference" hidden class="mt-1 text-caption text-accent"></p>
   </td>
   <td class="px-2 py-2 align-top">
+    <label for="variant-{{index}}-price" class="sr-only">Prix de la variante {{number}}, en euros</label>
+    <input id="variant-{{index}}-price" name="variants.{{index}}.price" type="text" inputmode="decimal" autocomplete="off" value="{{price}}" placeholder="29,90" aria-describedby="variant-{{index}}-price-error" data-focus-key="variant-{{index}}-price" class="field w-24" />
+    <p id="variant-{{index}}-price-error" data-error-for="variants.{{index}}.price" hidden class="mt-1 text-caption text-accent"></p>
+  </td>
+  <td class="px-2 py-2 align-top">
     <label for="variant-{{index}}-stock" class="sr-only">Stock de la variante {{number}}</label>
     <input id="variant-{{index}}-stock" name="variants.{{index}}.stock" type="number" min="0" max="9999" step="1" inputmode="numeric" value="{{stock}}" aria-describedby="variant-{{index}}-stock-error" data-focus-key="variant-{{index}}-stock" class="field w-24" />
     <p id="variant-{{index}}-stock-error" data-error-for="variants.{{index}}.stock" hidden class="mt-1 text-caption text-accent"></p>

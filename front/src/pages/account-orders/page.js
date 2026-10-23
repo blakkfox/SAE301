@@ -283,13 +283,23 @@ M.getEvents = function (order) {
  * @returns {Object} Le détail déplié de la commande, prêt à afficher.
  */
 M.getDetail = function (order) {
+  let lines = order.lines.map((line) => ({
+    label:
+      `${line.name}${line.label === "Unique" ? "" : ` · ${line.label}`} × ${line.quantity}` +
+      line.options.map((option) => ` + ${option.label}`).join(""),
+    price: formatPrice(line.unitPrice * line.quantity),
+  }));
+
+  // Remise du code promo (PRO-a) : sans elle, la somme des articles ne
+  // correspond pas au total payé.
+  if (order.discount > 0) {
+    lines = [...lines, { label: `Code promo ${order.promoCode}`, price: `−${formatPrice(order.discount)}` }];
+  }
+
   return {
     id: order.id,
     number: formatOrderNumber(order.id),
-    lines: order.lines.map((line) => ({
-      label: `${line.name}${line.label === "Unique" ? "" : ` · ${line.label}`} × ${line.quantity}`,
-      price: formatPrice(line.unitPrice * line.quantity),
-    })),
+    lines,
     totalLabel: TOTAL_LABELS[order.status],
     total: formatPrice(order.total),
     pickup: `${order.dealership.name}, ${formatPickupLong(order.pickupStart, order.pickupEnd, order.dayOffset)}`,

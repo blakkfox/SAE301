@@ -1,7 +1,7 @@
 <section class="mx-auto flex max-w-312 flex-col gap-6 px-4 pt-6 pb-16 sm:px-6 lg:gap-8 lg:pt-8 lg:pb-24">
   <nav aria-label="Fil d'Ariane" class="text-sm text-ink-muted">
     <ol class="flex flex-wrap gap-2">
-      <li><a href="/" data-link class="transition-colors hover:text-accent">Accueil</a></li>
+      <li><a href="/" data-link class="inline-block py-1 transition-colors hover:text-accent">Accueil</a></li>
       <li aria-hidden="true">/</li>
       <li>Catalogue</li>
     </ol>
@@ -11,8 +11,9 @@
        (la phrase sous le titre et les deux réglages ne tiennent pas avant). -->
   <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
     <div class="flex flex-col gap-1">
-      <h1 class="font-display text-h1-mobile leading-none text-ink sm:text-h1 sm:leading-h1">Catalogue</h1>
+      <h1 class="font-display text-h1-mobile leading-none text-ink sm:text-h1 sm:leading-h1">{{title}}</h1>
       <slot name="summary"></slot>
+      <slot name="search-reset"></slot>
       <slot name="promo-note"></slot>
     </div>
     <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-6">

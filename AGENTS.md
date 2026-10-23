@@ -148,7 +148,7 @@ de framework.
 
 **Règles métier**
 
-- Référence et stock portés par la variante ; panier et lignes de commande
+- Référence, prix et stock portés par la variante ; photos dans `product_image` ; panier et lignes de commande
   identifiés par `variantId`, avec prix et suppléments figés à la commande.
 - `CMD-a` valide la commande (concession, créneau, paiement sur place) et
   décrémente le stock dans **une transaction** : si un article manque, rien

@@ -86,10 +86,11 @@ AuthData.register = async function (account) {
 /**
  * Mot de passe oublié : POST /api/password-reset. Ne connecte pas.
  *
- * @param {{email: string, password: string, passwordConfirm: string}} reset
+ * @param {{email: string, phone: string, password: string, passwordConfirm: string}} reset
  * @returns {Promise<{modifie: boolean}>}
- * @throws {ErreurApi} 422 (saisie invalide) ou 404 (adresse inconnue), avec
- *   les erreurs de chaque champ dans champs.
+ * @throws {ErreurApi} 422 (saisie invalide) ou 404 (adresse et téléphone ne
+ *   correspondent à aucun compte client), avec les erreurs de chaque champ
+ *   dans champs ; 429 après trop d'essais.
  */
 AuthData.resetPassword = async function (reset) {
   return postRequest("password-reset", reset);

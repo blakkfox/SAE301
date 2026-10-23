@@ -16,8 +16,9 @@ const PRICE_CLASSES = {
 };
 
 // Carte d'un produit, telle que la prépare le modèle de la page :
-// { id, name, price, originalPrice, discountRate, imageUrl, variantId,
-// stockStatus, isAdded } — originalPrice (prix avant remise) et discountRate
+// { id, name, price, priceFrom, originalPrice, discountRate, imageUrl,
+// variantId, stockStatus, isAdded } — price est celui de la variante la moins
+// chère, précédé de « dès » si priceFrom (variantes à prix différents) ; originalPrice (prix avant remise) et discountRate
 // (réduction en pour cent) valent null hors promotion (PRO-c) ; imageUrl
 // vaut null sans photo ; variantId vaut null si le produit a plusieurs
 // variantes (le bouton mène alors à la fiche) ; stockStatus est le statut de
@@ -25,7 +26,7 @@ const PRICE_CLASSES = {
 // juste après un ajout au panier.
 let ProductCardView = {
   /**
-   * @param {{id: number, name: string, price: number, originalPrice: ?number,
+   * @param {{id: number, name: string, price: number, priceFrom: boolean, originalPrice: ?number,
    *   discountRate: ?number, imageUrl: ?string, variantId: ?number,
    *   stockStatus: "in"|"low"|"out", isAdded: boolean}} product
    * @param {2|3} [headingLevel=2] - Niveau du titre de la carte (h2 ou h3).
@@ -38,7 +39,7 @@ let ProductCardView = {
     return genericRenderer(template, {
       id: product.id,
       name: product.name,
-      price: formatPrice(product.price),
+      price: `${product.priceFrom ? "dès " : ""}${formatPrice(product.price)}`,
       originalPrice: isPromo ? formatPrice(product.originalPrice) : "",
       discountRate: product.discountRate ?? "",
       priceClasses: isPromo ? PRICE_CLASSES.promo : PRICE_CLASSES.regular,
@@ -47,7 +48,7 @@ let ProductCardView = {
   },
 
   /**
-   * @param {{id: number, name: string, price: number, originalPrice: ?number,
+   * @param {{id: number, name: string, price: number, priceFrom: boolean, originalPrice: ?number,
    *   discountRate: ?number, imageUrl: ?string, variantId: ?number,
    *   stockStatus: "in"|"low"|"out", isAdded: boolean}} product
    * @param {2|3} headingLevel - Niveau du titre de la carte (h2 ou h3).

@@ -150,7 +150,7 @@ final class OrderModel
      *               createdAt:string, dealership:array{id:int, name:string, shortName:string},
      *               lines:array<int, array{variantId:?int, name:string, label:string,
      *                                      reference:string, unitPrice:float, quantity:int,
-     *                                      options:array<int, array{label:string, price:float}>}>}|null
+     *                                      options:array<int, array{id:?int, label:string, price:float}>}>}|null
      *         null si la commande n'existe pas.
      */
     public function findById(int $id): ?array
@@ -198,18 +198,22 @@ final class OrderModel
      * ses statuts (US PIL-b). Le journal ne dit pas quel administrateur a
      * changé le statut : le client n'a pas à le savoir.
      *
-     * Trois requêtes en tout (commandes, lignes, journal), quel que soit le
-     * nombre de commandes, plutôt qu'une paire de requêtes par commande.
+     * Quatre requêtes en tout (commandes, lignes, options des lignes,
+     * journal), quel que soit le nombre de commandes, plutôt que plusieurs
+     * requêtes par commande. Le code promo et sa remise (US PRO-a) et les
+     * options de chaque ligne (US OPT-a) sont renvoyés comme par findById :
+     * sans eux, la somme des lignes ne correspond pas au total payé.
      *
      * @param int                    $customerId Compte connecté.
      * @param DateTimeImmutable|null $since      Commandes passées depuis cette date,
      *                                           ou null pour toutes.
      *
-     * @return array<int, array{id:int, status:string, total:float, pickupStart:string,
-     *                          pickupEnd:string, createdAt:string,
+     * @return array<int, array{id:int, status:string, total:float, promoCode:?string, discount:float,
+     *                          pickupStart:string, pickupEnd:string, createdAt:string,
      *                          dealership:array{id:int, name:string, shortName:string},
      *                          lines:array<int, array{variantId:?int, name:string, label:string,
-     *                                                 reference:string, unitPrice:float, quantity:int}>,
+     *                                                 reference:string, unitPrice:float, quantity:int,
+     *                                                 options:array<int, array{id:?int, label:string, price:float}>}>,
      *                          events:array<int, array{status:string, createdAt:string}>}>
      */
     public function findCustomerHistory(int $customerId, ?DateTimeImmutable $since): array
@@ -218,6 +222,7 @@ final class OrderModel
 
         $statement = $this->pdo->prepare(
             'SELECT customer_order.id, customer_order.status, customer_order.total,
+                    customer_order.promo_code, customer_order.discount,
                     customer_order.pickup_start, customer_order.pickup_end, customer_order.created_at,
                     dealership.id AS dealership_id, dealership.name AS dealership_name,
                     dealership.short_name AS dealership_short_name
@@ -242,6 +247,8 @@ final class OrderModel
                 'id'          => (int) $row['id'],
                 'status'      => $row['status'],
                 'total'       => (float) $row['total'],
+                'promoCode'   => $row['promo_code'],
+                'discount'    => (float) $row['discount'],
                 'pickupStart' => $row['pickup_start'],
                 'pickupEnd'   => $row['pickup_end'],
                 'createdAt'   => $row['created_at'],
@@ -267,7 +274,7 @@ final class OrderModel
      *               createdAt:string, dealership:array{id:int, name:string, shortName:string},
      *               lines:array<int, array{variantId:?int, name:string, label:string,
      *                                      reference:string, unitPrice:float, quantity:int,
-     *                                      options:array<int, array{label:string, price:float}>}>}|null
+     *                                      options:array<int, array{id:?int, label:string, price:float}>}>}|null
      *         null si le client n'a jamais commandé.
      */
     public function findLastByCustomer(int $customerId): ?array
@@ -297,7 +304,7 @@ final class OrderModel
      *               createdAt:string, dealership:array{id:int, name:string, shortName:string},
      *               lines:array<int, array{variantId:?int, name:string, label:string,
      *                                      reference:string, unitPrice:float, quantity:int,
-     *                                      options:array<int, array{label:string, price:float}>}>,
+     *                                      options:array<int, array{id:?int, label:string, price:float}>}>,
      *               events:array<int, array{status:string, createdAt:string}>}|null
      *         null si la commande n'existe pas ou appartient à un autre client.
      */
@@ -455,7 +462,7 @@ final class OrderModel
      *               createdAt:string, dealership:array{id:int, name:string, shortName:string},
      *               lines:array<int, array{variantId:?int, name:string, label:string,
      *                                      reference:string, unitPrice:float, quantity:int,
-     *                                      options:array<int, array{label:string, price:float}>}>,
+     *                                      options:array<int, array{id:?int, label:string, price:float}>}>,
      *               customer:array{firstName:string, lastName:string, phone:string},
      *               events:array<int, array{status:string, createdAt:string,
      *                                       admin:?array{firstName:string, lastName:string}}>}|null
@@ -719,8 +726,8 @@ final class OrderModel
 
     /**
      * Copie, pour chaque ligne, le nom, la variante (libellé complet,
-     * « Taille M », US OPT-b), la référence et le prix tels qu'ils sont en
-     * base, remisé pour le produit en promotion (US PRO-c), puis ses options
+     * « Taille M », US OPT-b), la référence et le prix de la variante tels
+     * qu'ils sont en base, remisé pour le produit en promotion (US PRO-c), puis ses options
      * (US OPT-a) : leur libellé et leur supplément, ajouté au prix unitaire
      * de la ligne. La remise ne porte pas sur les suppléments.
      *
@@ -740,7 +747,7 @@ final class OrderModel
         $line = $this->pdo->prepare(
             'INSERT INTO order_line (order_id, variant_id, product_name, variant_label, reference, unit_price, quantity)
              SELECT :order, variant.id, product.name, ' . ProductModel::VARIANT_LABEL . ',
-                    variant.reference, ' . ProductModel::salePrice(':promoted') . ', :quantity
+                    variant.reference, ' . ProductModel::salePrice(':promoted', 'variant.price') . ', :quantity
                FROM variant
          INNER JOIN product ON product.id = variant.product_id
               WHERE variant.id = :variant'
@@ -860,7 +867,7 @@ final class OrderModel
      *
      * @return array<int, array{variantId:?int, name:string, label:string, reference:string,
      *                          unitPrice:float, quantity:int,
-     *                          options:array<int, array{label:string, price:float}>}>
+     *                          options:array<int, array{id:?int, label:string, price:float}>}>
      */
     private function findLines(int $orderId): array
     {
@@ -896,12 +903,13 @@ final class OrderModel
      *
      * @param int $orderId
      *
-     * @return array<int, array<int, array{label:string, price:float}>> Clé : identifiant de la ligne.
+     * @return array<int, array<int, array{id:?int, label:string, price:float}>> Clé : identifiant de la ligne.
      */
     private function findLineOptions(int $orderId): array
     {
         $statement = $this->pdo->prepare(
-            'SELECT order_line_option.order_line_id, order_line_option.label, order_line_option.price
+            'SELECT order_line_option.order_line_id, order_line_option.option_id,
+                    order_line_option.label, order_line_option.price
                FROM order_line_option
          INNER JOIN order_line ON order_line.id = order_line_option.order_line_id
               WHERE order_line.order_id = :order
@@ -915,6 +923,8 @@ final class OrderModel
 
         for ($i = 0; $i < count($rows); $i++) {
             $options[(int) $rows[$i]['order_line_id']][] = [
+                // Option supprimée depuis la commande : null (ON DELETE SET NULL).
+                'id'    => $rows[$i]['option_id'] === null ? null : (int) $rows[$i]['option_id'],
                 'label' => $rows[$i]['label'],
                 'price' => (float) $rows[$i]['price'],
             ];
@@ -977,19 +987,24 @@ final class OrderModel
     }
 
     /**
-     * Lignes des commandes de l'historique, rangées par commande.
+     * Lignes des commandes de l'historique, rangées par commande, avec leurs
+     * options (US OPT-a).
      *
      * @param string                 $filter     Condition de historyFilter.
      * @param int                    $customerId
      * @param DateTimeImmutable|null $since
      *
      * @return array<int, array<int, array{variantId:?int, name:string, label:string, reference:string,
-     *                                     unitPrice:float, quantity:int}>> Clé : identifiant de la commande.
+     *                                     unitPrice:float, quantity:int,
+     *                                     options:array<int, array{id:?int, label:string, price:float}>}>>
+     *         Clé : identifiant de la commande.
      */
     private function findHistoryLines(string $filter, int $customerId, ?DateTimeImmutable $since): array
     {
+        $options = $this->findHistoryLineOptions($filter, $customerId, $since);
+
         $statement = $this->pdo->prepare(
-            'SELECT order_line.order_id, order_line.variant_id, order_line.product_name,
+            'SELECT order_line.id, order_line.order_id, order_line.variant_id, order_line.product_name,
                     order_line.variant_label, order_line.reference, order_line.unit_price, order_line.quantity
                FROM order_line
          INNER JOIN customer_order ON customer_order.id = order_line.order_id
@@ -1010,10 +1025,50 @@ final class OrderModel
                 'reference' => $rows[$i]['reference'],
                 'unitPrice' => (float) $rows[$i]['unit_price'],
                 'quantity'  => (int) $rows[$i]['quantity'],
+                'options'   => $options[(int) $rows[$i]['id']] ?? [],
             ];
         }
 
         return $lines;
+    }
+
+    /**
+     * Options des lignes des commandes de l'historique (US OPT-a), dans
+     * l'ordre où elles ont été enregistrées.
+     *
+     * @param string                 $filter     Condition de historyFilter.
+     * @param int                    $customerId
+     * @param DateTimeImmutable|null $since
+     *
+     * @return array<int, array<int, array{id:?int, label:string, price:float}>> Clé : identifiant de la ligne.
+     */
+    private function findHistoryLineOptions(string $filter, int $customerId, ?DateTimeImmutable $since): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT order_line_option.order_line_id, order_line_option.option_id,
+                    order_line_option.label, order_line_option.price
+               FROM order_line_option
+         INNER JOIN order_line ON order_line.id = order_line_option.order_line_id
+         INNER JOIN customer_order ON customer_order.id = order_line.order_id
+              WHERE ' . $filter . '
+           ORDER BY order_line_option.id'
+        );
+        self::bindHistory($statement, $customerId, $since);
+        $statement->execute();
+        $rows = $statement->fetchAll();
+
+        $options = [];
+
+        for ($i = 0; $i < count($rows); $i++) {
+            $options[(int) $rows[$i]['order_line_id']][] = [
+                // Option supprimée depuis la commande : null (ON DELETE SET NULL).
+                'id'    => $rows[$i]['option_id'] === null ? null : (int) $rows[$i]['option_id'],
+                'label' => $rows[$i]['label'],
+                'price' => (float) $rows[$i]['price'],
+            ];
+        }
+
+        return $options;
     }
 
     /**

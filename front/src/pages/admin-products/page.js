@@ -92,6 +92,20 @@ M.formatCount = function (count, singular, plural) {
 };
 
 /**
+ * État de stock d'un produit dans la liste. « Épuisé » seulement si plus
+ * aucune variante n'a de stock ; sinon, une variante au seuil ou épuisée
+ * (une taille manquante) suffit pour « Bientôt épuisé », qui se voit dès la
+ * liste sans annoncer épuisé un produit encore en vente.
+ *
+ * @param {{stock: number, minStock: number, lowStockThreshold: number}} product
+ * @returns {"in"|"low"|"out"}
+ */
+M.getStockStatus = function (product) {
+  if (product.stock <= 0) return "out";
+  return getStockStatus(Math.max(product.minStock, 1), product.lowStockThreshold);
+};
+
+/**
  * @param {Object} product - Produit de GET /api/admin/products.
  * @returns {{id: number, name: string, category: string, price: string, stock: string, variants: string,
  *   imageUrl: ?string, stockStatus: "in"|"low"|"out", publication: {label: string, modifier: string}}}
@@ -102,13 +116,15 @@ M.toRow = function (product) {
     id: product.id,
     name: product.name,
     category: product.category,
-    price: formatPrice(product.price),
+    // Prix porté par les variantes : une fourchette s'ils diffèrent.
+    price:
+      product.maxPrice > product.price
+        ? `${formatPrice(product.price)} – ${formatPrice(product.maxPrice)}`
+        : formatPrice(product.price),
     stock: M.formatCount(product.stock, "unité", "unités"),
     variants: M.formatCount(product.variantCount, "variante", "variantes"),
     imageUrl: ProductData.imageUrl(product.image),
-    // L'état du produit est celui de sa variante la plus basse : une taille
-    // épuisée se voit dès la liste.
-    stockStatus: getStockStatus(product.minStock, product.lowStockThreshold),
+    stockStatus: M.getStockStatus(product),
     publication: product.isActive ? PUBLICATION.online : PUBLICATION.offline,
   };
 };

@@ -139,7 +139,8 @@ M.submitLogin = async function (email, password) {
   try {
     await AdminData.login(email, password);
   } catch (error) {
-    if (error.statut === 401) {
+    // 401 : refus ; 429 : trop d'essais, message du serveur sous le mot de passe aussi.
+    if (error.statut === 401 || error.statut === 429) {
       M.login.errors = { password: error.message };
     } else if (error.statut === undefined) {
       M.notice = { type: "erreur", texte: "Le serveur ne répond pas. Vérifiez votre connexion, puis réessayez." };

@@ -2,7 +2,14 @@ import { CartData } from "../../data/cart.js";
 import { CategoryData } from "../../data/category.js";
 import { ProductData } from "../../data/product.js";
 import { getStockStatus } from "../../lib/stock.js";
-import { genericRenderer, htmlToFragment, replaceKeepingFocus } from "../../lib/utils.js";
+import {
+  genericRenderer,
+  htmlToFragment,
+  pushQuery,
+  replaceKeepingFocus,
+  replacePageNumber,
+  toPageNumber,
+} from "../../lib/utils.js";
 import { CategoryChipsView } from "../../ui/category-chips/index.js";
 import { CategoryNavView } from "../../ui/category-nav/index.js";
 import { MessageView } from "../../ui/message/index.js";
@@ -75,14 +82,15 @@ M.reset = function () {
 };
 
 /**
- * Charge les catégories et la première page de produits de la catégorie, en
+ * Charge les catégories et une page de produits de la catégorie, en
  * parallèle, et range les réponses dans le modèle.
  *
  * @param {string} slug - Slug lu dans l'adresse (/categories/:slug).
+ * @param {number} page - Page de produits lue dans l'adresse (?page=2).
  * @returns {Promise<boolean>} true si les réponses ont été retenues, false si
  *   l'utilisateur a entre-temps demandé une autre catégorie.
  */
-M.load = async function (slug) {
+M.load = async function (slug, page) {
   M.lastRequest += 1;
   let request = M.lastRequest;
   M.slug = slug;
@@ -90,7 +98,7 @@ M.load = async function (slug) {
   try {
     let [tree, catalogue] = await Promise.all([
       CategoryData.fetchAll(),
-      ProductData.fetchPage(1, undefined, slug),
+      ProductData.fetchPage(page, undefined, slug),
     ]);
     if (request !== M.lastRequest) return false;
     M.categories = tree.categories;
@@ -139,6 +147,23 @@ M.loadPage = async function (page) {
 
   M.isLoading = false;
   return true;
+};
+
+/**
+ * @param {number} page - Page de produits affichée.
+ * @returns {Object<string, string>} Les réglages à inscrire dans l'adresse :
+ *   rien pour la première page.
+ */
+M.getQuery = function (page) {
+  return page > 1 ? { page: String(page) } : {};
+};
+
+/**
+ * @returns {?number} La page de produits appliquée par le serveur (une page
+ *   trop grande devient la dernière), ou null sans réponse.
+ */
+M.getDisplayedPage = function () {
+  return M.catalogue?.page ?? null;
 };
 
 /**
@@ -232,9 +257,9 @@ M.getChipsData = function (section) {
 /**
  * Prépare un produit de l'API pour la carte produit.
  *
- * @param {{id: number, name: string, price: number, originalPrice: ?number,
+ * @param {{id: number, name: string, price: number, priceFrom: boolean, originalPrice: ?number,
  *   discountRate: ?number, image: ?string, variantId: ?number, stock: number}} product
- * @returns {{id: number, name: string, price: number, originalPrice: ?number,
+ * @returns {{id: number, name: string, price: number, priceFrom: boolean, originalPrice: ?number,
  *   discountRate: ?number, imageUrl: ?string, variantId: ?number,
  *   stockStatus: "in"|"low"|"out", isAdded: boolean}}
  */
@@ -243,6 +268,7 @@ M.toCardData = function (product) {
     id: product.id,
     name: product.name,
     price: product.price,
+    priceFrom: product.priceFrom,
     originalPrice: product.originalPrice,
     discountRate: product.discountRate,
     imageUrl: ProductData.imageUrl(product.image),
@@ -266,7 +292,7 @@ M.addToCart = function (productId) {
   // Stock (STK-c) : pas plus que le stock de la variante dans le panier.
   if (CartData.remainingFor(product.variantId, product.stock) === 0) {
     M.addedProductId = null;
-    M.cartStatus = `Votre panier contient déjà tout le stock disponible de ${product.name}.`;
+    M.cartStatus = CartData.limitMessage(product.name, product.stock);
     return;
   }
 
@@ -370,13 +396,14 @@ let C = {};
  */
 C.init = async function (params) {
   M.reset();
-  let isCurrent = await M.load(params.slug);
+  let isCurrent = await M.load(params.slug, toPageNumber(params.page));
 
   // Une autre catégorie a été demandée entre-temps : le routeur ignorera ce
   // contenu, et la Vue ne doit pas mémoriser une page qui ne sera pas affichée.
   if (!isCurrent) {
     return "";
   }
+  V.replacePageNumber(M.getDisplayedPage(), M.slug);
   return V.init(M.getViewData());
 };
 
@@ -388,10 +415,12 @@ C.init = async function (params) {
  */
 C.handler_changePage = async function (page) {
   let loading = M.loadPage(page);
+  V.pushQuery(M.getQuery(page));
   V.renderResults(M.getResultsData());
   V.scrollToTop();
 
   if (await loading) {
+    V.replacePageNumber(M.getDisplayedPage(), M.slug);
     V.renderResults(M.getResultsData());
   }
 };
@@ -470,6 +499,28 @@ V.renderCartStatus = function (text) {
   if (status !== null) {
     status.textContent = text ?? "";
   }
+};
+
+/**
+ * Inscrit la page de produits dans l'adresse (« Précédent », lien partagé).
+ *
+ * @param {ReturnType<typeof M.getQuery>} query
+ */
+V.pushQuery = function (query) {
+  pushQuery(query);
+};
+
+/**
+ * Corrige le numéro de page de l'adresse, sans nouvelle entrée d'historique.
+ * Rien si l'utilisateur est allé ailleurs avant la réponse : l'adresse est
+ * alors celle d'une autre page.
+ *
+ * @param {?number} page - Page appliquée par le serveur, ou null : rien à corriger.
+ * @param {string} slug - Catégorie dont la réponse provient.
+ */
+V.replacePageNumber = function (page, slug) {
+  let isSameCategory = decodeURIComponent(window.location.pathname).replace(/\/+$/, "").endsWith(`/categories/${slug}`);
+  if (page !== null && isSameCategory) replacePageNumber(page);
 };
 
 /**

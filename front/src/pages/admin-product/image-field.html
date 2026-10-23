@@ -1,0 +1,9 @@
+<!-- Un emplacement de la galerie : « Aucune » ou un fichier du dossier des photos. -->
+<div class="flex flex-col gap-2">
+  <label for="product-image-{{index}}" class="text-small font-semibold text-ink">{{label}}</label>
+  <select id="product-image-{{index}}" name="images.{{index}}" aria-describedby="product-images-hint product-image-{{index}}-error" data-focus-key="product-image-{{index}}" class="field">
+    <option value="">Aucune</option>
+    <slot name="options"></slot>
+  </select>
+  <p id="product-image-{{index}}-error" data-error-for="images.{{index}}" hidden class="text-caption text-accent"></p>
+</div>

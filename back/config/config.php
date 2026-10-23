@@ -31,5 +31,5 @@ return [
 
     // En développement, les erreurs sont détaillées dans la réponse JSON.
     // À passer à false en production.
-    'debug' => true,
+    'debug' => false,
 ];

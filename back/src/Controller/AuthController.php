@@ -7,6 +7,7 @@ namespace App\Controller;
 use App\Core\Request;
 use App\Core\Response;
 use App\Model\CustomerModel;
+use App\Model\LoginAttemptModel;
 use PDOException;
 
 /**
@@ -16,6 +17,11 @@ use PDOException;
  * L'identifiant et le rôle du compte connecté sont rangés en session, côté
  * serveur. Le client ne détient que l'identifiant de session, dans le cookie
  * PHPSESSID : il ne peut ni choisir son rôle ni se faire passer pour un autre.
+ *
+ * Les essais à la chaîne sont freinés : après ATTEMPTS_PER_EMAIL échecs en
+ * ATTEMPT_WINDOW minutes pour une même adresse depuis une même IP, ou
+ * ATTEMPTS_PER_IP échecs depuis une même IP, connexion et mot de passe
+ * oublié répondent 429 jusqu'à la fin de la fenêtre.
  *
  * Les erreurs de saisie sont renvoyées champ par champ (422, clé « champs »),
  * pour que le front les affiche sous le bon champ, comme sur la maquette.
@@ -36,6 +42,21 @@ final class AuthController
     /** Longueur maximale d'une adresse e-mail (colonne VARCHAR(190)). */
     private const EMAIL_MAX = 190;
 
+    /** Échecs permis pour une même adresse e-mail depuis une même IP, sur la fenêtre. */
+    private const ATTEMPTS_PER_EMAIL = 5;
+
+    /** Échecs permis depuis une même IP, toutes adresses confondues, sur la fenêtre. */
+    private const ATTEMPTS_PER_IP = 20;
+
+    /** Fenêtre de comptage des échecs, en minutes. */
+    private const ATTEMPT_WINDOW = 15;
+
+    /** Réponse au-delà des essais permis. */
+    private const TOO_MANY_ATTEMPTS = 'Trop de tentatives : réessayez dans ' . self::ATTEMPT_WINDOW . ' minutes.';
+
+    /** Prénom ou nom : une lettre, puis lettres, espaces, apostrophes, points et tirets. */
+    private const NAME_PATTERN = "/^\\p{L}[\\p{L}\\p{M}' .’-]*$/u";
+
     /** Message unique, que l'e-mail existe ou non : on ne révèle pas quels comptes existent. */
     private const LOGIN_FAILED = 'Adresse e-mail ou mot de passe incorrect.';
 
@@ -52,19 +73,24 @@ final class AuthController
     /** Le modèle qui interroge la table customer, fourni à la construction. */
     private CustomerModel $customers;
 
+    /** Le journal des tentatives refusées, fourni à la construction. */
+    private LoginAttemptModel $attempts;
+
     /**
-     * @param CustomerModel $customers Accès aux comptes.
+     * @param CustomerModel     $customers Accès aux comptes.
+     * @param LoginAttemptModel $attempts  Journal des tentatives refusées.
      */
-    public function __construct(CustomerModel $customers)
+    public function __construct(CustomerModel $customers, LoginAttemptModel $attempts)
     {
         $this->customers = $customers;
+        $this->attempts  = $attempts;
     }
 
     /**
      * POST /api/login, corps JSON { email, password }.
      *
      * Répond { customer } et ouvre la session. 401 si les identifiants ne
-     * correspondent à aucun compte.
+     * correspondent à aucun compte, 429 après trop d'échecs.
      *
      * @param Request $request Requête entrante.
      */
@@ -74,15 +100,19 @@ final class AuthController
         $email    = self::normalizeEmail(self::text($body, 'email'));
         $password = self::text($body, 'password');
 
+        $this->checkAttempts($request->ip(), $email);
+
         $credentials = $this->customers->findCredentials($email);
 
         // password_verify est appelé dans tous les cas, voir DUMMY_HASH.
         $isValid = password_verify($password, $credentials['passwordHash'] ?? self::DUMMY_HASH);
 
         if ($credentials === null || !$isValid) {
+            $this->attempts->record($request->ip(), $email, self::ATTEMPT_WINDOW);
             Response::erreur(self::LOGIN_FAILED, 401);
         }
 
+        $this->attempts->clear($request->ip(), $email, self::ATTEMPT_WINDOW);
         $this->openSession($credentials['id']);
     }
 
@@ -92,7 +122,7 @@ final class AuthController
      * Connexion du back-office, séparée de celle des clients : un compte
      * client y est refusé avec le même message qu'un mauvais mot de passe,
      * pour ne pas révéler quelles adresses sont des comptes d'administration.
-     * Répond { customer } et ouvre la session. 401 sinon.
+     * Répond { customer } et ouvre la session. 401 sinon, 429 après trop d'échecs.
      *
      * @param Request $request Requête entrante.
      */
@@ -102,15 +132,19 @@ final class AuthController
         $email    = self::normalizeEmail(self::text($body, 'email'));
         $password = self::text($body, 'password');
 
+        $this->checkAttempts($request->ip(), $email);
+
         $credentials = $this->customers->findCredentials($email);
 
         // password_verify est appelé dans tous les cas, voir DUMMY_HASH.
         $isValid = password_verify($password, $credentials['passwordHash'] ?? self::DUMMY_HASH);
 
         if ($credentials === null || !$isValid || $credentials['role'] !== 'admin') {
+            $this->attempts->record($request->ip(), $email, self::ATTEMPT_WINDOW);
             Response::erreur(self::ADMIN_LOGIN_FAILED, 401);
         }
 
+        $this->attempts->clear($request->ip(), $email, self::ATTEMPT_WINDOW);
         $this->openSession($credentials['id']);
     }
 
@@ -160,16 +194,20 @@ final class AuthController
     }
 
     /**
-     * POST /api/password-reset, corps JSON { email, password, passwordConfirm }.
+     * POST /api/password-reset, corps JSON
+     * { email, phone, password, passwordConfirm }.
      *
-     * Mot de passe oublié, version simplifiée demandée pour le projet :
-     * AUCUNE vérification d'identité (pas d'e-mail de confirmation). Pour
-     * limiter les dégâts, seuls les comptes clients sont concernés, et
-     * l'utilisateur n'est pas connecté : il doit ensuite se connecter avec
-     * son nouveau mot de passe.
+     * Mot de passe oublié, version simplifiée du projet (pas d'e-mail de
+     * confirmation) : l'identité est vérifiée par le numéro de téléphone du
+     * compte, qui doit correspondre à l'adresse. Seuls les comptes clients
+     * sont concernés, et l'utilisateur n'est pas connecté : il doit ensuite
+     * se connecter avec son nouveau mot de passe. Les échecs comptent comme
+     * ceux de la connexion.
      *
      * Répond { modifie: true }. 422 si une saisie est invalide, 404 si aucun
-     * compte client n'a cette adresse.
+     * compte client n'a cette adresse et ce numéro (même message dans les
+     * deux cas : on ne révèle pas quels comptes existent), 429 après trop
+     * d'échecs.
      *
      * @param Request $request Requête entrante.
      */
@@ -177,10 +215,12 @@ final class AuthController
     {
         $body     = $request->corps();
         $email    = self::normalizeEmail(self::text($body, 'email'));
+        $phone    = self::normalizePhone(self::text($body, 'phone'));
         $password = self::text($body, 'password');
 
         $errors = array_merge(
             self::validateEmail($email),
+            self::validatePhone($phone),
             self::validatePassword($password, self::text($body, 'passwordConfirm')),
         );
 
@@ -188,10 +228,20 @@ final class AuthController
             self::fieldErrors($errors, 422);
         }
 
-        if (!$this->customers->updateCustomerPassword($email, password_hash($password, PASSWORD_DEFAULT))) {
-            self::fieldErrors(['email' => 'Aucun compte client n\'utilise cette adresse e-mail.'], 404);
+        $this->checkAttempts($request->ip(), $email);
+
+        $isUpdated = $this->customers->updateCustomerPassword(
+            $email,
+            self::phoneForms($phone),
+            password_hash($password, PASSWORD_DEFAULT),
+        );
+
+        if (!$isUpdated) {
+            $this->attempts->record($request->ip(), $email, self::ATTEMPT_WINDOW);
+            self::fieldErrors(['phone' => 'Cette adresse e-mail et ce numéro ne correspondent à aucun compte client.'], 404);
         }
 
+        $this->attempts->clear($request->ip(), $email, self::ATTEMPT_WINDOW);
         Response::json(['modifie' => true]);
     }
 
@@ -227,6 +277,38 @@ final class AuthController
         session_destroy();                            // efface le fichier serveur
 
         Response::json(['customer' => null]);
+    }
+
+    /**
+     * Répond 429 et s'arrête si les échecs récents depuis cette IP dépassent
+     * le nombre permis, pour cette adresse e-mail ou toutes confondues.
+     *
+     * @param string $ip    Adresse IP du client.
+     * @param string $email Adresse e-mail saisie, normalisée.
+     */
+    private function checkAttempts(string $ip, string $email): void
+    {
+        if (
+            $this->attempts->countRecent($ip, $email, self::ATTEMPT_WINDOW) >= self::ATTEMPTS_PER_EMAIL
+            || $this->attempts->countRecent($ip, null, self::ATTEMPT_WINDOW) >= self::ATTEMPTS_PER_IP
+        ) {
+            Response::erreur(self::TOO_MANY_ATTEMPTS, 429);
+        }
+    }
+
+    /**
+     * Les deux écritures d'un même numéro français, telles qu'un compte peut
+     * les avoir enregistrées : « 0601020304 » et « +33601020304 ».
+     *
+     * @param string $phone Numéro normalisé et valide.
+     *
+     * @return array<int, string>
+     */
+    private static function phoneForms(string $phone): array
+    {
+        $national = str_starts_with($phone, '+33') ? '0' . substr($phone, 3) : $phone;
+
+        return [$national, '+33' . substr($national, 1)];
     }
 
     /**
@@ -313,6 +395,9 @@ final class AuthController
         }
         if (mb_strlen($value) > self::NAME_MAX) {
             return [$field => self::NAME_MAX . ' caractères maximum.'];
+        }
+        if (preg_match(self::NAME_PATTERN, $value) !== 1) {
+            return [$field => 'Lettres, espaces, apostrophes et tirets seulement.'];
         }
 
         return [];

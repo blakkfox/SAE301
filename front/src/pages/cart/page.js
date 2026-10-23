@@ -800,6 +800,17 @@ C.handler_retry = async function () {
   V.renderContent(M.getViewData());
 };
 
+/**
+ * Le panier a changé dans un autre onglet (événement « storage ») : la page
+ * relit le panier et se reconstruit, comme le compteur de l'en-tête.
+ *
+ * @returns {Promise<void>}
+ */
+C.handler_storageChange = async function () {
+  await M.load();
+  V.renderContent(M.getViewData());
+};
+
 // ---------------------------------------------------------------------------
 // V — Vue
 // ---------------------------------------------------------------------------
@@ -810,6 +821,21 @@ let V = {
   countLabel: null, // « 4 articles » à côté du titre
   alert: null, // conteneur de l'alerte de stock
   notice: null, // conteneur des messages
+  hasStorageListener: false, // l'écouteur « storage » est posé
+};
+
+/**
+ * Écouteur « storage », posé une seule fois : la page est reconstruite à
+ * chaque visite, il s'accumulerait. Il n'agit que si la page Panier est
+ * affichée.
+ */
+V.listenStorage = function () {
+  if (V.hasStorageListener) return;
+
+  window.addEventListener("storage", () => {
+    if (V.content?.isConnected) C.handler_storageChange();
+  });
+  V.hasStorageListener = true;
 };
 
 /**
@@ -819,6 +845,7 @@ let V = {
  * @returns {DocumentFragment}
  */
 V.init = function (data) {
+  V.listenStorage();
   let page = htmlToFragment(genericRenderer(template, { countLabel: data.summary.countLabel }));
 
   V.countLabel = page.querySelector("[data-cart-count-label]");

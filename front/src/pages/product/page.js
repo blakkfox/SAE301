@@ -13,6 +13,7 @@ import { QuantityStepperView } from "../../ui/quantity-stepper/index.js";
 import { StockBadgeView } from "../../ui/stock-badge/index.js";
 import { VariantPickerView } from "../../ui/variant-picker/index.js";
 import template from "./template.html?raw";
+import templatePrice from "./price.html?raw";
 import templateBreadcrumbParent from "./breadcrumb-parent.html?raw";
 import templateDescription from "./description.html?raw";
 import templateRelated from "./related.html?raw";
@@ -55,11 +56,6 @@ import templateFeedback from "./feedback.html?raw";
  *   V — construction du DOM à partir des données REÇUES en paramètre ;
  *   C — réaction aux actions de l'utilisateur, seul lien entre M et V.
  */
-
-// Nombre d'emplacements de miniatures de la maquette. Les photos
-// supplémentaires n'existent pas encore en base : les emplacements restants
-// affichent « Photo à venir ».
-const GALLERY_SLOTS = 4;
 
 // Classes du prix, écrites en entier : rouge des promotions pour le produit
 // en promotion automatique (PRO-c).
@@ -135,14 +131,13 @@ M.loadProduct = async function (id) {
 };
 
 /**
- * Photos du produit. Une seule pour l'instant : la table des photos
- * supplémentaires sera ajoutée plus tard.
+ * Photos du produit, dans l'ordre de la galerie (au plus 4, réglées au
+ * back-office).
  *
  * @returns {string[]} Adresses des photos.
  */
 M.getImageUrls = function () {
-  let url = ProductData.imageUrl(M.product.image);
-  return url === null ? [] : [url];
+  return M.product.images.map((image) => ProductData.imageUrl(image));
 };
 
 /**
@@ -170,11 +165,11 @@ M.getSubtitle = function () {
 };
 
 /**
- * Données de la galerie.
+ * Données de la galerie. Les miniatures ne servent qu'à changer de photo :
+ * un produit à une seule photo n'en a pas.
  *
  * @returns {{name: string, mainUrl: ?string,
- *   thumbnails: Array<{index: number, url: string, isSelected: boolean}>,
- *   emptySlots: number}}
+ *   thumbnails: Array<{index: number, url: string, isSelected: boolean}>}}
  */
 M.getGalleryData = function () {
   let urls = M.getImageUrls();
@@ -182,14 +177,35 @@ M.getGalleryData = function () {
   return {
     name: M.product.name,
     mainUrl: urls[M.selectedImage] ?? null,
-    thumbnails: urls.map((url, index) => ({ index, url, isSelected: index === M.selectedImage })),
-    emptySlots: Math.max(0, GALLERY_SLOTS - urls.length),
+    thumbnails:
+      urls.length > 1 ? urls.map((url, index) => ({ index, url, isSelected: index === M.selectedImage })) : [],
   };
 };
 
 /**
- * @returns {?{id: number, label: string, reference: string, stock: number}} La
- *   variante choisie, ou null.
+ * Prix affiché en tête de fiche : celui de la variante choisie ; tant
+ * qu'aucune ne l'est, celui de la moins chère, précédé de « dès » si les
+ * variantes n'ont pas toutes le même prix. Remisé si le produit est en
+ * promotion (PRO-c).
+ *
+ * @returns {{price: string, isPromo: boolean, originalPrice: string, discountRate: string}}
+ */
+M.getPriceData = function () {
+  let source = M.getSelectedVariant() ?? M.product;
+  let prefix = source === M.product && M.product.priceFrom ? "dès " : "";
+
+  return {
+    price: `${prefix}${formatPrice(source.price)}`,
+    isPromo: source.originalPrice !== null,
+    originalPrice: source.originalPrice === null ? "" : formatPrice(source.originalPrice),
+    discountRate: source.discountRate === null ? "" : String(source.discountRate),
+  };
+};
+
+/**
+ * @returns {?{id: number, label: string, reference: string, price: number,
+ *   originalPrice: ?number, discountRate: ?number, stock: number}} La variante
+ *   choisie, ou null.
  */
 M.getSelectedVariant = function () {
   return M.product.variants.find((variant) => variant.id === M.selectedVariantId) ?? null;
@@ -302,7 +318,8 @@ M.getSelectedOptions = function () {
  * @returns {number}
  */
 M.getUnitPrice = function () {
-  return M.getSelectedOptions().reduce((total, option) => total + option.price, M.product.price);
+  let base = (M.getSelectedVariant() ?? M.product).price;
+  return M.getSelectedOptions().reduce((total, option) => total + option.price, base);
 };
 
 /**
@@ -501,9 +518,9 @@ M.getPurchaseData = function () {
 /**
  * Prépare un produit du bloc « Vous aimerez aussi » pour la carte produit.
  *
- * @param {{id: number, name: string, price: number, originalPrice: ?number,
+ * @param {{id: number, name: string, price: number, priceFrom: boolean, originalPrice: ?number,
  *   discountRate: ?number, image: ?string, variantId: ?number, stock: number, lowStockThreshold: number}} product
- * @returns {{id: number, name: string, price: number, originalPrice: ?number,
+ * @returns {{id: number, name: string, price: number, priceFrom: boolean, originalPrice: ?number,
  *   discountRate: ?number, imageUrl: ?string, variantId: ?number,
  *   stockStatus: "in"|"low"|"out", isAdded: boolean}}
  */
@@ -512,6 +529,7 @@ M.toCardData = function (product) {
     id: product.id,
     name: product.name,
     price: product.price,
+    priceFrom: product.priceFrom,
     originalPrice: product.originalPrice,
     discountRate: product.discountRate,
     imageUrl: ProductData.imageUrl(product.image),
@@ -534,7 +552,7 @@ M.addRelatedToCart = function (productId) {
 
   if (CartData.remainingFor(product.variantId, product.stock) === 0) {
     M.addedProductId = null;
-    M.cartStatus = `Votre panier contient déjà tout le stock disponible de ${product.name}.`;
+    M.cartStatus = CartData.limitMessage(product.name, product.stock);
     return;
   }
 
@@ -560,8 +578,7 @@ M.getRelatedCard = function (productId) {
  * Rassemble tout ce que la Vue doit afficher, déjà préparé.
  *
  * @returns {{error: ?{title: string, text: string}, page: ?{name: string,
- *   subtitle: string, price: string, isPromo: boolean, originalPrice: string,
- *   discountRate: string, stockStatus: "in"|"low"|"out",
+ *   subtitle: string, price: ReturnType<typeof M.getPriceData>, stockStatus: "in"|"low"|"out",
  *   categoryName: string, categoryUrl: string},
  *   parent: ?{name: string, url: string}, description: ?string, gallery: ?Object,
  *   purchase: ?ReturnType<typeof M.getPurchaseData>,
@@ -589,10 +606,7 @@ M.getViewData = function () {
     page: {
       name: M.product.name,
       subtitle: M.getSubtitle(),
-      price: formatPrice(M.product.price),
-      isPromo: M.product.originalPrice !== null,
-      originalPrice: M.product.originalPrice === null ? "" : formatPrice(M.product.originalPrice),
-      discountRate: M.product.discountRate === null ? "" : String(M.product.discountRate),
+      price: M.getPriceData(),
       stockStatus: M.getStockStatus(),
       categoryName: M.product.category.name,
       categoryUrl: `/categories/${M.product.category.slug}`,
@@ -642,6 +656,7 @@ C.handler_selectImage = function (index) {
  */
 C.handler_selectVariant = function (variantId) {
   M.selectVariant(variantId);
+  V.renderPrice(M.getPriceData());
   V.renderPurchase(M.getPurchaseData());
   V.renderStock(M.getStockStatus());
   V.renderFeedback(M.feedback);
@@ -706,6 +721,7 @@ let V = {
   purchase: null, // bloc d'achat affiché
   feedback: null, // zone du message d'ajout au panier
   stock: null, // zone de la pastille de stock, à côté du prix
+  price: null, // zone du prix, en tête de fiche
   related: null, // bloc « Vous aimerez aussi » affiché, ou null
 };
 
@@ -751,6 +767,24 @@ V.renderPurchase = function (purchaseData) {
  */
 V.renderStock = function (status) {
   V.stock.replaceChildren(StockBadgeView.dom(status));
+};
+
+/**
+ * Affiche le prix reçu en tête de fiche.
+ *
+ * @param {ReturnType<typeof M.getPriceData>} price
+ */
+V.renderPrice = function (price) {
+  let priceClasses = price.isPromo ? PRICE_CLASSES.promo : PRICE_CLASSES.regular;
+  let fragment = htmlToFragment(genericRenderer(templatePrice, { ...price, priceClasses }));
+
+  // Un template n'a pas de condition : la promotion (PRO-c) se retire ici.
+  if (!price.isPromo) {
+    for (const element of fragment.querySelectorAll("[data-promo]")) {
+      element.remove();
+    }
+  }
+  V.price.replaceChildren(fragment);
 };
 
 /**
@@ -845,15 +879,10 @@ V.createGalleryFragment = function (galleryData) {
  * @returns {DocumentFragment}
  */
 V.createPageFragment = function (data) {
-  let priceClasses = data.page.isPromo ? PRICE_CLASSES.promo : PRICE_CLASSES.regular;
-  let page = htmlToFragment(genericRenderer(template, { ...data.page, priceClasses }));
+  let page = htmlToFragment(genericRenderer(template, data.page));
 
-  // Un template n'a pas de condition : la promotion (PRO-c) se retire ici.
-  if (!data.page.isPromo) {
-    for (const element of page.querySelectorAll("[data-promo]")) {
-      element.remove();
-    }
-  }
+  V.price = page.querySelector("[data-product-price]");
+  V.renderPrice(data.page.price);
 
   let parentSlot = page.querySelector('slot[name="breadcrumb-parent"]');
   if (data.parent === null) {

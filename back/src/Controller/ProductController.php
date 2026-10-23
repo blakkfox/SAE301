@@ -34,8 +34,9 @@ final class ProductController
      * GET /api/product?id=13
      *
      * Répond { product, related } :
-     * - product : le produit, sa catégorie, ses variantes, ses caractéristiques
-     *   et ses options à cocher (US OPT-c) ;
+     * - product : le produit, sa catégorie, ses photos (images, dans l'ordre
+     *   de la galerie), ses variantes et leur prix, ses caractéristiques et
+     *   ses options à cocher (US OPT-c) ;
      * - related : les cartes du bloc « Vous aimerez aussi ».
      * 400 si l'identifiant est invalide, 404 si le produit n'est pas visible.
      *
@@ -56,6 +57,7 @@ final class ProductController
             Response::erreur('Produit introuvable', 404);
         }
 
+        $product['images']   = $this->products->findImages($id);
         $product['variants'] = $this->products->findVariants($id);
         $product['features'] = $this->products->findFeatures($id);
         $product['options']  = $this->products->findOptions($id);

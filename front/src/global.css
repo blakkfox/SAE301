@@ -1,13 +1,6 @@
 @import "tailwindcss";
 
 /*
-  Le thème sombre du starter s'active par la classe theme-dark posée sur <html>
-  (voir index.html et lib/theme.js). La charte Honda n'a pas de thème sombre :
-  la variante est conservée, mais aucun composant Honda ne l'utilise.
-*/
-@custom-variant dark (&:where(.theme-dark, .theme-dark *));
-
-/*
   Tokens exposés à Tailwind. « inline » : la classe générée référence la
   variable (bg-action → var(--clr-action)) au lieu de copier sa valeur, si bien
   qu'un token sémantique modifié dans :root se répercute partout.
@@ -186,7 +179,7 @@
     --size-admin-categories-table-min: 34rem; /* Liste des catégories (4 colonnes) : défile en dessous */
     --size-admin-products-table-min: 48rem; /* Liste des produits (7 colonnes) : défile en dessous */
     --grid-admin-product: minmax(0, 1fr) 21.25rem; /* Fiche produit : formulaire 760 / photo et publication 340 px */
-    --size-admin-variants-table-min: 36rem; /* Variantes et stock (5 colonnes) : défile en dessous */
+    --size-admin-variants-table-min: 43rem; /* Variantes, prix et stock (6 colonnes) : défile en dessous */
     --size-admin-options-table-min: 36rem; /* Options proposées (4 colonnes) : défile en dessous */
     --grid-admin-stats: minmax(0, 1fr) 21.25rem; /* Statistiques : graphiques 760 / listes 340 px */
     --grid-stats-stock: 12.5rem minmax(0, 1fr) 2.5rem; /* Stock par produit : nom 200 px / barre / valeur */
@@ -194,10 +187,6 @@
     --grid-admin-promo-codes: minmax(0, 1fr) 23.75rem; /* Codes promo : liste 720 / formulaire 380 px */
     --size-admin-promo-codes-table-min: 44rem; /* Liste des codes promo (6 colonnes) : défile en dessous */
     --size-stats-chart: 14rem; /* Hauteur du graphique des revenus */
-  }
-
-  .theme-dark {
-    color-scheme: dark;
   }
 
   /* Un seul anneau de focus pour toute l'application, visible uniquement au

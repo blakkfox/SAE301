@@ -41,6 +41,12 @@ final class CatalogueController
     /** Nombre de produits par page : 4 rangées de 3, ou 3 rangées de 4. */
     private const PER_PAGE = 12;
 
+    /** Longueur maximale de la recherche, en caractères (au-delà, elle est tronquée). */
+    private const SEARCH_MAX = 60;
+
+    /** Nombre maximal de mots de la recherche pris en compte. */
+    private const SEARCH_WORDS_MAX = 5;
+
     /** Le modèle qui interroge la base, fourni à la construction. */
     private ProductModel $products;
 
@@ -74,6 +80,9 @@ final class CatalogueController
      * parente renvoie aussi les produits de ses sous-catégories.
      * inStock=1 masque les produits épuisés (US STK-b) : total et pagination
      * ne comptent alors que les produits en stock. Toute autre valeur est ignorée.
+     * q (recherche de l'en-tête) : ne garde que les produits dont le nom, la
+     * description ou la catégorie contient chacun des mots saisis ; la réponse rappelle la
+     * recherche appliquée dans « q » (chaîne vide sans recherche).
      * 404 si la catégorie demandée n'existe pas.
      *
      * @param Request $request Requête entrante.
@@ -107,8 +116,10 @@ final class CatalogueController
         }
 
         $inStockOnly = $request->parametre('inStock') === '1';
+        $search      = self::normalizeSearch($request->parametre('q', ''));
+        $words       = self::searchWords($search);
 
-        $total     = $this->products->countVisible($categoryId, $inStockOnly);
+        $total     = $this->products->countVisible($categoryId, $inStockOnly, $words);
         $pageCount = max(1, (int) ceil($total / self::PER_PAGE));
 
         // filter_var refuse « 2abc » ou « -1 », que (int) aurait acceptés.
@@ -121,6 +132,7 @@ final class CatalogueController
             ($page - 1) * self::PER_PAGE,
             $categoryId,
             $inStockOnly,
+            $words,
         );
 
         Response::json([
@@ -130,8 +142,43 @@ final class CatalogueController
             'pageCount' => $pageCount,
             'perPage'   => self::PER_PAGE,
             'total'     => $total,
+            'q'         => $search,
             'promotion' => $this->products->findPromotion(),
         ]);
+    }
+
+    /**
+     * Recherche telle qu'elle est appliquée : sans espaces autour ni espaces
+     * multiples, tronquée à SEARCH_MAX caractères.
+     *
+     * @param string $search Valeur reçue du paramètre q.
+     *
+     * @return string Chaîne vide s'il n'y a rien à chercher.
+     */
+    private static function normalizeSearch(string $search): string
+    {
+        $search = trim(preg_replace('/\s+/u', ' ', $search) ?? '');
+
+        return mb_substr($search, 0, self::SEARCH_MAX);
+    }
+
+    /**
+     * Mots de la recherche, sans doublon, au plus SEARCH_WORDS_MAX : chacun
+     * doit se trouver dans le nom ou la description du produit.
+     *
+     * @param string $search Recherche normalisée.
+     *
+     * @return array<int, string>
+     */
+    private static function searchWords(string $search): array
+    {
+        if ($search === '') {
+            return [];
+        }
+
+        $words = array_values(array_unique(explode(' ', $search)));
+
+        return array_slice($words, 0, self::SEARCH_WORDS_MAX);
     }
 
     /**

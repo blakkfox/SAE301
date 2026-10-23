@@ -1,10 +1,13 @@
 <div class="flex min-h-screen flex-col">
+  <!-- Évitement : premier élément atteint au clavier, visible seulement quand
+       il a le focus. Le layout place le focus sur <main> sans changer l'adresse. -->
+  <a href="#contenu" data-skip-link class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-lg focus:bg-page focus:px-4 focus:py-3 focus:text-small focus:font-semibold focus:text-ink focus:shadow-lg">Aller au contenu</a>
   <slot name="header"></slot>
   <!-- Bandeau de la promotion automatique (PRO-c), rempli dès que l'API
        répond ; vide s'il n'y a pas de promotion. -->
   <div data-promo-banner></div>
   <!-- flex-1 : le pied de page reste en bas même sur une page courte. -->
-  <main class="flex-1">
+  <main id="contenu" tabindex="-1" class="flex-1 outline-none">
     <!-- Le slot sans nom reçoit la page affichée (voir lib/router.js). -->
     <slot></slot>
   </main>

@@ -1,8 +1,12 @@
 <!-- Menu déroulant « Catégories » de l'en-tête (absent de la maquette :
-     dessiné dans la charte). Il est placé hors de la navigation, qui défile
-     horizontalement sur mobile et le couperait. Pleine largeur sous l'en-tête ;
-     hidden tant que le menu est fermé (voir layouts/root/layout.js). -->
-<div id="category-menu" data-category-menu hidden class="absolute inset-x-0 top-full z-30 border-y border-line-subtle bg-page shadow-lg">
+     dessiné dans la charte). Il suit son bouton dans la navigation, pour
+     l'ordre du clavier ; absolute, il se place par rapport à la ligne de
+     l'en-tête (relative), si bien que la navigation, qui défile
+     horizontalement sur mobile, ne le coupe pas (aucun élément positionné
+     entre les deux). Pleine largeur sous l'en-tête ; hidden tant que le menu
+     est fermé (voir layouts/root/layout.js). font-normal et whitespace-normal
+     annulent les styles hérités de la liste de navigation. -->
+<div id="category-menu" data-category-menu hidden class="absolute inset-x-0 top-full z-30 border-y border-line-subtle bg-page font-normal whitespace-normal shadow-lg">
   <div class="mx-auto flex max-h-(--size-menu-max-height) max-w-312 flex-col gap-6 overflow-y-auto px-4 py-6 sm:px-6 lg:py-8">
     <slot name="content"></slot>
     <a href="/" data-link class="self-start text-small font-semibold text-accent underline-offset-4 hover:underline">Voir tout le catalogue <span aria-hidden="true">→</span></a>

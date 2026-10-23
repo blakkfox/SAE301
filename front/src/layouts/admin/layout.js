@@ -1,5 +1,5 @@
 import { AuthData } from "../../data/auth.js";
-import { htmlToFragment, replaceKeepingFocus } from "../../lib/utils.js";
+import { bindSkipLink, htmlToFragment, replaceKeepingFocus } from "../../lib/utils.js";
 import { AdminSidebarView } from "../../ui/admin-sidebar/index.js";
 import template from "./template.html?raw";
 
@@ -104,6 +104,7 @@ V.init = function (sidebarData) {
   let sidebar = V.createSidebarFragment(sidebarData);
   V.sidebar = sidebar.firstElementChild;
   layout.querySelector('slot[name="sidebar"]').replaceWith(sidebar);
+  bindSkipLink(layout);
 
   return layout;
 };

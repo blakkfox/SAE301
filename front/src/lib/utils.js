@@ -106,4 +106,70 @@ function applyFieldErrors(root, errors) {
   }
 }
 
-export { genericRenderer, htmlToFragment, replaceKeepingFocus, applyFieldErrors };
+/**
+ * Numéro de page lu dans l'adresse (?page=2). Une valeur absente ou invalide
+ * donne la première page ; le serveur ramène lui-même une page trop grande à
+ * la dernière.
+ *
+ * @param {string|undefined} value - Valeur du paramètre, telle que lue.
+ * @returns {number} Au moins 1.
+ */
+function toPageNumber(value) {
+  let page = Number(value);
+  return Number.isInteger(page) && page >= 1 ? page : 1;
+}
+
+/**
+ * Inscrit les réglages d'une liste (page, tri, filtre) dans l'adresse, sans
+ * recharger : une nouvelle entrée d'historique, pour que « Précédent » revienne
+ * aux réglages d'avant et que l'adresse puisse être partagée. Rien n'est
+ * ajouté si l'adresse ne change pas.
+ *
+ * @param {Object<string, string>} query - Paramètres à inscrire ; vide pour aucun.
+ */
+function pushQuery(query) {
+  let search = new URLSearchParams(query).toString();
+  let url = window.location.pathname + (search === "" ? "" : `?${search}`);
+
+  if (url !== window.location.pathname + window.location.search) {
+    window.history.pushState(null, "", url);
+  }
+}
+
+/**
+ * Corrige le numéro de page de l'adresse, sans nouvelle entrée d'historique :
+ * le serveur a pu ramener une page trop grande (?page=99) à la dernière. Les
+ * autres paramètres sont gardés ; la première page n'y figure pas.
+ *
+ * @param {number} page - Page réellement affichée.
+ */
+function replacePageNumber(page) {
+  let params = new URLSearchParams(window.location.search);
+  if (page > 1) params.set("page", String(page));
+  else params.delete("page");
+
+  let search = params.toString();
+  let url = window.location.pathname + (search === "" ? "" : `?${search}`);
+
+  if (url !== window.location.pathname + window.location.search) {
+    window.history.replaceState(window.history.state, "", url);
+  }
+}
+
+/**
+ * Relie le lien d'évitement « Aller au contenu » (data-skip-link) d'un
+ * layout : il place le focus sur <main id="contenu"> sans changer l'adresse.
+ * Une ancre (#contenu) serait vue par le routeur comme une navigation.
+ *
+ * @param {ParentNode} layout - Fragment du layout, qui contient le lien et <main>.
+ */
+function bindSkipLink(layout) {
+  let main = layout.querySelector("#contenu");
+
+  layout.querySelector("[data-skip-link]")?.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    main.focus();
+  });
+}
+
+export { genericRenderer, htmlToFragment, replaceKeepingFocus, applyFieldErrors, toPageNumber, pushQuery, replacePageNumber, bindSkipLink };

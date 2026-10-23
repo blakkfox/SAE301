@@ -13,6 +13,10 @@ const COULEURS = {
 // Message d'information ou d'erreur. data vaut { type: "erreur" | "succes",
 // texte }, ou null pour n'afficher aucun message.
 let MessageView = {
+  /**
+   * @param {?{type: "erreur"|"succes", texte: string}} data - Message, ou null.
+   * @returns {string} Le HTML du message, ou une chaîne vide.
+   */
   html: function (data) {
     if (data === null) {
       return "";
@@ -20,6 +24,10 @@ let MessageView = {
     return genericRenderer(template, { texte: data.texte, couleurs: COULEURS[data.type] });
   },
 
+  /**
+   * @param {?{type: "erreur"|"succes", texte: string}} data - Message, ou null.
+   * @returns {DocumentFragment} Le message, prêt à être inséré (vide sans message).
+   */
   dom: function (data) {
     return htmlToFragment(MessageView.html(data));
   },

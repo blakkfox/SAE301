@@ -8,6 +8,7 @@ import { StockBadgeView } from "../../ui/stock-badge/index.js";
 import template from "./template.html?raw";
 import templateContent from "./content.html?raw";
 import templateCategoryOption from "./category-option.html?raw";
+import templateImageField from "./image-field.html?raw";
 import templateImageOption from "./image-option.html?raw";
 import templatePhoto from "./photo.html?raw";
 import templatePhotoPlaceholder from "./photo-placeholder.html?raw";
@@ -78,6 +79,9 @@ const QUANTITY_CLASSES = {
 
 const SERVER_DOWN = "Le serveur ne répond pas. Vérifiez votre connexion, puis réessayez.";
 
+// Emplacements de photos : ceux de la galerie de la fiche (IMAGES_MAX côté serveur).
+const IMAGE_SLOTS = 4;
+
 // ---------------------------------------------------------------------------
 // M — Modèle
 // ---------------------------------------------------------------------------
@@ -89,6 +93,7 @@ let M = {
   message: "", // message des états "login" et "error"
   notice: null, // { type, texte } au-dessus du contenu, ou null
   values: null, // saisie du formulaire (voir M.toValues)
+  isDirty: false, // la saisie a changé depuis le chargement ou le dernier enregistrement
   errors: {}, // erreurs du formulaire, par champ (« variants.0.reference »…)
   isSubmitting: false, // un enregistrement est en cours
   deletion: null, // { blockedMessage } : suppression demandée, ou null
@@ -108,6 +113,7 @@ M.reset = function (id) {
   M.message = "";
   M.notice = null;
   M.values = null;
+  M.isDirty = false;
   M.errors = {};
   M.isSubmitting = false;
   M.deletion = null;
@@ -158,6 +164,7 @@ M.load = async function () {
     M.state = "form";
     M.productId = M.response.product?.id ?? null;
     M.values = M.toValues(M.response.product);
+    M.isDirty = false;
   } catch (error) {
     if (M.handleAccessError(error)) return;
 
@@ -185,41 +192,41 @@ M.formatAmount = function (amount) {
  * existante garde previousStock, le stock affiché au chargement.
  *
  * @param {?Object} product - Fiche de GET /api/admin/product, ou null (nouveau produit).
- * @returns {{name: string, price: string, categoryId: ?number, description: string, lowStockThreshold: string,
- *   variantAxis: string, image: ?string, isActive: boolean,
- *   variants: Array<{id: ?number, label: string, reference: string, stock: string, previousStock: ?number}>,
+ * @returns {{name: string, categoryId: ?number, description: string, lowStockThreshold: string,
+ *   variantAxis: string, images: string[], isActive: boolean,
+ *   variants: Array<{id: ?number, label: string, reference: string, price: string, stock: string,
+ *     previousStock: ?number}>,
  *   options: Array<{id: ?number, label: string, description: string, price: string}>}}
  */
 M.toValues = function (product) {
   if (product === null) {
     return {
       name: "",
-      price: "",
       categoryId: null,
       description: "",
       lowStockThreshold: String(LOW_STOCK_MAX),
       variantAxis: "",
-      image: null,
+      images: M.toImageSlots([]),
       isActive: true,
       // Tout produit a au moins une variante : « Unique » s'il n'a pas de déclinaison.
-      variants: [{ id: null, label: "Unique", reference: "", stock: "0", previousStock: null }],
+      variants: [{ id: null, label: "Unique", reference: "", price: "", stock: "0", previousStock: null }],
       options: [],
     };
   }
 
   return {
     name: product.name,
-    price: M.formatAmount(product.price),
     categoryId: product.categoryId,
     description: product.description ?? "",
     lowStockThreshold: String(product.lowStockThreshold),
     variantAxis: product.variantAxis ?? "",
-    image: product.image,
+    images: M.toImageSlots(product.images),
     isActive: product.isActive,
     variants: product.variants.map((variant) => ({
       id: variant.id,
       label: variant.label,
       reference: variant.reference,
+      price: M.formatAmount(variant.price),
       stock: String(variant.stock),
       previousStock: variant.stock,
     })),
@@ -233,10 +240,19 @@ M.toValues = function (product) {
 };
 
 /**
+ * @param {string[]} images - Photos enregistrées, dans l'ordre.
+ * @returns {string[]} Les IMAGE_SLOTS emplacements du formulaire, « » pour un vide.
+ */
+M.toImageSlots = function (images) {
+  return Array.from({ length: IMAGE_SLOTS }, (unused, index) => images[index] ?? "");
+};
+
+/**
  * Garde la saisie en cours, pour qu'une reconstruction de la page ne
  * l'efface pas. Les lignes sont affichées dans l'ordre de M.values : leur
  * id et previousStock, que le formulaire ne montre pas, sont repris par
- * position.
+ * position. La fiche est désormais modifiée : la quitter demandera
+ * confirmation (voir lib/router.js).
  *
  * @param {Object} formValues - Saisie lue dans le formulaire (V.readValues).
  */
@@ -246,14 +262,18 @@ M.setValues = function (formValues) {
     variants: formValues.variants.map((variant, index) => ({ ...M.values.variants[index], ...variant })),
     options: formValues.options.map((option, index) => ({ ...M.values.options[index], ...option })),
   };
+  M.isDirty = true;
 };
 
 /**
- * « + Ajouter une variante » : une ligne vide, à enregistrer.
+ * « + Ajouter une variante » : une ligne vide, à enregistrer. Elle reprend le
+ * prix de la dernière variante, le plus souvent le même.
  */
 M.addVariant = function () {
-  M.values.variants = [...M.values.variants, { id: null, label: "", reference: "", stock: "0", previousStock: null }];
+  let price = M.values.variants.at(-1)?.price ?? "";
+  M.values.variants = [...M.values.variants, { id: null, label: "", reference: "", price, stock: "0", previousStock: null }];
   M.errors = {};
+  M.isDirty = true;
 };
 
 /**
@@ -264,6 +284,7 @@ M.addVariant = function () {
 M.removeVariant = function (index) {
   M.values.variants = M.values.variants.filter((variant, position) => position !== index);
   M.errors = {};
+  M.isDirty = true;
 };
 
 /**
@@ -272,6 +293,7 @@ M.removeVariant = function (index) {
 M.addOption = function () {
   M.values.options = [...M.values.options, { id: null, label: "", description: "", price: "" }];
   M.errors = {};
+  M.isDirty = true;
 };
 
 /**
@@ -282,6 +304,7 @@ M.addOption = function () {
 M.removeOption = function (index) {
   M.values.options = M.values.options.filter((option, position) => position !== index);
   M.errors = {};
+  M.isDirty = true;
 };
 
 /**
@@ -307,20 +330,21 @@ M.toPayload = function () {
 
   return {
     name: values.name,
-    price: values.price,
     categoryId: values.categoryId,
     description: values.description,
     lowStockThreshold: values.lowStockThreshold,
     variantAxis: values.variantAxis,
-    image: values.image,
+    // Emplacements vides retirés : la première photo choisie devient la principale.
+    images: values.images.filter((image) => image !== ""),
     isActive: values.isActive,
     variants: values.variants.map((variant) =>
       variant.id === null
-        ? { id: null, label: variant.label, reference: variant.reference, stock: variant.stock }
+        ? { id: null, label: variant.label, reference: variant.reference, price: variant.price, stock: variant.stock }
         : {
             id: variant.id,
             label: variant.label,
             reference: variant.reference,
+            price: variant.price,
             stock: variant.stock,
             previousStock: variant.previousStock,
           },
@@ -369,6 +393,7 @@ M.submit = async function () {
     M.response.product = response.product;
     M.productId = response.product.id;
     M.values = M.toValues(response.product);
+    M.isDirty = false;
     M.errors = {};
     M.notice = {
       type: "succes",
@@ -480,7 +505,7 @@ M.getLiveData = function () {
     axisLabel: values.variantAxis.trim() === "" ? "Variante" : values.variantAxis.trim(),
     variantStatuses: values.variants.map((variant) => getStockStatus(M.parseCount(variant.stock), threshold)),
     photo: {
-      url: ProductData.imageUrl(values.image),
+      url: ProductData.imageUrl(values.images.find((image) => image !== "") ?? null),
       name: values.name.trim() === "" ? "Photo du produit" : values.name.trim(),
     },
     publication: values.isActive ? PUBLICATION.online : PUBLICATION.offline,
@@ -526,22 +551,23 @@ M.getFormData = function () {
 
   // Une photo enregistrée mais absente du dossier reste proposée : le
   // serveur la refusera à l'enregistrement, ce qui signale le problème.
-  let images = M.response.images.map((file) => ({ file }));
-  if (values.image !== null && !M.response.images.includes(values.image)) {
-    images = [{ file: values.image }, ...images];
-  }
+  let missing = values.images.filter((image) => image !== "" && !M.response.images.includes(image));
+  let images = [...missing, ...M.response.images].map((file) => ({ file }));
 
   return {
     title: M.isNew() ? "Nouveau produit" : "Modifier un produit",
     adminLabel: `${M.response.admin.firstName} (admin) · Lyon Centre`,
     breadcrumb: M.isNew() ? "Nouveau produit" : product.name,
     name: values.name,
-    price: values.price,
     description: values.description,
     lowStockThreshold: values.lowStockThreshold,
     variantAxis: values.variantAxis,
     categoryId: values.categoryId,
-    image: values.image,
+    imageFields: values.images.map((image, index) => ({
+      index,
+      label: index === 0 ? "Photo 1 (principale)" : `Photo ${index + 1}`,
+      value: image,
+    })),
     isActive: values.isActive,
     categories: M.response.categories.map((category) => ({
       id: category.id,
@@ -555,6 +581,7 @@ M.getFormData = function () {
       number: index + 1,
       label: variant.label,
       reference: variant.reference,
+      price: variant.price,
       stock: variant.stock,
     })),
     variantsCaption: `${values.variants.length} ${values.variants.length > 1 ? "variantes" : "variante"}`,
@@ -570,6 +597,7 @@ M.getFormData = function () {
     movements: M.isNew() ? null : product.movements.map(M.toMovement),
     live: M.getLiveData(),
     errors: M.errors,
+    isDirty: M.isDirty,
     isSubmitting: M.isSubmitting,
     submitLabel: M.isSubmitting ? "Enregistrement…" : M.isNew() ? "Créer le produit" : "Enregistrer",
     canDelete: !M.isNew(),
@@ -629,6 +657,7 @@ C.init = async function (params) {
 C.handler_formChange = function (values) {
   M.setValues(values);
   V.renderLive(M.getLiveData());
+  V.renderDirty(M.isDirty);
 };
 
 /**
@@ -791,6 +820,15 @@ V.renderLive = function (live) {
 };
 
 /**
+ * Signale au routeur que la fiche a des modifications non enregistrées.
+ *
+ * @param {boolean} isDirty
+ */
+V.renderDirty = function (isDirty) {
+  V.content.querySelector("form")?.toggleAttribute("data-unsaved", isDirty);
+};
+
+/**
  * Remplace l'adresse affichée, sans changer de page (produit créé).
  *
  * @param {string} path - Chemin de route, par exemple « /admin/produits/19 ».
@@ -867,9 +905,7 @@ V.createFormFragment = function (data) {
   form.querySelector('slot[name="categories"]').replaceWith(
     ...data.categories.map((category) => htmlToFragment(genericRenderer(templateCategoryOption, category))),
   );
-  form.querySelector('slot[name="images"]').replaceWith(
-    ...data.images.map((image) => htmlToFragment(genericRenderer(templateImageOption, image))),
-  );
+  form.querySelector('slot[name="image-fields"]').replaceWith(V.createImageFieldsFragment(data.imageFields, data.images));
   form.querySelector('slot[name="options"]').replaceWith(V.createOptionsFragment(data.options, data.optionsCaption));
   form.querySelector('slot[name="variants"]').replaceWith(
     V.createVariantsFragment(data.variants, data.variantsCaption, data.live.axisLabel),
@@ -879,9 +915,10 @@ V.createFormFragment = function (data) {
 
   // Un template n'a pas de condition : valeurs et états se règlent ici.
   form.elements.categoryId.value = data.categoryId === null ? "" : String(data.categoryId);
-  form.elements.image.value = data.image ?? "";
   form.elements.isActive.checked = data.isActive;
   form.setAttribute("aria-busy", String(data.isSubmitting));
+  // Lu par le routeur : confirmation avant de quitter une fiche modifiée.
+  form.toggleAttribute("data-unsaved", data.isDirty);
   form.querySelector('[type="submit"]').disabled = data.isSubmitting;
   applyFieldErrors(form, data.errors);
   V.applyLive(fragment, data.live);
@@ -926,16 +963,16 @@ V.readValues = function (form) {
 
   return {
     name: elements.name.value,
-    price: elements.price.value,
     categoryId: elements.categoryId.value === "" ? null : Number(elements.categoryId.value),
     description: elements.description.value,
     lowStockThreshold: elements.lowStockThreshold.value,
     variantAxis: elements.variantAxis.value,
-    image: elements.image.value === "" ? null : elements.image.value,
+    images: Array.from({ length: IMAGE_SLOTS }, (unused, index) => elements.namedItem(`images.${index}`).value),
     isActive: elements.isActive.checked,
     variants: Array.from({ length: variantCount }, (unused, index) => ({
       label: elements.namedItem(`variants.${index}.label`).value,
       reference: elements.namedItem(`variants.${index}.reference`).value,
+      price: elements.namedItem(`variants.${index}.price`).value,
       stock: elements.namedItem(`variants.${index}.stock`).value,
     })),
     options: Array.from({ length: optionCount }, (unused, index) => ({
@@ -967,6 +1004,27 @@ V.applyLive = function (root, live) {
 
   let hint = root.querySelector('[data-live="category-hint"]');
   if (hint !== null) hint.textContent = live.categoryHint;
+};
+
+/**
+ * @param {Array<{index: number, label: string, value: string}>} fields - Emplacements de photos.
+ * @param {Array<{file: string}>} images - Fichiers proposés.
+ * @returns {DocumentFragment} Un sélecteur par emplacement, sur sa photo.
+ */
+V.createImageFieldsFragment = function (fields, images) {
+  let fragment = new DocumentFragment();
+
+  for (const field of fields) {
+    let item = htmlToFragment(genericRenderer(templateImageField, field));
+    item
+      .querySelector('slot[name="options"]')
+      .replaceWith(...images.map((image) => htmlToFragment(genericRenderer(templateImageOption, image))));
+    // Un template n'a pas de condition : le fichier choisi se règle ici.
+    item.querySelector("select").value = field.value;
+    fragment.append(item);
+  }
+
+  return fragment;
 };
 
 /**

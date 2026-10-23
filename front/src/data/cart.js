@@ -55,8 +55,7 @@ let isValidItem = function (item) {
     Number.isInteger(item.variantId) &&
     item.variantId > 0 &&
     Number.isInteger(item.quantity) &&
-    item.quantity >= 1 &&
-    item.quantity <= MAX_QUANTITY
+    item.quantity >= 1
   );
 };
 
@@ -78,7 +77,8 @@ let toOptionIds = function (optionIds) {
 
 /**
  * Les lignes du panier. Une valeur abîmée ou un stockage indisponible donne
- * un panier vide ; une ligne invalide est ignorée.
+ * un panier vide ; une ligne invalide est ignorée, une quantité au-delà de
+ * MAX_QUANTITY y est ramenée (la ligne n'est pas perdue).
  *
  * @returns {Array<{variantId: number, quantity: number, optionIds: number[]}>}
  */
@@ -89,7 +89,7 @@ CartData.read = function () {
 
     return items.filter(isValidItem).map((item) => ({
       variantId: item.variantId,
-      quantity: item.quantity,
+      quantity: Math.min(item.quantity, MAX_QUANTITY),
       optionIds: toOptionIds(item.optionIds),
     }));
   } catch (error) {
@@ -280,6 +280,22 @@ CartData.quantityOf = function (variantId) {
  */
 CartData.remainingFor = function (variantId, stock) {
   return Math.max(0, Math.min(stock, MAX_QUANTITY) - CartData.quantityOf(variantId));
+};
+
+/**
+ * Message affiché quand plus rien ne peut être ajouté (remainingFor vaut 0) :
+ * le stock est épuisé par le panier, ou c'est la limite MAX_QUANTITY par
+ * article qui est atteinte alors qu'il reste du stock.
+ *
+ * @param {string} productName - Nom du produit, par exemple « Porte-clés Rubber Wing ».
+ * @param {number} stock - Stock de la variante, lu dans l'API.
+ * @returns {string}
+ */
+CartData.limitMessage = function (productName, stock) {
+  if (stock > MAX_QUANTITY) {
+    return `Vous avez déjà ${MAX_QUANTITY} ${productName} dans votre panier : c'est le maximum par article.`;
+  }
+  return `Votre panier contient déjà tout le stock disponible de ${productName}.`;
 };
 
 /**

@@ -105,6 +105,9 @@ final class AdminController
     /** Nombre maximal d'options d'un produit. */
     private const OPTIONS_MAX = 10;
 
+    /** Nombre maximal de photos d'un produit : les emplacements de la galerie de la fiche. */
+    private const IMAGES_MAX = 4;
+
     /** Longueur maximale du libellé d'une option (colonne product_option.label). */
     private const OPTION_LABEL_MAX = 60;
 
@@ -692,9 +695,9 @@ final class AdminController
 
     /**
      * POST /api/admin/products, corps JSON
-     * { name, description, price, categoryId, image, variantAxis,
+     * { name, description, categoryId, images: ["photo.jpg"…], variantAxis,
      *   lowStockThreshold, isActive, variants: [{ id: null, label, reference,
-     *   stock }], options: [{ id: null, label, description, price }] }.
+     *   price, stock }], options: [{ id: null, label, description, price }] }.
      *
      * Crée le produit (slug calculé depuis le nom) et répond { product }, en
      * 201. Le stock initial de chaque variante est journalisé (réassort).
@@ -901,15 +904,17 @@ final class AdminController
      *
      * @param int $id Produit existant.
      *
-     * @return array<string, mixed> Le produit de findAdminById, avec variants
-     *                              (id, label, reference, stock), options
+     * @return array<string, mixed> Le produit de findAdminById, avec images
+     *                              (noms de fichier, dans l'ordre), variants
+     *                              (id, label, reference, price, stock), options
      *                              (id, label, description, price) et
      *                              movements (MOVEMENT_LIMIT derniers mouvements de stock).
      */
     private function productDetail(int $id): array
     {
         return $this->products->findAdminById($id) + [
-            'variants'  => $this->products->findVariants($id),
+            'images'    => $this->products->findImages($id),
+            'variants'  => $this->products->findAdminVariants($id),
             'options'   => $this->products->findOptions($id),
             'movements' => $this->products->findMovements($id, self::MOVEMENT_LIMIT),
         ];
@@ -946,7 +951,7 @@ final class AdminController
      * Photos proposées au back-office : les fichiers déjà présents dans le
      * dossier des photos produit (front/public/images/produits, copié dans
      * front/dist par npm run build). C'est aussi la liste blanche des noms
-     * acceptés pour la colonne product.image.
+     * acceptés pour la table product_image.
      *
      * @return array<int, string> Noms de fichier, par ordre alphabétique.
      */
@@ -971,9 +976,9 @@ final class AdminController
      *
      * - name : obligatoire, au plus PRODUCT_NAME_MAX caractères ;
      * - description : facultative, au plus PRODUCT_DESCRIPTION_MAX caractères ;
-     * - price : prix TTC positif, « 379,90 » ou 379.9 ;
      * - categoryId : une catégorie existante, masquée ou non ;
-     * - image : null, ou une photo de productImages() ;
+     * - images : au plus IMAGES_MAX photos de productImages(), sans doublon,
+     *   dans l'ordre de la galerie (la première est celle des cartes) ;
      * - variantAxis : facultatif, obligatoire dès deux variantes ;
      * - lowStockThreshold : entier de 0 à THRESHOLD_MAX ;
      * - isActive : booléen ;
@@ -983,9 +988,10 @@ final class AdminController
      * @param array<string, mixed> $body      Corps JSON reçu.
      * @param int|null             $productId Produit modifié, ou null à la création.
      *
-     * @return array{categoryId:int, name:string, description:?string, price:string, image:?string,
+     * @return array{categoryId:int, name:string, description:?string, images:array<int, string>,
      *               variantAxis:?string, lowStockThreshold:int, isActive:bool,
-     *               variants:array<int, array{id:?int, label:string, reference:string, stockDelta:int}>,
+     *               variants:array<int, array{id:?int, label:string, reference:string, price:string,
+     *                                         stockDelta:int}>,
      *               options:array<int, array{id:?int, label:string, description:?string, price:string}>}
      */
     private function validateProduct(array $body, ?int $productId): array
@@ -1007,21 +1013,12 @@ final class AdminController
             $errors['description'] = 'La description ne doit pas dépasser ' . self::PRODUCT_DESCRIPTION_MAX . ' caractères.';
         }
 
-        $price = self::parsePrice($body['price'] ?? null);
-        if ($price === null) {
-            $errors['price'] = 'Indiquez un prix en euros, par exemple 379,90.';
-        }
-
         $categoryId = filter_var($body['categoryId'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
         if ($categoryId === false || $this->categories->findById($categoryId) === null) {
             $errors['categoryId'] = 'Choisissez une catégorie.';
         }
 
-        $image = $body['image'] ?? null;
-        $image = $image === '' ? null : $image;
-        if ($image !== null && (!is_string($image) || !in_array($image, $this->productImages(), true))) {
-            $errors['image'] = 'Choisissez une photo de la liste.';
-        }
+        $images = $this->validateImages($body['images'] ?? [], $errors);
 
         $threshold = filter_var(
             $body['lowStockThreshold'] ?? null,
@@ -1068,8 +1065,7 @@ final class AdminController
             'categoryId'        => $categoryId,
             'name'              => $name,
             'description'       => $description === '' ? null : $description,
-            'price'             => $price,
-            'image'             => $image,
+            'images'            => $images,
             'variantAxis'       => $variantAxis === '' ? null : $variantAxis,
             'lowStockThreshold' => $threshold,
             'isActive'          => $isActive,
@@ -1084,6 +1080,7 @@ final class AdminController
      * - label : obligatoire, au plus VARIANT_LABEL_MAX caractères, unique dans le produit ;
      * - reference : obligatoire, lettres, chiffres et tirets (mise en
      *   majuscules), au plus REFERENCE_MAX caractères, unique ;
+     * - price : prix TTC positif de la variante, « 379,90 » ou 379.9 ;
      * - stock : entier de 0 à STOCK_MAX ; previousStock (variante existante) :
      *   le stock affiché au chargement, dont on tire l'écart à appliquer.
      * Une variante retirée ne doit pas être dans une commande en cours ou disponible.
@@ -1092,7 +1089,7 @@ final class AdminController
      * @param int|null              $productId Produit modifié, ou null.
      * @param array<string, string> $errors    Erreurs par champ, complétées ici.
      *
-     * @return array<int, array{id:?int, label:string, reference:string, stockDelta:int}>
+     * @return array<int, array{id:?int, label:string, reference:string, price:string, stockDelta:int}>
      */
     private function validateVariants(mixed $variants, ?int $productId, array &$errors): array
     {
@@ -1105,7 +1102,7 @@ final class AdminController
             return [];
         }
 
-        $existingIds = $productId === null ? [] : array_column($this->products->findVariants($productId), 'id');
+        $existingIds = $productId === null ? [] : array_column($this->products->findAdminVariants($productId), 'id');
         $valid       = [];
         $labels      = [];
         $references  = [];
@@ -1141,6 +1138,11 @@ final class AdminController
                 $errors[$key . '.reference'] = 'Deux variantes ont cette référence.';
             }
 
+            $price = self::parsePrice($row['price'] ?? null);
+            if ($price === null) {
+                $errors[$key . '.price'] = 'Un prix en euros, par exemple 379,90.';
+            }
+
             $stockRange = ['options' => ['min_range' => 0, 'max_range' => self::STOCK_MAX]];
             $stock      = filter_var($row['stock'] ?? null, FILTER_VALIDATE_INT, $stockRange);
             $previous   = $id === null ? 0 : filter_var($row['previousStock'] ?? null, FILTER_VALIDATE_INT, $stockRange);
@@ -1154,6 +1156,7 @@ final class AdminController
                 'id'         => $id,
                 'label'      => $label ?? '',
                 'reference'  => $reference,
+                'price'      => $price ?? '0.00',
                 'stockDelta' => is_int($stock) && is_int($previous) ? $stock - $previous : 0,
             ];
         }
@@ -1164,6 +1167,38 @@ final class AdminController
             if ($locked !== []) {
                 $errors['variants'] = 'Une variante retirée est dans une commande en cours ou disponible : '
                     . 'gardez-la jusqu\'au retrait ou à l\'annulation de la commande.';
+            }
+        }
+
+        return $valid;
+    }
+
+    /**
+     * Valide les photos saisies : une liste de noms de fichier, chacun parmi
+     * productImages(), sans doublon, au plus IMAGES_MAX.
+     *
+     * @param mixed                 $images Valeur « images » du corps JSON.
+     * @param array<string, string> $errors Erreurs par champ, complétées ici.
+     *
+     * @return array<int, string> Les photos, dans l'ordre reçu.
+     */
+    private function validateImages(mixed $images, array &$errors): array
+    {
+        if (!is_array($images) || !array_is_list($images) || count($images) > self::IMAGES_MAX) {
+            $errors['images'] = 'Choisissez au plus ' . self::IMAGES_MAX . ' photos.';
+            return [];
+        }
+
+        $available = $this->productImages();
+        $valid     = [];
+
+        for ($i = 0; $i < count($images); $i++) {
+            if (!is_string($images[$i]) || !in_array($images[$i], $available, true)) {
+                $errors["images.{$i}"] = 'Choisissez une photo de la liste.';
+            } elseif (in_array($images[$i], $valid, true)) {
+                $errors["images.{$i}"] = 'Cette photo est déjà choisie.';
+            } else {
+                $valid[] = $images[$i];
             }
         }
 

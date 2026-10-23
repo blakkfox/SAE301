@@ -8,6 +8,7 @@
 -- Modèle (lot 0, voir analyse-user-stories.md) :
 --
 --     category 1 ── n product 1 ── n variant
+--                           ├── n product_image
 --                           ├── n product_feature
 --                           └── n product_option   (US OPT-c)
 --
@@ -22,10 +23,11 @@
 --     customer_order 1 ── n order_event n ── 0..1 customer      (US PIL-b)
 --
 --     promo_code : codes promo saisis au back-office (US PRO-b)
+--     login_attempt : tentatives d'identification refusées (limite des essais)
 --
 -- Chaque produit a AU MOINS une variante (taille, coloris, garniture… ou
--- « Unique »). C'est la variante qui porte la référence et le stock : le
--- panier, les commandes et les stocks s'appuient sur variant.id. Le type de
+-- « Unique »). C'est la variante qui porte la référence, le prix et le
+-- stock : le panier, les commandes et les stocks s'appuient sur variant.id. Le type de
 -- variante (« Taille », « Coloris »…) est porté par le produit (US OPT-b).
 --
 -- 18 produits répartis sur 4 catégories : de quoi remplir 2 pages de 12, comme
@@ -34,7 +36,6 @@
 -- catégories (écran 3, DEC-a), les autres suivent le même principe.
 --
 -- L'import est rejouable : les tables sont supprimées avant d'être recréées.
--- ATTENTION : les anciennes tables du starter (film, genre) sont supprimées.
 -- ---------------------------------------------------------------------------
 
 -- Le jeu de caractères de la connexion est fixé explicitement : sans cela,
@@ -42,8 +43,7 @@
 SET NAMES utf8mb4;
 
 -- Ordre de suppression : d'abord les tables qui dépendent des autres.
-DROP TABLE IF EXISTS film;
-DROP TABLE IF EXISTS genre;
+DROP TABLE IF EXISTS login_attempt;
 DROP TABLE IF EXISTS promo_code;
 DROP TABLE IF EXISTS order_event;
 DROP TABLE IF EXISTS stock_movement;
@@ -54,6 +54,7 @@ DROP TABLE IF EXISTS customer;
 DROP TABLE IF EXISTS dealership;
 DROP TABLE IF EXISTS product_option;
 DROP TABLE IF EXISTS product_feature;
+DROP TABLE IF EXISTS product_image;
 DROP TABLE IF EXISTS variant;
 DROP TABLE IF EXISTS product;
 DROP TABLE IF EXISTS category;
@@ -96,16 +97,14 @@ CREATE TABLE category (
 -- ---------------------------------------------------------------------------
 -- Produits
 --
--- price est le prix de vente TTC, en euros. DECIMAL et non FLOAT : un prix ne
--- doit jamais subir d'arrondi binaire (0,1 + 0,2 ≠ 0,3 en FLOAT).
--- image est un nom de fichier de front/public/images/produits/, ou NULL tant
--- qu'aucune photo n'est disponible.
+-- Le prix est porté par chaque variante (un bidon de 4 L ne coûte pas le
+-- prix d'un bidon de 1 L), les photos par product_image.
 -- variant_axis (US OPT-b) nomme ce qui distingue ses variantes (« Taille »,
 -- « Coloris »…) : la fiche affiche « Taille : M » et le panier « Taille M ».
 -- NULL pour un produit à variante unique, qui n'a rien à choisir.
 -- low_stock_threshold (US GOF-a) : nombre d'unités jusqu'auquel une variante
 -- est « Bientôt épuisé » (STK-b) ; 3 par défaut, comme la légende du catalogue.
--- Les index sur price et created_at servent les tris du catalogue.
+-- L'index sur created_at sert le tri « Nouveautés » du catalogue.
 -- ---------------------------------------------------------------------------
 CREATE TABLE product (
     id          SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -113,8 +112,6 @@ CREATE TABLE product (
     name        VARCHAR(120)      NOT NULL,
     slug        VARCHAR(120)      NOT NULL,
     description TEXT                  NULL,
-    price       DECIMAL(8,2)      NOT NULL,
-    image       VARCHAR(120)          NULL,
     variant_axis VARCHAR(20)          NULL,
     low_stock_threshold TINYINT UNSIGNED NOT NULL DEFAULT 3,
     is_active   TINYINT(1)        NOT NULL DEFAULT 1,
@@ -123,13 +120,11 @@ CREATE TABLE product (
     PRIMARY KEY (id),
     UNIQUE KEY uq_product_slug (slug),
     KEY idx_product_category (category_id),
-    KEY idx_product_price (price),
     KEY idx_product_created (created_at),
 
     CONSTRAINT fk_product_category
         FOREIGN KEY (category_id) REFERENCES category (id)
         ON DELETE RESTRICT,
-    CONSTRAINT chk_product_price CHECK (price >= 0),
     CONSTRAINT chk_product_threshold CHECK (low_stock_threshold <= 99)
 ) ENGINE = InnoDB
   DEFAULT CHARSET = utf8mb4
@@ -138,7 +133,10 @@ CREATE TABLE product (
 -- ---------------------------------------------------------------------------
 -- Variantes
 --
--- La référence et le stock sont portés ici, jamais par le produit.
+-- La référence, le prix et le stock sont portés ici, jamais par le produit.
+-- price est le prix de vente TTC, en euros. DECIMAL et non FLOAT : un prix ne
+-- doit jamais subir d'arrondi binaire (0,1 + 0,2 ≠ 0,3 en FLOAT). Les cartes
+-- du catalogue affichent le plus bas (« dès 16,90 € ») et le trient.
 -- stock est UNSIGNED : MySQL refuse une valeur négative, dernier rempart
 -- contre la survente si une écriture oubliait de vérifier le stock.
 -- ---------------------------------------------------------------------------
@@ -147,14 +145,41 @@ CREATE TABLE variant (
     product_id SMALLINT UNSIGNED NOT NULL,
     reference  VARCHAR(40)       NOT NULL,
     label      VARCHAR(60)       NOT NULL,
+    price      DECIMAL(8,2)      NOT NULL,
     stock      INT UNSIGNED      NOT NULL DEFAULT 0,
     position   TINYINT UNSIGNED  NOT NULL DEFAULT 0,
 
     PRIMARY KEY (id),
     UNIQUE KEY uq_variant_reference (reference),
     UNIQUE KEY uq_variant_product_label (product_id, label),
+    KEY idx_variant_price (product_id, price),
 
     CONSTRAINT fk_variant_product
+        FOREIGN KEY (product_id) REFERENCES product (id)
+        ON DELETE CASCADE,
+    CONSTRAINT chk_variant_price CHECK (price >= 0)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- Photos des produits
+--
+-- file est un nom de fichier de front/public/images/produits/. position fixe
+-- l'ordre de la galerie : la première photo est celle des cartes et du
+-- panier. Un produit peut n'en avoir aucune : « Photo à venir ».
+-- ---------------------------------------------------------------------------
+CREATE TABLE product_image (
+    id         SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    product_id SMALLINT UNSIGNED NOT NULL,
+    file       VARCHAR(120)      NOT NULL,
+    position   TINYINT UNSIGNED  NOT NULL DEFAULT 0,
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_image_product_file (product_id, file),
+    KEY idx_image_product (product_id, position),
+
+    CONSTRAINT fk_image_product
         FOREIGN KEY (product_id) REFERENCES product (id)
         ON DELETE CASCADE
 ) ENGINE = InnoDB
@@ -477,6 +502,28 @@ CREATE TABLE promo_code (
   COLLATE = utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
+-- Tentatives d'identification refusées
+--
+-- Une ligne par échec de connexion (client ou back-office) ou de mot de passe
+-- oublié. AuthController compte les échecs récents par adresse IP et par
+-- e-mail pour freiner les essais à la chaîne (429), et efface ceux d'une
+-- adresse dès qu'elle s'identifie, ainsi que les plus anciens. ip tient une
+-- adresse IPv6 (45 caractères).
+-- ---------------------------------------------------------------------------
+CREATE TABLE login_attempt (
+    id         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    ip         VARCHAR(45)  NOT NULL,
+    email      VARCHAR(190) NOT NULL,
+    created_at DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+    KEY idx_attempt_ip (ip, created_at),
+    KEY idx_attempt_email (email, ip, created_at)
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
 -- Jeu de données
 -- ---------------------------------------------------------------------------
 -- Les catégories parentes sont insérées avant leurs sous-catégories, sinon la
@@ -517,108 +564,108 @@ INSERT INTO category (id, parent_id, name, slug, description, position, is_visib
     (15, NULL, 'Hiver', 'hiver', 'Équipement grand froid pour rouler tout l''hiver.', 5, 0);
 
 -- Les dates de création sont échelonnées pour que le tri « Nouveautés » soit
--- visible. Les produits 15, 17 et 18 n'ont pas encore de photo (image NULL).
+-- visible. Les photos sont dans product_image, plus bas.
 -- Chaque produit est rangé dans sa sous-catégorie (5 à 14).
-INSERT INTO product (id, category_id, name, slug, description, price, image, created_at) VALUES
+INSERT INTO product (id, category_id, name, slug, description, created_at) VALUES
     ( 1,  8, 'Porte-clés Rubber Wing',            'porte-cles-rubber-wing',
       'Porte-clés souple en caoutchouc aux couleurs de l''aile Honda.',
-        6.90, 'porte-cles-rubber-wing.jpg',         '2026-09-01 10:00:00'),
+        '2026-09-01 10:00:00'),
     ( 2, 14, 'Liquide de refroidissement Type 2', 'liquide-refroidissement-type-2',
       'Liquide de refroidissement prêt à l''emploi, compatible avec tous les moteurs Honda.',
-       10.50, 'liquide-refroidissement-type-2.png', '2026-09-02 10:00:00'),
+       '2026-09-02 10:00:00'),
     ( 3, 14, 'Lubrifiant chaîne Pro Honda',       'lubrifiant-chaine-pro-honda',
       'Aérosol de graisse pour chaîne à joints toriques, anti-projections.',
-       11.90, 'lubrifiant-chaine-pro-honda.png',    '2026-09-03 10:00:00'),
+       '2026-09-03 10:00:00'),
     ( 4, 13, 'Huile moteur Pro Honda 10W-30 MA',  'huile-pro-honda-10w30',
       'Huile moteur 4 temps semi-synthèse, norme JASO MA pour embrayage à bain d''huile.',
-       16.90, 'huile-pro-honda-10w30.png',          '2026-09-04 10:00:00'),
+       '2026-09-04 10:00:00'),
     ( 5, 13, 'Cartouche filtre à huile',          'cartouche-filtre-huile',
       'Filtre à huile d''origine Honda, à remplacer à chaque vidange.',
-       19.50, 'cartouche-filtre-huile.png',         '2026-09-05 10:00:00'),
+       '2026-09-05 10:00:00'),
     ( 6,  7, 'Casquette Factory',                 'casquette-factory',
       'Casquette réglable brodée de l''aile Honda.',
-       24.90, 'casquette-factory.jpg',              '2026-09-06 10:00:00'),
+       '2026-09-06 10:00:00'),
     ( 7,  5, 'T-shirt CBR Fireblade',             'tshirt-cbr-fireblade',
       'T-shirt officiel blanc 100 % coton (200 g/m²), grand logo CBR Fireblade sur la poitrine en hommage à la sportive née en 1992.',
-       29.90, 'tshirt-cbr-fireblade.png',           '2026-09-07 10:00:00'),
+       '2026-09-07 10:00:00'),
     ( 8,  5, 'T-shirt Tribute CB1000F',           'tshirt-tribute-cb1000f',
       'T-shirt gris chiné aux bandes tricolores de la CB1000F.',
-       39.90, 'tshirt-tribute-cb1000f.jpg',         '2026-09-08 10:00:00'),
+       '2026-09-08 10:00:00'),
     ( 9,  5, 'T-shirt Capsule',                   'tshirt-capsule',
       'T-shirt camouflage gris de la collection Capsule.',
-       39.90, 'tshirt-capsule.jpg',                 '2026-09-09 10:00:00'),
+       '2026-09-09 10:00:00'),
     (10,  6, 'Sweat à capuche Monkey',            'sweat-capuche-monkey',
       'Sweat à capuche moutarde illustré de la Honda Monkey.',
-       58.90, 'sweat-capuche-monkey.jpg',           '2026-09-10 10:00:00'),
+       '2026-09-10 10:00:00'),
     (11, 11, 'Pantalon MX',                       'pantalon-mx',
       'Pantalon de motocross renforcé aux genoux, coupe ajustée.',
-      129.90, 'pantalon-mx.jpg',                    '2026-09-11 10:00:00'),
+      '2026-09-11 10:00:00'),
     (12, 10, 'Sacoche de réservoir 4,5 L',        'sacoche-reservoir-4-5l',
       'Sacoche de réservoir étanche 4,5 L à fixation rapide.',
-      146.90, 'sacoche-reservoir-4-5l.jpg',         '2026-09-12 10:00:00'),
+      '2026-09-12 10:00:00'),
     (13, 11, 'Blouson cuir Maine',                'blouson-cuir-maine',
       'Blouson en cuir véritable au look vintage, coupe motard et bandes contrastées. Coques de protection CE amovibles aux épaules et aux coudes, poche pour dorsale, doublure thermique amovible.',
-      379.90, 'blouson-cuir-maine.jpg',             '2026-09-13 10:00:00'),
+      '2026-09-13 10:00:00'),
     (14,  9, 'Smart Top Box 50 L',                'smart-top-box-50l',
       'Top box 50 L à ouverture sans clé, verrouillée avec la Smart Key du X-ADV. Livrée avec dosseret pour le confort du passager.',
-      490.00, 'smart-top-box-50l.png',              '2026-09-14 10:00:00'),
+      '2026-09-14 10:00:00'),
     (15,  9, 'Kit top box aluminium 42 L',        'kit-top-box-aluminium-42l',
       'Top box en aluminium brossé 42 L avec platine de fixation.',
-      399.00, NULL,                                 '2026-09-15 10:00:00'),
+      '2026-09-15 10:00:00'),
     (16, 12, 'Poignées chauffantes',              'poignees-chauffantes',
       'Poignées chauffantes d''origine, 5 niveaux de chauffe. X-ADV 750 (2017-2020).',
-      311.90, 'poignees-chauffantes.jpg',           '2026-09-16 10:00:00'),
+      '2026-09-16 10:00:00'),
     (17, 12, 'Selle confort',                     'selle-confort',
       'Selle à mousse haute densité pour les longs trajets.',
-      249.00, NULL,                                 '2026-09-17 10:00:00'),
+      '2026-09-17 10:00:00'),
     (18, 10, 'Sacoche de selle 10 L',             'sacoche-selle-10l',
       'Sacoche de selle extensible 10 L, sangles de fixation incluses.',
-      159.90, NULL,                                 '2026-09-18 10:00:00');
+      '2026-09-18 10:00:00');
 
 -- Une variante « Unique » pour les produits sans déclinaison, plusieurs pour
 -- les vêtements (tailles), la casquette (coloris) et la top box (garnitures).
-INSERT INTO variant (product_id, reference, label, stock, position) VALUES
-    ( 1, 'HM-PCL-RW',       'Unique',     40, 1),
-    ( 2, 'HM-LRF-T2',       '1 L',        25, 1),
-    ( 3, 'HM-LUB-CH',       '400 ml',     30, 1),
-    ( 4, 'HM-HUI-1030-1L',  '1 L',        60, 1),
-    ( 4, 'HM-HUI-1030-4L',  '4 L',        12, 2),
-    ( 5, 'HM-FIL-HU',       'Unique',     18, 1),
-    ( 6, 'HM-CAS-FAC-RGE',  'Rouge',       0, 1),
-    ( 6, 'HM-CAS-FAC-NOI',  'Noir',        9, 2),
-    ( 7, 'HM-TSH-CBR-S',    'S',           4, 1),
-    ( 7, 'HM-TSH-CBR-M',    'M',           1, 2),
-    ( 7, 'HM-TSH-CBR-L',    'L',           0, 3),
-    ( 7, 'HM-TSH-CBR-XL',   'XL',          5, 4),
-    ( 8, 'HM-TSH-TRB-S',    'S',           3, 1),
-    ( 8, 'HM-TSH-TRB-M',    'M',           5, 2),
-    ( 8, 'HM-TSH-TRB-L',    'L',           7, 3),
-    ( 8, 'HM-TSH-TRB-XL',   'XL',          1, 4),
-    ( 9, 'HM-TSH-CAP-S',    'S',           2, 1),
-    ( 9, 'HM-TSH-CAP-M',    'M',           4, 2),
-    ( 9, 'HM-TSH-CAP-L',    'L',           3, 3),
-    (10, 'HM-SWT-MKY-S',    'S',           2, 1),
-    (10, 'HM-SWT-MKY-M',    'M',           5, 2),
-    (10, 'HM-SWT-MKY-L',    'L',           4, 3),
-    (10, 'HM-SWT-MKY-XL',   'XL',          2, 4),
-    (11, 'HM-PMX-30',       '30',          2, 1),
-    (11, 'HM-PMX-32',       '32',          3, 2),
-    (11, 'HM-PMX-34',       '34',          2, 3),
-    (12, 'HM-SAC-RES-45',   'Unique',      6, 1),
-    (13, 'HM-BLC-MAI-S',    'S',           1, 1),
-    (13, 'HM-BLC-MAI-M',    'M',           3, 2),
-    (13, 'HM-BLC-MAI-L',    'L',           2, 3),
-    (13, 'HM-BLC-MAI-XL',   'XL',          1, 4),
-    (14, 'HM-STB-50-ALU',   'Aluminium',   4, 1),
-    (14, 'HM-STB-50-ARG',   'Argent',      2, 2),
-    (14, 'HM-STB-50-NOI',   'Noir',        3, 3),
-    (15, 'HM-KTB-ALU-42',   'Unique',      0, 1),
-    (16, 'HM-POI-CHA-XADV', 'Unique',      5, 1),
-    (17, 'HM-SEL-CNF',      'Unique',      2, 1),
-    (18, 'HM-SAC-SEL-10',   'Unique',      7, 1),
+INSERT INTO variant (product_id, reference, label, price, stock, position) VALUES
+    ( 1, 'HM-PCL-RW',       'Unique',       6.90,  40, 1),
+    ( 2, 'HM-LRF-T2',       '1 L',         10.50,  25, 1),
+    ( 3, 'HM-LUB-CH',       '400 ml',      11.90,  30, 1),
+    ( 4, 'HM-HUI-1030-1L',  '1 L',         16.90,  60, 1),
+    ( 4, 'HM-HUI-1030-4L',  '4 L',         54.90,  12, 2),
+    ( 5, 'HM-FIL-HU',       'Unique',      19.50,  18, 1),
+    ( 6, 'HM-CAS-FAC-RGE',  'Rouge',       24.90,   0, 1),
+    ( 6, 'HM-CAS-FAC-NOI',  'Noir',        24.90,   9, 2),
+    ( 7, 'HM-TSH-CBR-S',    'S',           29.90,   4, 1),
+    ( 7, 'HM-TSH-CBR-M',    'M',           29.90,   1, 2),
+    ( 7, 'HM-TSH-CBR-L',    'L',           29.90,   0, 3),
+    ( 7, 'HM-TSH-CBR-XL',   'XL',          29.90,   5, 4),
+    ( 8, 'HM-TSH-TRB-S',    'S',           39.90,   3, 1),
+    ( 8, 'HM-TSH-TRB-M',    'M',           39.90,   5, 2),
+    ( 8, 'HM-TSH-TRB-L',    'L',           39.90,   7, 3),
+    ( 8, 'HM-TSH-TRB-XL',   'XL',          39.90,   1, 4),
+    ( 9, 'HM-TSH-CAP-S',    'S',           39.90,   2, 1),
+    ( 9, 'HM-TSH-CAP-M',    'M',           39.90,   4, 2),
+    ( 9, 'HM-TSH-CAP-L',    'L',           39.90,   3, 3),
+    (10, 'HM-SWT-MKY-S',    'S',           58.90,   2, 1),
+    (10, 'HM-SWT-MKY-M',    'M',           58.90,   5, 2),
+    (10, 'HM-SWT-MKY-L',    'L',           58.90,   4, 3),
+    (10, 'HM-SWT-MKY-XL',   'XL',          58.90,   2, 4),
+    (11, 'HM-PMX-30',       '30',         129.90,   2, 1),
+    (11, 'HM-PMX-32',       '32',         129.90,   3, 2),
+    (11, 'HM-PMX-34',       '34',         129.90,   2, 3),
+    (12, 'HM-SAC-RES-45',   'Unique',     146.90,   6, 1),
+    (13, 'HM-BLC-MAI-S',    'S',          379.90,   1, 1),
+    (13, 'HM-BLC-MAI-M',    'M',          379.90,   3, 2),
+    (13, 'HM-BLC-MAI-L',    'L',          379.90,   2, 3),
+    (13, 'HM-BLC-MAI-XL',   'XL',         379.90,   1, 4),
+    (14, 'HM-STB-50-ALU',   'Aluminium',  490.00,   4, 1),
+    (14, 'HM-STB-50-ARG',   'Argent',     490.00,   2, 2),
+    (14, 'HM-STB-50-NOI',   'Noir',       490.00,   3, 3),
+    (15, 'HM-KTB-ALU-42',   'Unique',     399.00,   0, 1),
+    (16, 'HM-POI-CHA-XADV', 'Unique',     311.90,   5, 1),
+    (17, 'HM-SEL-CNF',      'Unique',     249.00,   2, 1),
+    (18, 'HM-SAC-SEL-10',   'Unique',     159.90,   7, 1),
     -- 2XL ajoutée en dernier : les identifiants des variantes précédentes,
     -- déjà enregistrés dans les paniers, ne changent pas.
-    ( 7, 'HM-TSH-CBR-2XL',  '2XL',         4, 5);
+    ( 7, 'HM-TSH-CBR-2XL',  '2XL',         32.90,   4, 5);
 
 -- Type de variante des produits qui en ont plusieurs (US OPT-b). Les tailles
 -- du T-shirt CBR Fireblade et leurs stocks reprennent la maquette (écran 18).
@@ -626,6 +673,80 @@ UPDATE product SET variant_axis = 'Taille'     WHERE id IN (7, 8, 9, 10, 11, 13)
 UPDATE product SET variant_axis = 'Coloris'    WHERE id = 6;
 UPDATE product SET variant_axis = 'Contenance' WHERE id = 4;
 UPDATE product SET variant_axis = 'Finition'   WHERE id = 14;
+
+-- Photos : celles du site Honda (Honda Direct) pour les produits dont la
+-- boutique propose plusieurs vues ; les autres sont complétés par des vues de
+-- détail (« -detail-1.jpg »…), recadrages zoomés de leur photo principale
+-- (logo, matière, finition), comme sur la boutique Honda.
+INSERT INTO product_image (product_id, file, position) VALUES
+    ( 1, 'porte-cles-rubber-wing.jpg',             1),
+    ( 1, 'porte-cles-rubber-wing-detail-1.jpg',    2),
+    ( 1, 'porte-cles-rubber-wing-detail-2.jpg',    3),
+    ( 2, 'liquide-refroidissement-type-2.png',     1),
+    ( 2, 'liquide-refroidissement-type-2-detail-1.jpg',2),
+    ( 2, 'liquide-refroidissement-type-2-detail-2.jpg',3),
+    ( 3, 'lubrifiant-chaine-pro-honda.png',        1),
+    ( 3, 'lubrifiant-chaine-pro-honda-detail-1.jpg',2),
+    ( 3, 'lubrifiant-chaine-pro-honda-detail-2.jpg',3),
+    ( 3, 'lubrifiant-chaine-pro-honda-detail-3.jpg',4),
+    ( 4, 'huile-pro-honda-10w30.png',              1),
+    ( 4, 'huile-pro-honda-10w30-4l.jpg',           2),
+    ( 4, 'huile-pro-honda-10w30-detail-1.jpg',     3),
+    ( 4, 'huile-pro-honda-10w30-detail-2.jpg',     4),
+    ( 5, 'cartouche-filtre-huile.png',             1),
+    ( 5, 'cartouche-filtre-huile-detail-1.jpg',    2),
+    ( 5, 'cartouche-filtre-huile-detail-2.jpg',    3),
+    ( 5, 'cartouche-filtre-huile-detail-3.jpg',    4),
+    ( 6, 'casquette-factory.jpg',                  1),
+    ( 6, 'casquette-factory-detail-1.jpg',         2),
+    ( 6, 'casquette-factory-detail-2.jpg',         3),
+    ( 6, 'casquette-factory-detail-3.jpg',         4),
+    ( 7, 'tshirt-cbr-fireblade.png',               1),
+    ( 7, 'tshirt-cbr-fireblade-2.jpg',             2),
+    ( 7, 'tshirt-cbr-fireblade-3.jpg',             3),
+    ( 7, 'tshirt-cbr-fireblade-4.jpg',             4),
+    ( 8, 'tshirt-tribute-cb1000f.jpg',             1),
+    ( 8, 'tshirt-tribute-cb1000f-2.jpg',           2),
+    ( 8, 'tshirt-tribute-cb1000f-3.jpg',           3),
+    ( 8, 'tshirt-tribute-cb1000f-4.jpg',           4),
+    ( 9, 'tshirt-capsule.jpg',                     1),
+    ( 9, 'tshirt-capsule-detail-1.jpg',            2),
+    ( 9, 'tshirt-capsule-detail-2.jpg',            3),
+    ( 9, 'tshirt-capsule-detail-3.jpg',            4),
+    (10, 'sweat-capuche-monkey.jpg',               1),
+    (10, 'sweat-capuche-monkey-2.jpg',             2),
+    (10, 'sweat-capuche-monkey-3.jpg',             3),
+    (10, 'sweat-capuche-monkey-4.jpg',             4),
+    (11, 'pantalon-mx.jpg',                        1),
+    (11, 'pantalon-mx-detail-1.jpg',               2),
+    (11, 'pantalon-mx-detail-2.jpg',               3),
+    (11, 'pantalon-mx-detail-3.jpg',               4),
+    (12, 'sacoche-reservoir-4-5l.jpg',             1),
+    (12, 'sacoche-reservoir-4-5l-detail-1.jpg',    2),
+    (12, 'sacoche-reservoir-4-5l-detail-2.jpg',    3),
+    (12, 'sacoche-reservoir-4-5l-detail-3.jpg',    4),
+    (13, 'blouson-cuir-maine.jpg',                 1),
+    (13, 'blouson-cuir-maine-detail-1.jpg',        2),
+    (13, 'blouson-cuir-maine-detail-2.jpg',        3),
+    (13, 'blouson-cuir-maine-detail-3.jpg',        4),
+    (14, 'smart-top-box-50l.png',                  1),
+    (14, 'smart-top-box-50l-detail-1.jpg',         2),
+    (14, 'smart-top-box-50l-detail-2.jpg',         3),
+    (15, 'kit-top-box-aluminium-42l.jpg',          1),
+    (15, 'kit-top-box-aluminium-42l-detail-1.jpg', 2),
+    (15, 'kit-top-box-aluminium-42l-detail-2.jpg', 3),
+    (15, 'kit-top-box-aluminium-42l-detail-3.jpg', 4),
+    (16, 'poignees-chauffantes.jpg',               1),
+    (16, 'poignees-chauffantes-detail-1.jpg',      2),
+    (16, 'poignees-chauffantes-detail-2.jpg',      3),
+    (17, 'selle-confort.jpg',                      1),
+    (17, 'selle-confort-detail-1.jpg',             2),
+    (17, 'selle-confort-detail-2.jpg',             3),
+    (17, 'selle-confort-detail-3.jpg',             4),
+    (18, 'sacoche-selle-10l.jpg',                  1),
+    (18, 'sacoche-selle-10l-2.jpg',                2),
+    (18, 'sacoche-selle-10l-3.jpg',                3),
+    (18, 'sacoche-selle-10l-4.jpg',                4);
 
 -- Caractéristiques : celles du blouson reprennent la maquette (écran 2).
 INSERT INTO product_feature (product_id, label, value, position) VALUES

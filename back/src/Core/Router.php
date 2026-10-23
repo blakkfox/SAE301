@@ -30,6 +30,15 @@ final class Router
         $this->controleurs = $controleurs;
     }
 
+    /**
+     * Appelle la méthode du contrôleur déclarée pour la route de la requête,
+     * ou répond 404 si aucune route ne correspond.
+     *
+     * @param Request $requete Requête entrante.
+     *
+     * @throws RuntimeException Si le contrôleur de la route n'est pas
+     *                          enregistré dans back/index.php.
+     */
     public function traiter(Request $requete): void
     {
         // Parcours par indice des clés de la table : le projet n'utilise pas foreach.
@@ -69,7 +78,7 @@ final class Router
     }
 
     /**
-     * « GET   /api/films » et « GET /api/films » désignent la même route :
+     * « GET   /api/products » et « GET /api/products » désignent la même route :
      * on réduit les espaces multiples pour permettre un alignement lisible
      * dans le fichier de déclaration.
      */

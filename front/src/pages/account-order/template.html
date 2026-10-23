@@ -3,14 +3,14 @@
   <section class="mx-auto flex max-w-312 flex-col gap-6 px-4 pt-6 pb-16 sm:px-6 lg:gap-7 lg:pt-8 lg:pb-24">
     <nav aria-label="Fil d'Ariane" class="text-sm text-ink-muted">
       <ol class="flex flex-wrap gap-2">
-        <li><a href="/" data-link class="transition-colors hover:text-accent">Accueil</a></li>
+        <li><a href="/" data-link class="inline-block py-1 transition-colors hover:text-accent">Accueil</a></li>
         <li aria-hidden="true">/</li>
         <li class="text-ink">Mon compte</li>
       </ol>
     </nav>
 
     <!-- Mobile First : le menu passe au-dessus ; à partir de lg, la colonne de 260 px de la maquette. -->
-    <div class="grid gap-6 lg:grid-cols-(--grid-account) lg:items-start lg:gap-10">
+    <div class="grid grid-cols-1 gap-6 lg:grid-cols-(--grid-account) lg:items-start lg:gap-10">
       <slot name="menu"></slot>
 
       <!-- Commande, connexion, introuvable ou erreur : chaque état a son titre (h1). -->

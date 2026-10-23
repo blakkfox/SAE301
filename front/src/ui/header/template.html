@@ -19,19 +19,26 @@
           <button type="button" data-category-menu-button aria-expanded="false" aria-controls="category-menu" class="group inline-flex items-center gap-1 py-2 font-medium text-ink transition-colors hover:text-accent aria-expanded:text-accent">
             Catégories <span aria-hidden="true" class="inline-block transition-transform duration-200 group-aria-expanded:rotate-180 motion-reduce:transition-none">▾</span>
           </button>
+          <!-- Panneau juste après son bouton : au clavier, Tab y entre aussitôt. -->
+          <slot name="category-menu"></slot>
         </li>
-        <li><a href="/promotions" data-link class="inline-block py-2 text-ink underline-offset-8 transition-colors hover:text-accent aria-[current=page]:text-accent aria-[current=page]:underline">Promotions</a></li>
+        <!-- Fiche du produit en promotion automatique (PRO-c), comme le bandeau ;
+             masqué sans promotion. href et hidden sont tenus à jour par le layout. -->
+        <li data-promo-link hidden><a href="/" data-link class="inline-block py-2 text-ink underline-offset-8 transition-colors hover:text-accent aria-[current=page]:text-accent aria-[current=page]:underline">Promotions</a></li>
       </ul>
     </nav>
 
-    <!-- Recherche : présente sur la maquette, mais aucune US ne la couvre.
-         Le champ est désactivé plutôt que de faire semblant de fonctionner. -->
-    <form role="search" class="order-3 w-full xl:ml-auto xl:w-75">
-      <label class="flex h-10 items-center gap-2 rounded-full border border-line bg-section px-3.5 text-ink-muted">
-        <span aria-hidden="true" class="text-lg leading-none">⌕</span>
-        <span class="sr-only">Rechercher un produit (bientôt disponible)</span>
-        <input type="search" name="q" placeholder="Rechercher un produit" disabled class="w-full min-w-0 bg-transparent text-small placeholder:text-ink-muted disabled:cursor-not-allowed" />
+    <!-- Recherche (présente sur la maquette) : mène au catalogue filtré
+         (« /?q=casque »). Le bouton loupe envoie la recherche, comme Entrée. -->
+    <form role="search" data-search-form class="order-3 flex h-10 w-full items-center gap-1 rounded-full border border-line bg-section pr-1 pl-3.5 has-[input:focus-visible]:outline-2 has-[input:focus-visible]:outline-offset-2 has-[input:focus-visible]:outline-action xl:ml-auto xl:w-75">
+      <label class="flex min-w-0 flex-1 items-center">
+        <span class="sr-only">Rechercher un produit</span>
+        <input type="search" name="q" value="{{search}}" maxlength="60" placeholder="Rechercher un produit" enterkeyhint="search" class="w-full min-w-0 bg-transparent text-small text-ink outline-none placeholder:text-ink-muted" />
       </label>
+      <button type="submit" class="inline-flex size-8 shrink-0 items-center justify-center rounded-full text-lg leading-none text-ink-muted transition-colors hover:bg-page hover:text-accent">
+        <span aria-hidden="true">⌕</span>
+        <span class="sr-only">Rechercher</span>
+      </button>
     </form>
 
     <div class="order-2 ml-auto flex items-center gap-4 sm:gap-6 xl:order-4 xl:ml-0 xl:gap-10">
@@ -42,6 +49,5 @@
       </a>
     </div>
 
-    <slot name="category-menu"></slot>
   </div>
 </header>
