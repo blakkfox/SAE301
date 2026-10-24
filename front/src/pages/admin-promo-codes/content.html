@@ -1,0 +1,26 @@
+<!--
+  Connecté en administrateur : liste des codes et formulaire. Mobile First :
+  le formulaire passe sous la liste ; à partir de xl, la colonne de 380 px
+  de la maquette.
+-->
+<div class="flex flex-col gap-6">
+  <header class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <h1 tabindex="-1" class="font-display text-h1-mobile leading-none text-ink">Codes promo</h1>
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-10">
+      <button type="button" data-action="new" data-focus-key="new" class="button h-12 px-6 text-small"><span aria-hidden="true">+</span> Nouveau code</button>
+      <p class="text-caption text-ink-muted">{{adminLabel}}</p>
+    </div>
+  </header>
+
+  <div class="grid gap-6 xl:grid-cols-(--grid-admin-promo-codes) xl:items-start">
+    <section aria-labelledby="promo-list-title" class="flex min-w-0 flex-col gap-4">
+      <h2 id="promo-list-title" class="sr-only">Liste des codes promo</h2>
+      <slot name="list"></slot>
+    </section>
+
+    <aside aria-labelledby="promo-form-title" class="flex flex-col gap-5 rounded-xl bg-page p-6">
+      <slot name="form"></slot>
+      <slot name="deletion"></slot>
+    </aside>
+  </div>
+</div>

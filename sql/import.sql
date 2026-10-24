@@ -21,6 +21,8 @@
 --     variant 1 ── n stock_movement n ── 0..1 customer_order   (US STK-a)
 --     customer_order 1 ── n order_event n ── 0..1 customer      (US PIL-b)
 --
+--     promo_code : codes promo saisis au back-office (US PRO-b)
+--
 -- Chaque produit a AU MOINS une variante (taille, coloris, garniture… ou
 -- « Unique »). C'est la variante qui porte la référence et le stock : le
 -- panier, les commandes et les stocks s'appuient sur variant.id. Le type de
@@ -42,6 +44,7 @@ SET NAMES utf8mb4;
 -- Ordre de suppression : d'abord les tables qui dépendent des autres.
 DROP TABLE IF EXISTS film;
 DROP TABLE IF EXISTS genre;
+DROP TABLE IF EXISTS promo_code;
 DROP TABLE IF EXISTS order_event;
 DROP TABLE IF EXISTS stock_movement;
 DROP TABLE IF EXISTS order_line_option;
@@ -434,6 +437,40 @@ CREATE TABLE order_event (
   COLLATE = utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
+-- Codes promo (US PRO-b)
+--
+-- code est saisi en majuscules (lettres sans accent et chiffres) ; deux codes
+-- ne sont jamais identiques. discount_rate est la réduction en pourcentage,
+-- appliquée à un panier d'au moins min_amount euros (0 : sans minimum).
+-- starts_on et ends_on bornent la validité, jours compris ; NULL : sans
+-- borne. max_uses est le nombre d'utilisations permises (NULL : illimité) ;
+-- use_count compte celles déjà faites, augmenté par la commande (US PRO-a).
+-- Le statut (actif, programmé, expiré, épuisé) n'est pas stocké : il se
+-- déduit de ces colonnes et de la date du jour.
+-- ---------------------------------------------------------------------------
+CREATE TABLE promo_code (
+    id            SMALLINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    code          VARCHAR(20)       NOT NULL,
+    discount_rate TINYINT UNSIGNED  NOT NULL,
+    min_amount    DECIMAL(8,2)      NOT NULL DEFAULT 0,
+    starts_on     DATE                  NULL,
+    ends_on       DATE                  NULL,
+    max_uses      SMALLINT UNSIGNED     NULL,
+    use_count     SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+    created_at    DATETIME          NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_promo_code (code),
+
+    CONSTRAINT chk_promo_rate CHECK (discount_rate BETWEEN 1 AND 90),
+    CONSTRAINT chk_promo_amount CHECK (min_amount >= 0),
+    CONSTRAINT chk_promo_dates CHECK (starts_on IS NULL OR ends_on IS NULL OR ends_on >= starts_on),
+    CONSTRAINT chk_promo_uses CHECK (max_uses IS NULL OR (max_uses > 0 AND use_count <= max_uses))
+) ENGINE = InnoDB
+  DEFAULT CHARSET = utf8mb4
+  COLLATE = utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
 -- Jeu de données
 -- ---------------------------------------------------------------------------
 -- Les catégories parentes sont insérées avant leurs sous-catégories, sinon la
@@ -631,3 +668,13 @@ INSERT INTO dealership (id, name, short_name, address, hours_label, position) VA
       'ouvert jusqu''à 19 h',    1),
     (2, 'Honda Moto Villeurbanne', 'Villeurbanne', '45 cours Émile Zola, 69100 Villeurbanne',
       'ouvert jusqu''à 18 h 30', 2);
+
+-- Codes promo de la maquette (écran 22). Les dates suivent le jour de
+-- l'import, pour que chaque statut reste représenté : actif, programmé,
+-- actif avec limite, expiré. Insérés du plus ancien au plus récent : la
+-- liste les affiche du plus récent au plus ancien.
+INSERT INTO promo_code (id, code, discount_rate, min_amount, starts_on, ends_on, max_uses, use_count) VALUES
+    (1, 'ETE2026',      5,  0.00, CURDATE() - INTERVAL 120 DAY, CURDATE() - INTERVAL 50 DAY, NULL, 88),
+    (2, 'MOTARD20',    20, 80.00, NULL,                         CURDATE() + INTERVAL 20 DAY,   20, 12),
+    (3, 'HIVER15',     15, 50.00, CURDATE() + INTERVAL 10 DAY,  CURDATE() + INTERVAL 39 DAY,   50,  0),
+    (4, 'BIENVENUE10', 10,  0.00, NULL,                         CURDATE() + INTERVAL 70 DAY,  100, 34);

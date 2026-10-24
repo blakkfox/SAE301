@@ -191,6 +191,8 @@
     --grid-admin-stats: minmax(0, 1fr) 21.25rem; /* Statistiques : graphiques 760 / listes 340 px */
     --grid-stats-stock: 12.5rem minmax(0, 1fr) 2.5rem; /* Stock par produit : nom 200 px / barre / valeur */
     --grid-stats-stock-mobile: minmax(0, 1fr) 2.5rem; /* Stock par produit sur mobile : nom / valeur, barre dessous */
+    --grid-admin-promo-codes: minmax(0, 1fr) 23.75rem; /* Codes promo : liste 720 / formulaire 380 px */
+    --size-admin-promo-codes-table-min: 44rem; /* Liste des codes promo (6 colonnes) : défile en dessous */
     --size-stats-chart: 14rem; /* Hauteur du graphique des revenus */
   }
 

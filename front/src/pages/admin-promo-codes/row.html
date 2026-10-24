@@ -1,0 +1,19 @@
+<!-- {{statusClass}} : modifier de .status-badge, écrit en entier dans page.js.
+     Le minimum de panier n'est affiché que s'il y en a un (page.js).
+     aria-current (code en cours de modification) est réglé dans page.js. -->
+<tr class="aria-[current=true]:bg-section">
+  <th scope="row" class="py-4 pr-3 pl-5 font-semibold">{{code}}</th>
+  <td class="px-3 py-4 whitespace-nowrap">
+    {{discount}}
+    <span data-min-amount class="block text-caption text-ink-muted">{{minAmount}}</span>
+  </td>
+  <td class="max-w-36 px-3 py-4">{{validity}}</td>
+  <td class="px-3 py-4 whitespace-nowrap">{{usage}}</td>
+  <td class="px-3 py-4">
+    <span class="status-badge {{statusClass}}"><span class="sr-only">Statut : </span>{{statusLabel}}</span>
+  </td>
+  <td class="px-3 py-4 whitespace-nowrap">
+    <button type="button" data-action="edit" data-id="{{id}}" data-focus-key="edit-{{id}}" class="mr-4 text-small text-link underline-offset-4 hover:underline">Modifier<span class="sr-only"> {{code}}</span></button>
+    <button type="button" data-action="delete" data-id="{{id}}" data-focus-key="delete-{{id}}" class="text-small text-accent underline-offset-4 hover:underline">Supprimer<span class="sr-only"> {{code}}</span></button>
+  </td>
+</tr>

@@ -10,12 +10,14 @@ use App\Model\CategoryModel;
 use App\Model\CustomerModel;
 use App\Model\OrderModel;
 use App\Model\ProductModel;
+use App\Model\PromoCodeModel;
 use DateTimeImmutable;
 use DateTimeZone;
 
 /**
  * Back-office : tableau de bord (US GOF-b), gestion des commandes (US PIL-b),
- * des catégories (US GOF-c) et des produits (US GOF-a), statistiques (US PIL-a).
+ * des catégories (US GOF-c), des produits (US GOF-a) et des codes promo
+ * (US PRO-b), statistiques (US PIL-a).
  *
  * Le rôle n'est jamais lu dans la requête ni dans un cookie : le compte
  * connecté (identifiant rangé en session par AuthController) est relu en
@@ -133,6 +135,16 @@ final class AdminController
     /** Nom de fichier accepté comme photo produit : pas de chemin, extension d'image. */
     private const IMAGE_PATTERN = '/^[a-z0-9][a-z0-9._-]*\.(jpe?g|png|webp)$/i';
 
+    /** Code promo : lettres sans accent et chiffres, de 3 à 20 caractères (colonne promo_code.code). */
+    private const PROMO_CODE_PATTERN = '/^[A-Z0-9]{3,20}$/';
+
+    /** Réduction d'un code promo, en pourcentage. */
+    private const PROMO_RATE_MIN = 1;
+    private const PROMO_RATE_MAX = 90;
+
+    /** Nombre maximal d'utilisations d'un code promo (colonne SMALLINT). */
+    private const PROMO_USES_MAX = 9999;
+
     /** Lettres accentuées et ligatures, pour calculer un slug sans l'extension intl. */
     private const SLUG_LETTERS = [
         'à' => 'a', 'â' => 'a', 'ä' => 'a', 'ç' => 'c', 'é' => 'e', 'è' => 'e', 'ê' => 'e', 'ë' => 'e',
@@ -152,6 +164,9 @@ final class AdminController
     /** Accès aux commandes. */
     private OrderModel $orders;
 
+    /** Accès aux codes promo. */
+    private PromoCodeModel $promoCodes;
+
     /** Dossier des photos produit sur le serveur (US GOF-a). */
     private string $imageDir;
 
@@ -159,20 +174,23 @@ final class AdminController
      * @param CustomerModel $customers  Accès aux comptes.
      * @param ProductModel  $products   Accès aux produits.
      * @param CategoryModel $categories Accès aux catégories.
-     * @param OrderModel    $orders     Accès aux commandes.
-     * @param string        $imageDir   Dossier des photos produit, front/dist/images/produits.
+     * @param OrderModel     $orders     Accès aux commandes.
+     * @param PromoCodeModel $promoCodes Accès aux codes promo.
+     * @param string         $imageDir   Dossier des photos produit, front/dist/images/produits.
      */
     public function __construct(
         CustomerModel $customers,
         ProductModel $products,
         CategoryModel $categories,
         OrderModel $orders,
+        PromoCodeModel $promoCodes,
         string $imageDir,
     ) {
         $this->customers  = $customers;
         $this->products   = $products;
         $this->categories = $categories;
         $this->orders     = $orders;
+        $this->promoCodes = $promoCodes;
         $this->imageDir   = $imageDir;
     }
 
@@ -764,6 +782,96 @@ final class AdminController
     }
 
     /**
+     * GET /api/admin/promo-codes
+     *
+     * Répond { admin, promoCodes } : tous les codes promo, du plus récent au
+     * plus ancien, chacun avec son statut (status : « actif », « programme »,
+     * « expire » ou « epuise », voir promoStatus), calculé à la date du jour
+     * à Lyon.
+     *
+     * 401 si personne n'est connecté, 403 si le compte n'est pas administrateur.
+     */
+    public function promoCodes(): void
+    {
+        $admin = $this->requireAdmin();
+        $today = self::today()->format('Y-m-d');
+
+        Response::json([
+            'admin'      => ['firstName' => $admin['firstName'], 'lastName' => $admin['lastName']],
+            'promoCodes' => array_map(
+                static fn (array $promoCode): array => $promoCode + ['status' => self::promoStatus($promoCode, $today)],
+                $this->promoCodes->findAll(),
+            ),
+        ]);
+    }
+
+    /**
+     * POST /api/admin/promo-codes, corps JSON
+     * { code, discountRate, minAmount, startsOn, endsOn, maxUses }.
+     *
+     * Crée le code promo et répond { promoCode }, en 201. 422 (clé
+     * « champs ») si la saisie est invalide ; 409 (clé « champs ») si le code
+     * existe déjà ; 401, 403 comme promoCodes().
+     *
+     * @param Request $request Requête entrante.
+     */
+    public function createPromoCode(Request $request): void
+    {
+        $this->requireAdmin();
+
+        $id = $this->promoCodes->create($this->validatePromoCode($request->corps(), null));
+
+        if ($id === null) {
+            self::duplicateCode();
+        }
+
+        Response::json(['promoCode' => $this->promoCodeWithStatus($id)], 201);
+    }
+
+    /**
+     * POST /api/admin/promo-codes/update, corps JSON
+     * { id, code, discountRate, minAmount, startsOn, endsOn, maxUses }.
+     *
+     * Modifie le code promo (ses utilisations déjà faites restent) et répond
+     * { promoCode }. 400 si id est invalide, 404 si le code n'existe pas ;
+     * 422, 409, 401, 403 comme createPromoCode().
+     *
+     * @param Request $request Requête entrante.
+     */
+    public function updatePromoCode(Request $request): void
+    {
+        $this->requireAdmin();
+
+        $body    = $request->corps();
+        $current = $this->findPromoCodeOrFail($body['id'] ?? null);
+
+        if (!$this->promoCodes->update($current['id'], $this->validatePromoCode($body, $current))) {
+            self::duplicateCode();
+        }
+
+        Response::json(['promoCode' => $this->promoCodeWithStatus($current['id'])]);
+    }
+
+    /**
+     * POST /api/admin/promo-codes/delete, corps JSON { id }.
+     *
+     * Supprime le code promo et répond { deleted: { id, code } }.
+     * 400 si id est invalide, 404 si le code n'existe pas ; 401, 403 comme
+     * promoCodes().
+     *
+     * @param Request $request Requête entrante.
+     */
+    public function deletePromoCode(Request $request): void
+    {
+        $this->requireAdmin();
+
+        $promoCode = $this->findPromoCodeOrFail($request->corps()['id'] ?? null);
+        $this->promoCodes->delete($promoCode['id']);
+
+        Response::json(['deleted' => ['id' => $promoCode['id'], 'code' => $promoCode['code']]]);
+    }
+
+    /**
      * Produit désigné par $id. Répond 400 (identifiant invalide) ou 404
      * (produit introuvable), et s'arrête, sinon.
      *
@@ -1289,6 +1397,192 @@ final class AdminController
         Response::json([
             'erreur' => 'Une catégorie porte déjà ce nom.',
             'champs' => ['name' => 'Une catégorie porte déjà ce nom.'],
+        ], 409);
+    }
+
+    /**
+     * Code promo désigné par $id. Répond 400 (identifiant invalide) ou 404
+     * (code introuvable), et s'arrête, sinon.
+     *
+     * @param mixed $id Valeur « id » du corps JSON.
+     *
+     * @return array{id:int, code:string, discountRate:int, minAmount:float, startsOn:?string,
+     *               endsOn:?string, maxUses:?int, useCount:int}
+     */
+    private function findPromoCodeOrFail(mixed $id): array
+    {
+        $id = filter_var($id, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+
+        if ($id === false) {
+            Response::erreur('Identifiant de code promo invalide', 400);
+        }
+
+        $promoCode = $this->promoCodes->findById($id);
+
+        if ($promoCode === null) {
+            Response::erreur('Code promo introuvable', 404);
+        }
+
+        return $promoCode;
+    }
+
+    /**
+     * @param int $id Code promo qui vient d'être enregistré.
+     *
+     * @return array<string, mixed> Le code promo, avec son statut du jour.
+     */
+    private function promoCodeWithStatus(int $id): array
+    {
+        $promoCode = $this->promoCodes->findById($id);
+
+        return $promoCode + ['status' => self::promoStatus($promoCode, self::today()->format('Y-m-d'))];
+    }
+
+    /**
+     * Valide la saisie d'un code promo. Répond 422 (erreurs par champ) ou
+     * 409 (code déjà pris), et s'arrête, si elle est refusée.
+     *
+     * - code : obligatoire, mis en majuscules, PROMO_CODE_PATTERN, unique ;
+     * - discountRate : entier de PROMO_RATE_MIN à PROMO_RATE_MAX ;
+     * - minAmount : facultatif (vide : sans minimum), montant comme un prix ;
+     * - startsOn, endsOn : facultatifs, dates « 2026-12-31 », la fin au plus
+     *   tôt le jour du début. Une fin déjà passée n'est refusée que si elle
+     *   est saisie : un code expiré reste modifiable ;
+     * - maxUses : facultatif (vide : illimité), entier de 1 à PROMO_USES_MAX,
+     *   et pas moins que les utilisations déjà faites.
+     *
+     * @param array<string, mixed>      $body    Corps JSON reçu.
+     * @param array<string, mixed>|null $current Code modifié (findById), ou null à la création.
+     *
+     * @return array{code:string, discountRate:int, minAmount:string, startsOn:?string, endsOn:?string,
+     *               maxUses:?int}
+     */
+    private function validatePromoCode(array $body, ?array $current): array
+    {
+        $errors = [];
+
+        $code = self::cleanText($body['code'] ?? null);
+        $code = $code === null ? null : strtoupper(str_replace(' ', '', $code));
+        if ($code === null || $code === '') {
+            $errors['code'] = 'Saisissez le code.';
+        } elseif (preg_match(self::PROMO_CODE_PATTERN, $code) !== 1) {
+            $errors['code'] = 'De 3 à 20 caractères : lettres sans accent et chiffres.';
+        }
+
+        $rate = filter_var($body['discountRate'] ?? null, FILTER_VALIDATE_INT, [
+            'options' => ['min_range' => self::PROMO_RATE_MIN, 'max_range' => self::PROMO_RATE_MAX],
+        ]);
+        if ($rate === false) {
+            $errors['discountRate'] = 'Une réduction entière de ' . self::PROMO_RATE_MIN . ' à ' . self::PROMO_RATE_MAX . ' %.';
+        }
+
+        $minAmount = $body['minAmount'] ?? '';
+        $minAmount = $minAmount === '' || $minAmount === null ? '0.00' : self::parsePrice($minAmount);
+        if ($minAmount === null) {
+            $errors['minAmount'] = 'Montant invalide, par exemple 50,00.';
+        }
+
+        $startsOn = self::parseDate($body['startsOn'] ?? null);
+        if ($startsOn === false) {
+            $errors['startsOn'] = 'Date de début invalide.';
+        }
+
+        $endsOn = self::parseDate($body['endsOn'] ?? null);
+        if ($endsOn === false) {
+            $errors['endsOn'] = 'Date de fin invalide.';
+        } elseif ($endsOn !== null && is_string($startsOn) && $endsOn < $startsOn) {
+            $errors['endsOn'] = 'La fin doit être au plus tôt le jour du début.';
+        } elseif ($endsOn !== null && $endsOn < self::today()->format('Y-m-d') && $endsOn !== ($current['endsOn'] ?? null)) {
+            $errors['endsOn'] = 'Cette date est déjà passée.';
+        }
+
+        $maxUses = $body['maxUses'] ?? null;
+        $useCount = $current['useCount'] ?? 0;
+        if ($maxUses !== null && $maxUses !== '') {
+            $maxUses = filter_var($maxUses, FILTER_VALIDATE_INT, [
+                'options' => ['min_range' => 1, 'max_range' => self::PROMO_USES_MAX],
+            ]);
+            if ($maxUses === false) {
+                $errors['maxUses'] = 'Un nombre entier de 1 à ' . self::PROMO_USES_MAX . ', ou vide pour illimité.';
+            } elseif ($maxUses < $useCount) {
+                $errors['maxUses'] = "Déjà utilisé {$useCount} fois : la limite ne peut pas être plus basse.";
+            }
+        } else {
+            $maxUses = null;
+        }
+
+        if ($errors !== []) {
+            Response::json(['erreur' => 'Certains champs sont à corriger.', 'champs' => $errors], 422);
+        }
+
+        if ($this->promoCodes->codeExists($code, $current['id'] ?? null)) {
+            self::duplicateCode();
+        }
+
+        return [
+            'code'         => $code,
+            'discountRate' => $rate,
+            'minAmount'    => $minAmount,
+            'startsOn'     => $startsOn,
+            'endsOn'       => $endsOn,
+            'maxUses'      => $maxUses,
+        ];
+    }
+
+    /**
+     * @param mixed $date Valeur reçue : « 2026-12-31 », chaîne vide ou null.
+     *
+     * @return string|false|null La date « 2026-12-31 », null si elle est
+     *                           vide, false si elle est invalide.
+     */
+    private static function parseDate(mixed $date): string|false|null
+    {
+        if ($date === null || $date === '') {
+            return null;
+        }
+        if (!is_string($date)) {
+            return false;
+        }
+
+        $parsed = DateTimeImmutable::createFromFormat('!Y-m-d', $date);
+
+        // createFromFormat accepte le 31/02 en le reportant au 03/03 : la
+        // relecture doit redonner la saisie.
+        return $parsed !== false && $parsed->format('Y-m-d') === $date ? $date : false;
+    }
+
+    /**
+     * Statut d'un code promo à une date donnée. Expiré et programmé passent
+     * avant épuisé : c'est la date qui explique d'abord qu'il ne marche pas.
+     *
+     * @param array{startsOn:?string, endsOn:?string, maxUses:?int, useCount:int} $promoCode
+     * @param string $today Aujourd'hui, « 2026-10-22 ».
+     *
+     * @return string « expire », « programme », « epuise » ou « actif ».
+     */
+    private static function promoStatus(array $promoCode, string $today): string
+    {
+        if ($promoCode['endsOn'] !== null && $promoCode['endsOn'] < $today) {
+            return 'expire';
+        }
+        if ($promoCode['startsOn'] !== null && $promoCode['startsOn'] > $today) {
+            return 'programme';
+        }
+        if ($promoCode['maxUses'] !== null && $promoCode['useCount'] >= $promoCode['maxUses']) {
+            return 'epuise';
+        }
+
+        return 'actif';
+    }
+
+    /**
+     * Répond 409 (code promo déjà pris) et s'arrête.
+     */
+    private static function duplicateCode(): void
+    {
+        Response::json([
+            'erreur' => 'Ce code existe déjà.',
+            'champs' => ['code' => 'Ce code existe déjà.'],
         ], 409);
     }
 

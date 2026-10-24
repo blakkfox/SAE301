@@ -2,7 +2,8 @@ import { getRequest, postRequest } from "../lib/api-request.js";
 
 /**
  * Back-office : tableau de bord (US GOF-b), gestion des commandes (US PIL-b),
- * des catégories (US GOF-c) et des produits (US GOF-a), statistiques (US PIL-a).
+ * des catégories (US GOF-c), des produits (US GOF-a) et des codes promo
+ * (US PRO-b), statistiques (US PIL-a).
  *
  * Le rôle n'est jamais connu du navigateur : c'est le serveur qui relit le
  * compte connecté et refuse le tableau de bord à tout autre qu'un
@@ -272,6 +273,63 @@ AdminData.deleteProduct = async function (id) {
  */
 AdminData.fetchStats = async function (period) {
   return getRequest(`admin/stats?period=${encodeURIComponent(period)}`);
+};
+
+/**
+ * Codes promo : GET /api/admin/promo-codes
+ *
+ * @returns {Promise<{admin: {firstName: string, lastName: string},
+ *   promoCodes: Array<{id: number, code: string, discountRate: number, minAmount: number,
+ *     startsOn: ?string, endsOn: ?string, maxUses: ?number, useCount: number,
+ *     status: "actif"|"programme"|"expire"|"epuise"}>}>}
+ *   Du plus récent au plus ancien ; dates au format « 2026-12-31 », null
+ *   sans borne ; maxUses null : illimité. Le statut est calculé par le
+ *   serveur à la date du jour.
+ * @throws {ErreurApi} 401 si personne n'est connecté, 403 si le compte n'est
+ *   pas administrateur.
+ */
+AdminData.fetchPromoCodes = async function () {
+  return getRequest("admin/promo-codes");
+};
+
+/**
+ * Création d'un code promo : POST /api/admin/promo-codes
+ *
+ * Les valeurs sont envoyées telles que saisies (« 50,00 », « » pour
+ * illimité) : le serveur les valide.
+ *
+ * @param {{code: string, discountRate: string, minAmount: string, startsOn: string, endsOn: string,
+ *   maxUses: string}} promoCode
+ * @returns {Promise<{promoCode: Object}>} Le code créé, comme dans fetchPromoCodes.
+ * @throws {ErreurApi} 422 si la saisie est invalide, 409 si le code existe
+ *   déjà (erreurs par champ dans champs) ; 401, 403 comme fetchPromoCodes.
+ */
+AdminData.createPromoCode = async function (promoCode) {
+  return postRequest("admin/promo-codes", promoCode);
+};
+
+/**
+ * Modification d'un code promo : POST /api/admin/promo-codes/update
+ *
+ * @param {number} id
+ * @param {Object} promoCode - Comme createPromoCode.
+ * @returns {Promise<{promoCode: Object}>} Le code modifié.
+ * @throws {ErreurApi} 404 si le code n'existe pas ; 422, 409, 401, 403
+ *   comme createPromoCode.
+ */
+AdminData.updatePromoCode = async function (id, promoCode) {
+  return postRequest("admin/promo-codes/update", { id, ...promoCode });
+};
+
+/**
+ * Suppression d'un code promo : POST /api/admin/promo-codes/delete
+ *
+ * @param {number} id
+ * @returns {Promise<{deleted: {id: number, code: string}}>}
+ * @throws {ErreurApi} 404 si le code n'existe pas ; 401, 403 comme fetchPromoCodes.
+ */
+AdminData.deletePromoCode = async function (id) {
+  return postRequest("admin/promo-codes/delete", { id });
 };
 
 export { AdminData };
