@@ -14,22 +14,6 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700&family=Barlow:wght@400;500;600;700&display=swap" />
 
     <link rel="stylesheet" href="/src/global.css" />
-
-    <!--
-      Application du thème avant le premier affichage. Script ordinaire et non
-      module : le navigateur l'exécute avant de dessiner la page, qui
-      n'apparaît donc jamais, même brièvement, dans le mauvais thème.
-      Le thème est conservé en localStorage : le serveur n'en a pas besoin.
-    -->
-    <script>
-      try {
-        if (localStorage.getItem("theme") === "sombre") {
-          document.documentElement.classList.add("theme-dark");
-        }
-      } catch (e) {
-        // localStorage indisponible : on reste en thème clair.
-      }
-    </script>
   </head>
   <body class="bg-page font-sans text-ink antialiased">
     <div id="app"></div>

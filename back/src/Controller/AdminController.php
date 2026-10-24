@@ -105,6 +105,9 @@ final class AdminController
     /** Nombre maximal d'options d'un produit. */
     private const OPTIONS_MAX = 10;
 
+    /** Nombre maximal de photos d'un produit : les emplacements de la galerie de la fiche. */
+    private const IMAGES_MAX = 4;
+
     /** Longueur maximale du libellé d'une option (colonne product_option.label). */
     private const OPTION_LABEL_MAX = 60;
 
@@ -134,6 +137,18 @@ final class AdminController
 
     /** Nom de fichier accepté comme photo produit : pas de chemin, extension d'image. */
     private const IMAGE_PATTERN = '/^[a-z0-9][a-z0-9._-]*\.(jpe?g|png|webp)$/i';
+
+    /** Poids maximal d'une photo téléversée, en octets (5 Mo). */
+    private const UPLOAD_SIZE_MAX = 5 * 1024 * 1024;
+
+    /** Plus grand côté d'une photo enregistrée, en pixels : au-delà, elle est réduite. */
+    private const UPLOAD_SIDE_MAX = 1600;
+
+    /** Formats acceptés au téléversement, et leur extension. */
+    private const UPLOAD_TYPES = [IMAGETYPE_JPEG => 'jpg', IMAGETYPE_PNG => 'png', IMAGETYPE_WEBP => 'webp'];
+
+    /** Message d'un fichier refusé (format ou contenu). */
+    private const UPLOAD_INVALID = 'Choisissez une photo au format JPEG, PNG ou WebP.';
 
     /** Code promo : lettres sans accent et chiffres, de 3 à 20 caractères (colonne promo_code.code). */
     private const PROMO_CODE_PATTERN = '/^[A-Z0-9]{3,20}$/';
@@ -176,7 +191,7 @@ final class AdminController
      * @param CategoryModel $categories Accès aux catégories.
      * @param OrderModel     $orders     Accès aux commandes.
      * @param PromoCodeModel $promoCodes Accès aux codes promo.
-     * @param string         $imageDir   Dossier des photos produit, front/dist/images/produits.
+     * @param string         $imageDir   Dossier des photos produit, front/public/images/produits.
      */
     public function __construct(
         CustomerModel $customers,
@@ -200,8 +215,9 @@ final class AdminController
      * Répond { admin, stats, upcomingOrders, stockAlerts, stockAlertCount } :
      * - admin : prénom et nom du compte connecté ;
      * - stats : productCount, categoryCount (premier niveau), orderCount
-     *   (depuis l'ouverture), inProgressCount, availableCount, soldOut
-     *   (produits épuisés : id, name) ;
+     *   (depuis l'ouverture), inProgressCount, availableCount,
+     *   soldOutVariantCount (variantes à 0, comme les « épuisé » des alertes)
+     *   et soldOut (produits épuisés dans toutes leurs variantes : id, name) ;
      * - upcomingOrders : commandes « en cours » ou « disponibles », par début
      *   de créneau, avec dayOffset (0 aujourd'hui, 1 demain, -1 hier…) ;
      * - stockAlerts : variantes dont le stock est au plus le seuil « Bientôt
@@ -226,6 +242,8 @@ final class AdminController
                 'orderCount'      => array_sum($statusCounts),
                 'inProgressCount' => $statusCounts['en_cours'],
                 'availableCount'  => $statusCounts['disponible'],
+                // Les alertes contiennent toutes les variantes à 0 : le seuil n'est jamais négatif.
+                'soldOutVariantCount' => count(array_filter($alerts, static fn (array $alert): bool => $alert['stock'] === 0)),
                 'soldOut'         => $this->products->findSoldOut(),
             ],
             'upcomingOrders'  => array_map(
@@ -692,9 +710,9 @@ final class AdminController
 
     /**
      * POST /api/admin/products, corps JSON
-     * { name, description, price, categoryId, image, variantAxis,
+     * { name, description, categoryId, images: ["photo.jpg"…], variantAxis,
      *   lowStockThreshold, isActive, variants: [{ id: null, label, reference,
-     *   stock }], options: [{ id: null, label, description, price }] }.
+     *   price, stock }], options: [{ id: null, label, description, price }] }.
      *
      * Crée le produit (slug calculé depuis le nom) et répond { product }, en
      * 201. Le stock initial de chaque variante est journalisé (réassort).
@@ -748,6 +766,55 @@ final class AdminController
         }
 
         Response::json(['product' => $this->productDetail($current['id'])]);
+    }
+
+    /**
+     * POST /api/admin/products/images, formulaire multipart avec le fichier
+     * « image » (US GOF-a : téléversement des photos).
+     *
+     * Le fichier doit être une vraie image JPEG, PNG ou WebP (contenu lu, pas
+     * seulement l'extension) d'au plus UPLOAD_SIZE_MAX octets. Il est
+     * réencodé, réduit à UPLOAD_SIDE_MAX pixels sur son plus grand côté, et
+     * enregistré sous un nom neuf dans le dossier des photos : il rejoint la
+     * liste proposée pour les emplacements de la galerie. L'ajout au produit
+     * se fait ensuite à l'enregistrement de la fiche.
+     *
+     * Répond 201 { image, images } : le nom du fichier créé et la liste à
+     * jour. 422 si le fichier est absent, trop lourd ou n'est pas une image
+     * acceptée (erreur dans champs.image) ; 401, 403 comme products().
+     *
+     * @param Request $request Requête entrante (le fichier est lu dans $_FILES).
+     */
+    public function uploadImage(Request $request): void
+    {
+        $this->requireAdmin();
+
+        $file  = $_FILES['image'] ?? null;
+        $error = is_array($file) && is_int($file['error'] ?? null) ? $file['error'] : UPLOAD_ERR_NO_FILE;
+
+        if ($error === UPLOAD_ERR_INI_SIZE || $error === UPLOAD_ERR_FORM_SIZE
+            || ($error === UPLOAD_ERR_OK && $file['size'] > self::UPLOAD_SIZE_MAX)) {
+            self::uploadRefused('La photo dépasse ' . (self::UPLOAD_SIZE_MAX / 1024 / 1024) . ' Mo.');
+        }
+        if ($error !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'])) {
+            self::uploadRefused('Choisissez une photo à téléverser.');
+        }
+
+        // getimagesize lit l'en-tête du fichier : un script renommé en .jpg est refusé.
+        $info = getimagesize($file['tmp_name']);
+        $type = $info === false ? null : $info[2];
+
+        if ($type === null || !array_key_exists($type, self::UPLOAD_TYPES)) {
+            self::uploadRefused(self::UPLOAD_INVALID);
+        }
+
+        $name = self::uploadName((string) ($file['name'] ?? ''), self::UPLOAD_TYPES[$type]);
+
+        if (!$this->saveResizedImage($file['tmp_name'], $type, $this->imageDir . '/' . $name)) {
+            self::uploadRefused(self::UPLOAD_INVALID);
+        }
+
+        Response::json(['image' => $name, 'images' => $this->productImages()], 201);
     }
 
     /**
@@ -901,15 +968,17 @@ final class AdminController
      *
      * @param int $id Produit existant.
      *
-     * @return array<string, mixed> Le produit de findAdminById, avec variants
-     *                              (id, label, reference, stock), options
+     * @return array<string, mixed> Le produit de findAdminById, avec images
+     *                              (noms de fichier, dans l'ordre), variants
+     *                              (id, label, reference, price, stock), options
      *                              (id, label, description, price) et
      *                              movements (MOVEMENT_LIMIT derniers mouvements de stock).
      */
     private function productDetail(int $id): array
     {
         return $this->products->findAdminById($id) + [
-            'variants'  => $this->products->findVariants($id),
+            'images'    => $this->products->findImages($id),
+            'variants'  => $this->products->findAdminVariants($id),
             'options'   => $this->products->findOptions($id),
             'movements' => $this->products->findMovements($id, self::MOVEMENT_LIMIT),
         ];
@@ -943,10 +1012,10 @@ final class AdminController
     }
 
     /**
-     * Photos proposées au back-office : les fichiers déjà présents dans le
+     * Photos proposées au back-office : les fichiers présents dans le
      * dossier des photos produit (front/public/images/produits, copié dans
-     * front/dist par npm run build). C'est aussi la liste blanche des noms
-     * acceptés pour la colonne product.image.
+     * front/dist par npm run build), téléversées comprises. C'est aussi la
+     * liste blanche des noms acceptés pour la table product_image.
      *
      * @return array<int, string> Noms de fichier, par ordre alphabétique.
      */
@@ -965,15 +1034,94 @@ final class AdminController
     }
 
     /**
+     * Réencode une image téléversée et l'enregistre, réduite si son plus
+     * grand côté dépasse UPLOAD_SIDE_MAX. Le réencodage par GD ne garde que
+     * les pixels : métadonnées (position GPS de l'appareil…) et contenu
+     * caché sont perdus. La transparence des PNG et WebP est conservée.
+     *
+     * @param string $source      Fichier temporaire du téléversement.
+     * @param int    $type        IMAGETYPE_JPEG, IMAGETYPE_PNG ou IMAGETYPE_WEBP.
+     * @param string $destination Chemin du fichier à créer.
+     *
+     * @return bool false si l'image est illisible ou n'a pas pu être enregistrée.
+     */
+    private function saveResizedImage(string $source, int $type, string $destination): bool
+    {
+        $image = match ($type) {
+            IMAGETYPE_JPEG => @imagecreatefromjpeg($source),
+            IMAGETYPE_PNG  => @imagecreatefrompng($source),
+            IMAGETYPE_WEBP => @imagecreatefromwebp($source),
+        };
+
+        if ($image === false) {
+            return false;
+        }
+
+        $width  = imagesx($image);
+        $height = imagesy($image);
+        $ratio  = min(1, self::UPLOAD_SIDE_MAX / max($width, $height));
+
+        if ($ratio < 1) {
+            $resized = imagescale($image, max(1, (int) round($width * $ratio)), max(1, (int) round($height * $ratio)));
+            if ($resized === false) {
+                return false;
+            }
+            $image = $resized;
+        }
+
+        if ($type !== IMAGETYPE_JPEG) {
+            imagealphablending($image, false);
+            imagesavealpha($image, true);
+        }
+
+        return match ($type) {
+            IMAGETYPE_JPEG => imagejpeg($image, $destination, 85),
+            IMAGETYPE_PNG  => imagepng($image, $destination, 6),
+            IMAGETYPE_WEBP => imagewebp($image, $destination, 85),
+        };
+    }
+
+    /**
+     * Nom du fichier enregistré : le nom d'origine en minuscules, sans
+     * accents ni caractères spéciaux, suivi d'un suffixe aléatoire (deux
+     * envois du même nom ne s'écrasent pas), avec l'extension du format réel.
+     * Il respecte toujours IMAGE_PATTERN.
+     *
+     * @param string $original  Nom du fichier choisi par l'administrateur.
+     * @param string $extension Extension du format détecté.
+     *
+     * @return string Par exemple « casque-rouge-3f9a1c.jpg ».
+     */
+    private static function uploadName(string $original, string $extension): string
+    {
+        $base = pathinfo($original, PATHINFO_FILENAME);
+        $base = iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $base) ?: '';
+        $base = trim(preg_replace('/[^a-z0-9]+/', '-', strtolower($base)) ?? '', '-');
+        $base = substr($base === '' ? 'photo' : $base, 0, 60);
+
+        return $base . '-' . bin2hex(random_bytes(3)) . '.' . $extension;
+    }
+
+    /**
+     * Répond 422 pour un téléversement refusé, l'erreur sous le champ « image ».
+     *
+     * @param string $message Raison du refus.
+     */
+    private static function uploadRefused(string $message): void
+    {
+        Response::json(['erreur' => $message, 'champs' => ['image' => $message]], 422);
+    }
+
+    /**
      * Valide la saisie d'un produit. Répond 422 (erreurs par champ, clés
      * « variants.2.reference »… pour les lignes) ou 409 (référence déjà
      * prise), et s'arrête, si elle est refusée.
      *
      * - name : obligatoire, au plus PRODUCT_NAME_MAX caractères ;
      * - description : facultative, au plus PRODUCT_DESCRIPTION_MAX caractères ;
-     * - price : prix TTC positif, « 379,90 » ou 379.9 ;
      * - categoryId : une catégorie existante, masquée ou non ;
-     * - image : null, ou une photo de productImages() ;
+     * - images : au plus IMAGES_MAX photos de productImages(), sans doublon,
+     *   dans l'ordre de la galerie (la première est celle des cartes) ;
      * - variantAxis : facultatif, obligatoire dès deux variantes ;
      * - lowStockThreshold : entier de 0 à THRESHOLD_MAX ;
      * - isActive : booléen ;
@@ -983,9 +1131,10 @@ final class AdminController
      * @param array<string, mixed> $body      Corps JSON reçu.
      * @param int|null             $productId Produit modifié, ou null à la création.
      *
-     * @return array{categoryId:int, name:string, description:?string, price:string, image:?string,
+     * @return array{categoryId:int, name:string, description:?string, images:array<int, string>,
      *               variantAxis:?string, lowStockThreshold:int, isActive:bool,
-     *               variants:array<int, array{id:?int, label:string, reference:string, stockDelta:int}>,
+     *               variants:array<int, array{id:?int, label:string, reference:string, price:string,
+     *                                         stockDelta:int}>,
      *               options:array<int, array{id:?int, label:string, description:?string, price:string}>}
      */
     private function validateProduct(array $body, ?int $productId): array
@@ -1007,21 +1156,12 @@ final class AdminController
             $errors['description'] = 'La description ne doit pas dépasser ' . self::PRODUCT_DESCRIPTION_MAX . ' caractères.';
         }
 
-        $price = self::parsePrice($body['price'] ?? null);
-        if ($price === null) {
-            $errors['price'] = 'Indiquez un prix en euros, par exemple 379,90.';
-        }
-
         $categoryId = filter_var($body['categoryId'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
         if ($categoryId === false || $this->categories->findById($categoryId) === null) {
             $errors['categoryId'] = 'Choisissez une catégorie.';
         }
 
-        $image = $body['image'] ?? null;
-        $image = $image === '' ? null : $image;
-        if ($image !== null && (!is_string($image) || !in_array($image, $this->productImages(), true))) {
-            $errors['image'] = 'Choisissez une photo de la liste.';
-        }
+        $images = $this->validateImages($body['images'] ?? [], $errors);
 
         $threshold = filter_var(
             $body['lowStockThreshold'] ?? null,
@@ -1068,8 +1208,7 @@ final class AdminController
             'categoryId'        => $categoryId,
             'name'              => $name,
             'description'       => $description === '' ? null : $description,
-            'price'             => $price,
-            'image'             => $image,
+            'images'            => $images,
             'variantAxis'       => $variantAxis === '' ? null : $variantAxis,
             'lowStockThreshold' => $threshold,
             'isActive'          => $isActive,
@@ -1084,6 +1223,7 @@ final class AdminController
      * - label : obligatoire, au plus VARIANT_LABEL_MAX caractères, unique dans le produit ;
      * - reference : obligatoire, lettres, chiffres et tirets (mise en
      *   majuscules), au plus REFERENCE_MAX caractères, unique ;
+     * - price : prix TTC positif de la variante, « 379,90 » ou 379.9 ;
      * - stock : entier de 0 à STOCK_MAX ; previousStock (variante existante) :
      *   le stock affiché au chargement, dont on tire l'écart à appliquer.
      * Une variante retirée ne doit pas être dans une commande en cours ou disponible.
@@ -1092,7 +1232,7 @@ final class AdminController
      * @param int|null              $productId Produit modifié, ou null.
      * @param array<string, string> $errors    Erreurs par champ, complétées ici.
      *
-     * @return array<int, array{id:?int, label:string, reference:string, stockDelta:int}>
+     * @return array<int, array{id:?int, label:string, reference:string, price:string, stockDelta:int}>
      */
     private function validateVariants(mixed $variants, ?int $productId, array &$errors): array
     {
@@ -1105,7 +1245,7 @@ final class AdminController
             return [];
         }
 
-        $existingIds = $productId === null ? [] : array_column($this->products->findVariants($productId), 'id');
+        $existingIds = $productId === null ? [] : array_column($this->products->findAdminVariants($productId), 'id');
         $valid       = [];
         $labels      = [];
         $references  = [];
@@ -1141,6 +1281,11 @@ final class AdminController
                 $errors[$key . '.reference'] = 'Deux variantes ont cette référence.';
             }
 
+            $price = self::parsePrice($row['price'] ?? null);
+            if ($price === null) {
+                $errors[$key . '.price'] = 'Un prix en euros, par exemple 379,90.';
+            }
+
             $stockRange = ['options' => ['min_range' => 0, 'max_range' => self::STOCK_MAX]];
             $stock      = filter_var($row['stock'] ?? null, FILTER_VALIDATE_INT, $stockRange);
             $previous   = $id === null ? 0 : filter_var($row['previousStock'] ?? null, FILTER_VALIDATE_INT, $stockRange);
@@ -1154,6 +1299,7 @@ final class AdminController
                 'id'         => $id,
                 'label'      => $label ?? '',
                 'reference'  => $reference,
+                'price'      => $price ?? '0.00',
                 'stockDelta' => is_int($stock) && is_int($previous) ? $stock - $previous : 0,
             ];
         }
@@ -1164,6 +1310,38 @@ final class AdminController
             if ($locked !== []) {
                 $errors['variants'] = 'Une variante retirée est dans une commande en cours ou disponible : '
                     . 'gardez-la jusqu\'au retrait ou à l\'annulation de la commande.';
+            }
+        }
+
+        return $valid;
+    }
+
+    /**
+     * Valide les photos saisies : une liste de noms de fichier, chacun parmi
+     * productImages(), sans doublon, au plus IMAGES_MAX.
+     *
+     * @param mixed                 $images Valeur « images » du corps JSON.
+     * @param array<string, string> $errors Erreurs par champ, complétées ici.
+     *
+     * @return array<int, string> Les photos, dans l'ordre reçu.
+     */
+    private function validateImages(mixed $images, array &$errors): array
+    {
+        if (!is_array($images) || !array_is_list($images) || count($images) > self::IMAGES_MAX) {
+            $errors['images'] = 'Choisissez au plus ' . self::IMAGES_MAX . ' photos.';
+            return [];
+        }
+
+        $available = $this->productImages();
+        $valid     = [];
+
+        for ($i = 0; $i < count($images); $i++) {
+            if (!is_string($images[$i]) || !in_array($images[$i], $available, true)) {
+                $errors["images.{$i}"] = 'Choisissez une photo de la liste.';
+            } elseif (in_array($images[$i], $valid, true)) {
+                $errors["images.{$i}"] = 'Cette photo est déjà choisie.';
+            } else {
+                $valid[] = $images[$i];
             }
         }
 
@@ -1554,13 +1732,15 @@ final class AdminController
     /**
      * Statut d'un code promo à une date donnée. Expiré et programmé passent
      * avant épuisé : c'est la date qui explique d'abord qu'il ne marche pas.
+     * Sert aussi au client, au panier et à la commande (CartController,
+     * US PRO-a) : seul un code « actif » s'utilise.
      *
      * @param array{startsOn:?string, endsOn:?string, maxUses:?int, useCount:int} $promoCode
      * @param string $today Aujourd'hui, « 2026-10-22 ».
      *
      * @return string « expire », « programme », « epuise » ou « actif ».
      */
-    private static function promoStatus(array $promoCode, string $today): string
+    public static function promoStatus(array $promoCode, string $today): string
     {
         if ($promoCode['endsOn'] !== null && $promoCode['endsOn'] < $today) {
             return 'expire';

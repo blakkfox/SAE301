@@ -8,7 +8,9 @@ import { getRequest, postRequest } from "../lib/api-request.js";
  * Le serveur recalcule les créneaux, revérifie les quantités et le stock, et
  * relit les prix en base : la commande envoyée ne contient que des choix
  * (concession, créneau) et des identifiants de variantes avec leur quantité
- * et leurs options (US OPT-a), dont le serveur relit les suppléments.
+ * et leurs options (US OPT-a), dont le serveur relit les suppléments, et le
+ * code promo saisi (US PRO-a), dont il revérifie la validité et recalcule la
+ * remise.
  */
 
 let OrderData = {};
@@ -32,15 +34,18 @@ OrderData.fetchCheckout = async function () {
  * Enregistre la commande : POST /api/orders
  *
  * @param {{dealershipId: number, slot: string,
- *   items: Array<{variantId: number, quantity: number, optionIds: number[]}>}} order
- * @returns {Promise<{order: {id: number, status: string, total: number, pickupStart: string,
+ *   items: Array<{variantId: number, quantity: number, optionIds: number[]}>,
+ *   promoCode: ?string}} order - promoCode : code promo (PRO-a), ou null.
+ * @returns {Promise<{order: {id: number, status: string, total: number, promoCode: ?string,
+ *   discount: number, pickupStart: string,
  *   pickupEnd: string, createdAt: string, dealership: {id: number, name: string, shortName: string},
  *   lines: Array<{variantId: ?number, name: string, label: string, reference: string,
  *     unitPrice: number, quantity: number, options: Array<{label: string, price: number}>}>}}>}
- *   unitPrice : prix d'un article, suppléments des options compris.
+ *   unitPrice : prix d'un article, suppléments des options compris ; total : déjà
+ *   diminué de discount, la remise du code promo (0 sans code).
  * @throws {ErreurApi} 401 (non connecté), 400 (articles invalides), 422 (concession,
- *   créneau ou option refusé, détail dans champs), 409 (stock insuffisant : rien n'est
- *   enregistré).
+ *   créneau, option ou code promo refusé, détail dans champs), 409 (stock insuffisant :
+ *   rien n'est enregistré).
  */
 OrderData.create = async function (order) {
   return postRequest("orders", order);

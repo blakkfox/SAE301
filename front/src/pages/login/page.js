@@ -44,7 +44,7 @@ let M = {
   notice: null, // { type, texte } à afficher au-dessus des formulaires, ou null
   login: null, // { email, errors } du formulaire de connexion
   register: null, // { values, errors } du formulaire de création de compte
-  resetForm: null, // { email, errors } du formulaire « Mot de passe oublié »
+  resetForm: null, // { email, phone, errors } du formulaire « Mot de passe oublié »
 };
 
 /**
@@ -57,7 +57,7 @@ M.reset = function () {
   M.notice = null;
   M.login = { email: "", errors: {} };
   M.register = { values: { firstName: "", lastName: "", email: "", phone: "" }, errors: {} };
-  M.resetForm = { email: "", errors: {} };
+  M.resetForm = { email: "", phone: "", errors: {} };
 };
 
 /**
@@ -77,21 +77,23 @@ M.loadCurrent = async function () {
 
 /**
  * Range l'erreur d'un envoi : les erreurs de saisie vont sous leurs champs,
- * une panne du serveur dans le message de la page.
+ * une panne du serveur ou trop d'essais (429) dans le message de la page.
  *
  * @param {Error} error - Erreur levée par AuthData (ErreurApi, ou TypeError
  *   si le serveur est injoignable).
  * @param {{errors: Object<string, string>}} form - Formulaire concerné.
  * @param {?string} credentialsField - Champ qui reçoit le message d'un 401
- *   (connexion refusée), ou null.
+ *   (connexion refusée) ou d'un 429 (trop d'essais), ou null.
  */
 M.storeError = function (error, form, credentialsField) {
   form.errors = {};
 
-  if (error.statut === 401 && credentialsField !== null) {
+  if ((error.statut === 401 || error.statut === 429) && credentialsField !== null) {
     form.errors = { [credentialsField]: error.message };
   } else if (error.champs !== undefined && Object.keys(error.champs).length > 0) {
     form.errors = error.champs;
+  } else if (error.statut === 429) {
+    M.notice = { type: "erreur", texte: error.message };
   } else if (error.statut === undefined) {
     M.notice = { type: "erreur", texte: "Le serveur ne répond pas. Vérifiez votre connexion, puis réessayez." };
   } else {
@@ -122,6 +124,7 @@ M.startSubmit = function (kind, values) {
     };
   } else if (kind === "reset") {
     M.resetForm.email = values.email;
+    M.resetForm.phone = values.phone;
   }
   return true;
 };
@@ -136,6 +139,15 @@ M.startSubmit = function (kind, values) {
 M.submitLogin = async function (email, password) {
   M.login.errors = {};
   M.notice = null;
+
+  // Champ vide : inutile de demander au serveur, qui répondrait seulement
+  // « identifiants incorrects ».
+  if (email.trim() === "" || password === "") {
+    if (email.trim() === "") M.login.errors.email = "Indiquez votre adresse e-mail.";
+    if (password === "") M.login.errors.password = "Indiquez votre mot de passe.";
+    M.pending = null;
+    return false;
+  }
 
   try {
     let response = await AuthData.login(email, password);
@@ -166,6 +178,11 @@ M.submitRegister = async function (account) {
     return true;
   } catch (error) {
     M.storeError(error, M.register, null);
+    // Les mots de passe ne sont jamais gardés : le formulaire reconstruit les
+    // vide. On le dit, sinon le nouvel envoi échouerait sans explication.
+    if (Object.keys(M.register.errors).length > 0 && M.register.errors.password === undefined) {
+      M.register.errors.password = "Par sécurité, saisissez à nouveau votre mot de passe.";
+    }
     return false;
   } finally {
     M.pending = null;
@@ -176,7 +193,7 @@ M.submitRegister = async function (account) {
  * Mot de passe oublié. En cas de succès, la colonne revient à la connexion,
  * adresse pré-remplie, avec un message de confirmation.
  *
- * @param {{email: string, password: string, passwordConfirm: string}} reset
+ * @param {{email: string, phone: string, password: string, passwordConfirm: string}} reset
  * @returns {Promise<boolean>} true si le mot de passe est modifié.
  */
 M.submitReset = async function (reset) {
@@ -215,6 +232,20 @@ M.logout = async function () {
 };
 
 /**
+ * Efface les erreurs restées sous un formulaire quand l'autre est envoyé :
+ * un refus de connexion n'a plus de sens pendant une création de compte.
+ *
+ * @param {"login"|"register"} kind - Formulaire dont on efface les erreurs.
+ * @returns {boolean} true s'il y en avait (le formulaire est à reconstruire).
+ */
+M.clearErrors = function (kind) {
+  let form = kind === "login" ? M.login : M.register;
+  let hadErrors = Object.keys(form.errors).length > 0;
+  form.errors = {};
+  return hadErrors;
+};
+
+/**
  * @returns {string} Chemin de route où mener l'utilisateur une fois connecté.
  */
 M.getAfterLoginPath = function () {
@@ -230,7 +261,7 @@ M.getAfterLoginPath = function () {
 M.showReset = function (email) {
   M.panel = "reset";
   M.notice = null;
-  M.resetForm = { email, errors: {} };
+  M.resetForm = { email, phone: "", errors: {} };
 };
 
 /**
@@ -258,7 +289,7 @@ M.getRegisterData = function () {
 };
 
 /**
- * @returns {{email: string, errors: Object<string, string>, isSubmitting: boolean}}
+ * @returns {{email: string, phone: string, errors: Object<string, string>, isSubmitting: boolean}}
  *   Données du formulaire « Mot de passe oublié ».
  */
 M.getResetData = function () {
@@ -322,6 +353,7 @@ C.init = async function () {
 C.handler_login = async function (email, password) {
   if (!M.startSubmit("login", { email })) return;
   V.renderLeft(M.getViewData());
+  if (M.clearErrors("register")) V.renderRegister(M.getViewData());
 
   if (await M.submitLogin(email, password)) {
     V.goTo(M.getAfterLoginPath());
@@ -342,6 +374,7 @@ C.handler_login = async function (email, password) {
 C.handler_register = async function (account) {
   if (!M.startSubmit("register", account)) return;
   V.renderRegister(M.getViewData());
+  if (M.clearErrors("login")) V.renderLeft(M.getViewData());
 
   if (await M.submitRegister(account)) {
     V.goTo(M.getAfterLoginPath());

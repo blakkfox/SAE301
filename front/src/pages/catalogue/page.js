@@ -1,7 +1,14 @@
 import { CartData } from "../../data/cart.js";
 import { ProductData } from "../../data/product.js";
 import { LOW_STOCK_MAX, getStockStatus } from "../../lib/stock.js";
-import { genericRenderer, htmlToFragment, replaceKeepingFocus } from "../../lib/utils.js";
+import {
+  genericRenderer,
+  htmlToFragment,
+  pushQuery,
+  replaceKeepingFocus,
+  replacePageNumber,
+  toPageNumber,
+} from "../../lib/utils.js";
 import { MessageView } from "../../ui/message/index.js";
 import { PaginationView } from "../../ui/pagination/index.js";
 import { ProductCardView } from "../../ui/product-card/index.js";
@@ -14,6 +21,8 @@ import templateSummary from "./summary.html?raw";
 import templatePromoNote from "./promo-note.html?raw";
 import templateLegend from "./legend.html?raw";
 import templateEmptyInStock from "./empty-in-stock.html?raw";
+import templateEmptySearch from "./empty-search.html?raw";
+import templateSearchReset from "./search-reset.html?raw";
 
 /**
  * Page « Catalogue » — US DEC-b (écran Figma n° 1).
@@ -21,6 +30,13 @@ import templateEmptyInStock from "./empty-in-stock.html?raw";
  * Au premier affichage, aucun tri n'est précisé : le serveur applique le tri
  * mémorisé dans son cookie, ou « Prix croissant ». Ensuite, le tri choisi
  * accompagne chaque requête.
+ *
+ * Page, tri et filtre sont inscrits dans l'adresse (?page=2&sort=name_asc&inStock=1) :
+ * « Précédent » revient aux réglages d'avant, et l'adresse se partage.
+ *
+ * Recherche : la recherche de l'en-tête mène ici avec ?q=casque. Le
+ * catalogue ne montre alors que les produits trouvés par le serveur ; tri,
+ * filtre et pagination s'appliquent aux résultats.
  *
  * Stocks (US STK-b, écran Figma n° 7) : chaque carte porte une pastille
  * « En stock », « Bientôt épuisé » ou « Épuisé », expliquée par la légende
@@ -46,6 +62,7 @@ const PROMO_NOTE = "La promotion change automatiquement selon les stocks de la c
 
 let M = {
   catalogue: null, // dernière réponse de l'API, ou null
+  page: 1, // page demandée, puis celle appliquée par le serveur
   sort: null, // tri demandé ou appliqué, ou null avant la première réponse
   error: null, // texte de l'erreur à afficher, ou null
   isLoading: false, // une requête est en cours
@@ -53,6 +70,7 @@ let M = {
   addedProductId: null, // produit de la dernière carte ajoutée au panier, ou null
   cartStatus: null, // confirmation d'ajout à annoncer, ou null
   hideSoldOut: false, // « Masquer les produits épuisés » est coché
+  search: "", // recherche en cours (?q=…), ou chaîne vide pour tout le catalogue
 };
 
 /**
@@ -62,12 +80,14 @@ let M = {
  */
 M.reset = function () {
   M.catalogue = null;
+  M.page = 1;
   M.sort = null;
   M.error = null;
   M.isLoading = false;
   M.addedProductId = null;
   M.cartStatus = null;
   M.hideSoldOut = false;
+  M.search = "";
 };
 
 /**
@@ -77,6 +97,32 @@ M.reset = function () {
  */
 M.setHideSoldOut = function (hideSoldOut) {
   M.hideSoldOut = hideSoldOut;
+};
+
+/**
+ * Reprend les réglages inscrits dans l'adresse.
+ *
+ * @param {{page?: string, sort?: string, inStock?: string, q?: string}} params - Paramètres du routeur.
+ * @returns {{page: number, sort: (string|undefined)}} La page et le tri à
+ *   demander (tri absent : celui du cookie, choisi par le serveur).
+ */
+M.readQuery = function (params) {
+  M.hideSoldOut = params.inStock === "1";
+  M.search = (params.q ?? "").trim();
+  return { page: toPageNumber(params.page), sort: params.sort };
+};
+
+/**
+ * @returns {Object<string, string>} Les réglages affichés, à inscrire dans
+ *   l'adresse : la première page et la case décochée n'y figurent pas.
+ */
+M.getQuery = function () {
+  let query = {};
+  if (M.search !== "") query.q = M.search;
+  if (M.page > 1) query.page = String(M.page);
+  if (M.sort !== null) query.sort = M.sort;
+  if (M.hideSoldOut) query.inStock = "1";
+  return query;
 };
 
 /**
@@ -99,15 +145,18 @@ M.loadPage = async function (page, sort) {
   M.error = null;
   M.addedProductId = null;
   M.cartStatus = null;
+  M.page = page;
   if (sort !== undefined) {
     M.sort = sort;
   }
 
   try {
-    let response = await ProductData.fetchPage(page, sort, undefined, M.hideSoldOut);
+    let response = await ProductData.fetchPage(page, sort, undefined, M.hideSoldOut, M.search);
     if (request !== M.lastRequest) return false;
     M.catalogue = response;
+    M.page = response.page;
     M.sort = response.sort;
+    M.search = response.q;
   } catch (error) {
     if (request !== M.lastRequest) return false;
     M.catalogue = null;
@@ -121,17 +170,19 @@ M.loadPage = async function (page, sort) {
 /**
  * Prépare un produit de l'API pour la carte produit.
  *
- * @param {{id: number, name: string, price: number, originalPrice: ?number,
+ * @param {{id: number, slug: string, name: string, price: number, priceFrom: boolean, originalPrice: ?number,
  *   discountRate: ?number, image: ?string, variantId: ?number, stock: number, lowStockThreshold: number}} product
- * @returns {{id: number, name: string, price: number, originalPrice: ?number,
+ * @returns {{id: number, slug: string, name: string, price: number, priceFrom: boolean, originalPrice: ?number,
  *   discountRate: ?number, imageUrl: ?string, variantId: ?number,
  *   stockStatus: "in"|"low"|"out", isAdded: boolean}}
  */
 M.toCardData = function (product) {
   return {
     id: product.id,
+    slug: product.slug,
     name: product.name,
     price: product.price,
+    priceFrom: product.priceFrom,
     originalPrice: product.originalPrice,
     discountRate: product.discountRate,
     imageUrl: ProductData.imageUrl(product.image),
@@ -155,7 +206,7 @@ M.addToCart = function (productId) {
   // Stock (STK-c) : pas plus que le stock de la variante dans le panier.
   if (CartData.remainingFor(product.variantId, product.stock) === 0) {
     M.addedProductId = null;
-    M.cartStatus = `Votre panier contient déjà tout le stock disponible de ${product.name}.`;
+    M.cartStatus = CartData.limitMessage(product.name, product.stock);
     return;
   }
 
@@ -181,13 +232,22 @@ M.getCard = function (productId) {
 /**
  * Phrase d'accroche sous le titre, avec le nombre de produits accordé.
  *
- * @param {number} total - Nombre de produits du catalogue.
- * @returns {string} Par exemple « 18 produits · stock en temps réel de la concession Lyon Centre ».
+ * @param {number} total - Nombre de produits du catalogue, ou des résultats.
+ * @returns {string} Par exemple « 18 produits · stock en temps réel de la
+ *   concession Lyon Centre », ou « 2 produits trouvés · … » pour une recherche.
  */
 M.formatSummary = function (total) {
   let label = total > 1 ? "produits" : "produit";
+  let found = M.search === "" ? "" : total > 1 ? " trouvés" : " trouvé";
   let inStock = M.hideSoldOut ? " en stock" : "";
-  return `${total} ${label}${inStock} · stock en temps réel de la concession Lyon Centre`;
+  return `${total} ${label}${found}${inStock} · stock en temps réel de la concession Lyon Centre`;
+};
+
+/**
+ * @returns {string} Titre de la page : « Catalogue », ou la recherche en cours.
+ */
+M.getTitle = function () {
+  return M.search === "" ? "Catalogue" : `Recherche « ${M.search} »`;
 };
 
 /**
@@ -217,8 +277,8 @@ M.getPageNumbers = function (pageCount) {
 /**
  * Rassemble tout ce que la Vue doit afficher, déjà préparé.
  *
- * @returns {{isLoading: boolean, summary: ?string, promoNote: ?string, sort: string,
- *   hideSoldOut: boolean, message: ?{type: string, texte: string},
+ * @returns {{title: string, search: string, isLoading: boolean, summary: ?string,
+ *   promoNote: ?string, sort: string, hideSoldOut: boolean, message: ?{type: string, texte: string},
  *   products: Array<ReturnType<typeof M.toCardData>>,
  *   legend: ReturnType<typeof M.getLegendData>,
  *   pagination: ?{page: number, pagesTotal: number, pages: number[]}}}
@@ -227,6 +287,8 @@ M.getViewData = function () {
   let catalogue = M.catalogue;
 
   return {
+    title: M.getTitle(),
+    search: M.search,
     isLoading: M.isLoading,
     summary: catalogue === null ? null : M.formatSummary(catalogue.total),
     promoNote: catalogue === null || catalogue.promotion === null ? null : PROMO_NOTE,
@@ -256,20 +318,24 @@ let C = {};
  * Point d'entrée de la page, appelé par le routeur.
  *
  * La page s'affiche tout de suite en état « chargement » ; la grille la
- * remplace dès que l'API a répondu.
+ * remplace dès que l'API a répondu. Page, tri et filtre sont ceux de
+ * l'adresse (retour par « Précédent », lien partagé).
  *
+ * @param {{page?: string, sort?: string, inStock?: string, q?: string}} params - Paramètres de l'adresse.
  * @returns {DocumentFragment} La page, à insérer par le routeur.
  */
-C.init = function () {
+C.init = function (params) {
   M.reset();
-  let loading = M.loadPage(1);
+  let query = M.readQuery(params);
+  let loading = M.loadPage(query.page, query.sort);
   let fragment = V.init(M.getViewData());
   C.renderWhenLoaded(loading);
   return fragment;
 };
 
 /**
- * Lance un chargement : affiche l'état « chargement », puis le résultat.
+ * Lance un chargement demandé par l'utilisateur : inscrit les nouveaux
+ * réglages dans l'adresse, affiche l'état « chargement », puis le résultat.
  *
  * @param {number} page - Numéro de page demandé.
  * @param {string} sort - Clé de tri.
@@ -277,19 +343,22 @@ C.init = function () {
  */
 C.load = function (page, sort) {
   let loading = M.loadPage(page, sort);
+  V.pushQuery(M.getQuery());
   V.render(M.getViewData());
   return C.renderWhenLoaded(loading);
 };
 
 /**
  * Réaffiche la page quand le chargement est terminé, sauf si sa réponse a été
- * dépassée par une requête plus récente.
+ * dépassée par une requête plus récente. L'adresse prend la page appliquée
+ * par le serveur (une page trop grande devient la dernière).
  *
  * @param {Promise<boolean>} loading - Résultat de M.loadPage.
  * @returns {Promise<void>}
  */
 C.renderWhenLoaded = async function (loading) {
   if (await loading) {
+    V.replacePageNumber(M.page);
     V.render(M.getViewData());
   }
 };
@@ -376,6 +445,26 @@ V.render = function (data) {
 };
 
 /**
+ * Inscrit les réglages de la liste dans l'adresse.
+ *
+ * @param {ReturnType<typeof M.getQuery>} query
+ */
+V.pushQuery = function (query) {
+  pushQuery(query);
+};
+
+/**
+ * Corrige le numéro de page de l'adresse, sans nouvelle entrée d'historique.
+ * Rien si l'utilisateur a quitté le catalogue avant la réponse : l'adresse
+ * est alors celle d'une autre page.
+ *
+ * @param {number} page - Page appliquée par le serveur.
+ */
+V.replacePageNumber = function (page) {
+  if (V.root?.isConnected) replacePageNumber(page);
+};
+
+/**
  * Reconstruit une carte, en gardant le focus sur son bouton.
  *
  * @param {?ReturnType<typeof M.toCardData>} card
@@ -436,13 +525,20 @@ V.createLegendFragment = function (legend) {
  * @returns {DocumentFragment}
  */
 V.createPageFragment = function (data) {
-  let page = htmlToFragment(template);
+  let page = htmlToFragment(genericRenderer(template, { title: data.title }));
 
   let summarySlot = page.querySelector('slot[name="summary"]');
   if (data.summary === null) {
     summarySlot.remove();
   } else {
     summarySlot.replaceWith(htmlToFragment(genericRenderer(templateSummary, { summary: data.summary })));
+  }
+
+  let searchResetSlot = page.querySelector('slot[name="search-reset"]');
+  if (data.search === "") {
+    searchResetSlot.remove();
+  } else {
+    searchResetSlot.replaceWith(htmlToFragment(templateSearchReset));
   }
 
   let promoNoteSlot = page.querySelector('slot[name="promo-note"]');
@@ -467,6 +563,8 @@ V.createPageFragment = function (data) {
     gridSlot.replaceWith(ProductGridView.loading());
   } else if (data.message !== null) {
     gridSlot.remove();
+  } else if (data.products.length === 0 && data.search !== "") {
+    gridSlot.replaceWith(htmlToFragment(genericRenderer(templateEmptySearch, { search: data.search })));
   } else if (data.products.length === 0 && data.hideSoldOut) {
     gridSlot.replaceWith(htmlToFragment(templateEmptyInStock));
   } else {
@@ -493,8 +591,9 @@ V.createPageFragment = function (data) {
 /**
  * Page exportée vers le routeur (voir main.js).
  *
+ * @param {{page?: string, sort?: string, inStock?: string, q?: string}} params - Paramètres de l'adresse.
  * @returns {DocumentFragment}
  */
-export function CataloguePage() {
-  return C.init();
+export function CataloguePage(params) {
+  return C.init(params);
 }

@@ -24,12 +24,25 @@ final class Request
     /** Corps de la requête, décodé depuis le JSON reçu. */
     private array $corps;
 
-    private function __construct(string $methode, string $chemin, array $parametres, array $corps)
+    /** Adresse IP du client, pour limiter les tentatives de connexion. */
+    private string $ip;
+
+    /**
+     * Privé : une requête se construit avec depuisGlobals().
+     *
+     * @param string                $methode    Méthode HTTP, en majuscules.
+     * @param string                $chemin     Chemin demandé, à partir de /api/.
+     * @param array<string, mixed>  $parametres Paramètres de la chaîne de requête.
+     * @param array<string, mixed>  $corps      Corps JSON décodé.
+     * @param string                $ip         Adresse IP du client, ou chaîne vide.
+     */
+    private function __construct(string $methode, string $chemin, array $parametres, array $corps, string $ip)
     {
         $this->methode    = $methode;
         $this->chemin     = $chemin;
         $this->parametres = $parametres;
         $this->corps      = $corps;
+        $this->ip         = $ip;
     }
 
     /**
@@ -44,7 +57,7 @@ final class Request
         $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
 
         // L'application est déployée dans un sous-dossier, donc l'URL reçue
-        // ressemble à /~votre_login/Base/api/films. On ne conserve que la partie
+        // ressemble à /~votre_login/Base/api/products. On ne conserve que la partie
         // qui nous concerne, à partir du marqueur /api/.
         $position = strpos($uri, '/api/');
         $chemin   = $position === false ? '/' : substr($uri, $position);
@@ -61,17 +74,16 @@ final class Request
             $chemin,
             $_GET,
             $corps,
+            $_SERVER['REMOTE_ADDR'] ?? '',
         );
     }
 
-    public function methode(): string
+    /**
+     * L'adresse IP du client (REMOTE_ADDR), ou une chaîne vide si elle est inconnue.
+     */
+    public function ip(): string
     {
-        return $this->methode;
-    }
-
-    public function chemin(): string
-    {
-        return $this->chemin;
+        return $this->ip;
     }
 
     /**

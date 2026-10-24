@@ -412,7 +412,11 @@ M.getCsvExport = function () {
     [],
     ["Revenus des 7 derniers jours"],
     ["Date", "Revenus en €"],
-    ...M.stats.dailyRevenue.map((day) => [M.csvDate(day.date), M.csvAmount(day.revenue)]),
+    // Dimanche sans recette : « fermé », comme sur le graphique.
+    ...M.stats.dailyRevenue.map((day) => [
+      M.csvDate(day.date),
+      day.isClosed && day.revenue === 0 ? "fermé" : M.csvAmount(day.revenue),
+    ]),
     [],
     ["Produits les plus vendus", period.label],
     ["Rang", "Produit", "Ventes"],

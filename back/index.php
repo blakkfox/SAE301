@@ -27,6 +27,7 @@ use App\Controller\ProductController;
 use App\Model\CategoryModel;
 use App\Model\CustomerModel;
 use App\Model\DealershipModel;
+use App\Model\LoginAttemptModel;
 use App\Model\OrderModel;
 use App\Model\ProductModel;
 use App\Model\PromoCodeModel;
@@ -74,11 +75,11 @@ try {
         CatalogueController::class => new CatalogueController(new ProductModel($pdo, new StockModel($pdo)), new CategoryModel($pdo), $config['chemin']),
         ProductController::class   => new ProductController(new ProductModel($pdo, new StockModel($pdo))),
         CategoryController::class  => new CategoryController(new CategoryModel($pdo), new ProductModel($pdo, new StockModel($pdo))),
-        CartController::class      => new CartController(new ProductModel($pdo, new StockModel($pdo))),
-        AuthController::class      => new AuthController(new CustomerModel($pdo)),
-        OrderController::class     => new OrderController(new CustomerModel($pdo), new DealershipModel($pdo), new OrderModel($pdo, new StockModel($pdo))),
-        AccountController::class   => new AccountController(new CustomerModel($pdo), new DealershipModel($pdo), new OrderModel($pdo, new StockModel($pdo))),
-        AdminController::class     => new AdminController(new CustomerModel($pdo), new ProductModel($pdo, new StockModel($pdo)), new CategoryModel($pdo), new OrderModel($pdo, new StockModel($pdo)), new PromoCodeModel($pdo), __DIR__ . '/../front/dist/images/produits'),
+        CartController::class      => new CartController(new ProductModel($pdo, new StockModel($pdo)), new PromoCodeModel($pdo)),
+        AuthController::class      => new AuthController(new CustomerModel($pdo), new LoginAttemptModel($pdo)),
+        OrderController::class     => new OrderController(new CustomerModel($pdo), new DealershipModel($pdo), new OrderModel($pdo, new StockModel($pdo), new PromoCodeModel($pdo)), new PromoCodeModel($pdo)),
+        AccountController::class   => new AccountController(new CustomerModel($pdo), new DealershipModel($pdo), new OrderModel($pdo, new StockModel($pdo), new PromoCodeModel($pdo))),
+        AdminController::class     => new AdminController(new CustomerModel($pdo), new ProductModel($pdo, new StockModel($pdo)), new CategoryModel($pdo), new OrderModel($pdo, new StockModel($pdo), new PromoCodeModel($pdo)), new PromoCodeModel($pdo), __DIR__ . '/../front/public/images/produits'),
     ];
 
     $routes = require __DIR__ . '/src/routes.php';

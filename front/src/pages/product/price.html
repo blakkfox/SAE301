@@ -1,0 +1,5 @@
+<!-- Prix de la fiche. Produit en promotion (PRO-c) : prix remisé en rouge,
+     prix d'origine barré et réduction ; retirés sinon (data-promo). -->
+<p class="text-price-xl leading-none font-bold {{priceClasses}}"><span class="sr-only">Prix : </span>{{price}}</p>
+<s data-promo class="text-lg text-ink-muted"><span class="sr-only">au lieu de </span>{{originalPrice}}</s>
+<p data-promo class="promo-badge"><span class="sr-only">Promotion </span>−{{discountRate}} %</p>

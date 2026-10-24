@@ -206,6 +206,10 @@ M.startReorder = function () {
  * compte du stock, de la quantité maximale d'une ligne et de ce qui est déjà
  * dans le panier. À appeler après M.startReorder.
  *
+ * Options (US OPT-a) : celles de la commande sont recochées si le produit
+ * les propose encore ; les autres sont signalées. Un article commandé sans
+ * option garde celles de sa ligne de panier, s'il y est déjà.
+ *
  * @returns {Promise<void>}
  */
 M.reorder = async function () {
@@ -229,6 +233,7 @@ M.reorder = async function () {
   let removed = [];
   let full = [];
   let limited = [];
+  let withoutOptions = [];
 
   for (const line of M.order.lines) {
     let variant = M.findVariant(line.variantId);
@@ -249,7 +254,16 @@ M.reorder = async function () {
       continue;
     }
 
-    isSaved = CartData.add(variant.variantId, quantity) && isSaved;
+    let offered = line.options.filter(
+      (option) => option.id !== null && variant.options.some((candidate) => candidate.id === option.id),
+    );
+    if (offered.length < line.options.length) {
+      let missing = line.options.filter((option) => !offered.includes(option)).map((option) => option.label);
+      withoutOptions.push(`${name} (${missing.join(", ")})`);
+    }
+
+    let optionIds = line.options.length === 0 ? undefined : offered.map((option) => option.id);
+    isSaved = CartData.add(variant.variantId, quantity, optionIds) && isSaved;
     added += quantity;
     if (quantity < line.quantity) {
       limited.push(`${name}, ${quantity} sur ${line.quantity}`);
@@ -265,6 +279,7 @@ M.reorder = async function () {
     M.formatGroup("Article épuisé, non ajouté", "Articles épuisés, non ajoutés", soldOut),
     M.formatGroup("Article retiré du catalogue, non ajouté", "Articles retirés du catalogue, non ajoutés", removed),
     M.formatGroup("Article déjà au maximum dans votre panier", "Articles déjà au maximum dans votre panier", full),
+    M.formatGroup("Option plus proposée, non reprise", "Options plus proposées, non reprises", withoutOptions),
   ];
 
   M.hasAdded = M.hasAdded || added > 0;
@@ -371,10 +386,12 @@ M.getLine = function (line) {
 
   let isUnavailable = availability === "out" || availability === "removed";
   let quantity = `× ${line.quantity}`;
+  // Options cochées à la commande (OPT-a), comprises dans le prix payé.
+  let options = line.options.map((option) => ` · + ${option.label}`).join("");
 
   return {
     name: line.name,
-    details: line.label === "Unique" ? quantity : `${line.label} · ${quantity}`,
+    details: (line.label === "Unique" ? quantity : `${line.label} · ${quantity}`) + options,
     price: formatPrice((M.toCents(line.unitPrice) * line.quantity) / 100),
     imageUrl: variant === undefined ? null : ProductData.imageUrl(variant.image),
     availability: availability === "in" ? null : availability,

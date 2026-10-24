@@ -23,7 +23,7 @@
     </nav>
   </header>
 
-  <form novalidate class="grid gap-5 xl:grid-cols-(--grid-admin-product) xl:items-start">
+  <form novalidate class="grid grid-cols-1 gap-5 xl:grid-cols-(--grid-admin-product) xl:items-start">
     <div class="flex min-w-0 flex-col gap-5">
       <section aria-labelledby="product-info-title" class="flex flex-col gap-5 rounded-xl bg-page p-5 sm:p-6">
         <h2 id="product-info-title" class="font-display text-h4 leading-none text-ink">Informations</h2>
@@ -34,22 +34,14 @@
           <p id="product-name-error" data-error-for="name" hidden class="text-caption text-accent"></p>
         </div>
 
-        <div class="grid gap-5 sm:grid-cols-2">
-          <div class="flex flex-col gap-2">
-            <label for="product-price" class="text-small font-semibold text-ink">Prix de base (€ TTC)</label>
-            <input id="product-price" name="price" type="text" inputmode="decimal" autocomplete="off" required value="{{price}}" placeholder="379,90" aria-describedby="product-price-error" data-focus-key="product-price" class="field" />
-            <p id="product-price-error" data-error-for="price" hidden class="text-caption text-accent"></p>
-          </div>
-
-          <div class="flex flex-col gap-2">
-            <label for="product-category" class="text-small font-semibold text-ink">Catégorie</label>
-            <select id="product-category" name="categoryId" required aria-describedby="product-category-hint product-category-error" data-focus-key="product-category" class="field">
-              <option value="">Choisir une catégorie</option>
-              <slot name="categories"></slot>
-            </select>
-            <p id="product-category-hint" data-live="category-hint" class="text-caption text-ink-muted empty:hidden"></p>
-            <p id="product-category-error" data-error-for="categoryId" hidden class="text-caption text-accent"></p>
-          </div>
+        <div class="flex flex-col gap-2">
+          <label for="product-category" class="text-small font-semibold text-ink">Catégorie</label>
+          <select id="product-category" name="categoryId" required aria-describedby="product-category-hint product-category-error" data-focus-key="product-category" class="field sm:max-w-80">
+            <option value="">Choisir une catégorie</option>
+            <slot name="categories"></slot>
+          </select>
+          <p id="product-category-hint" data-live="category-hint" class="text-caption text-ink-muted empty:hidden"></p>
+          <p id="product-category-error" data-error-for="categoryId" hidden class="text-caption text-accent"></p>
         </div>
 
         <div class="flex flex-col gap-2">
@@ -75,7 +67,7 @@
       </section>
 
       <section aria-labelledby="product-variants-title" class="flex flex-col gap-5 rounded-xl bg-page p-5 sm:p-6">
-        <h2 id="product-variants-title" class="font-display text-h4 leading-none text-ink">Variantes et stock</h2>
+        <h2 id="product-variants-title" class="font-display text-h4 leading-none text-ink">Variantes, prix et stock</h2>
 
         <div class="flex flex-col gap-2">
           <label for="product-axis" class="text-small font-semibold text-ink">Type de variante</label>
@@ -103,17 +95,20 @@
 
     <div class="flex min-w-0 flex-col gap-5">
       <section aria-labelledby="product-photo-title" class="flex flex-col gap-4 rounded-xl bg-page p-5 sm:p-6">
-        <h2 id="product-photo-title" class="font-display text-h4 leading-none text-ink">Photo</h2>
+        <h2 id="product-photo-title" class="font-display text-h4 leading-none text-ink">Photos</h2>
+        <!-- Aperçu de la photo 1, celle des cartes et du panier. -->
         <div data-live="photo"></div>
+        <p id="product-images-hint" class="text-caption text-ink-muted">La photo 1 est celle des cartes et du panier ; les suivantes complètent la galerie de la fiche.</p>
+        <!-- Téléversement (GOF-a) : la photo envoyée prend le premier emplacement libre. -->
         <div class="flex flex-col gap-2">
-          <label for="product-image" class="text-small font-semibold text-ink">Fichier</label>
-          <select id="product-image" name="image" aria-describedby="product-image-hint product-image-error" data-focus-key="product-image" class="field">
-            <option value="">Aucune photo (« Photo à venir »)</option>
-            <slot name="images"></slot>
-          </select>
-          <p id="product-image-hint" class="text-caption text-ink-muted">Photos du dossier images/produits du site.</p>
-          <p id="product-image-error" data-error-for="image" hidden class="text-caption text-accent"></p>
+          <label for="product-image-upload" class="text-small font-semibold text-ink">Téléverser une photo</label>
+          <input id="product-image-upload" type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="product-image-upload-hint product-image-upload-status" data-image-upload data-focus-key="image-upload" class="block w-full text-small text-ink file:mr-3 file:cursor-pointer file:rounded-lg file:border file:border-line-strong file:bg-page file:px-4 file:py-2.5 file:text-small file:font-semibold file:text-ink hover:file:border-ink disabled:cursor-wait disabled:opacity-60" />
+          <p id="product-image-upload-hint" class="text-caption text-ink-muted">JPEG, PNG ou WebP, 5 Mo au plus. Les grandes photos sont réduites à 1600 px.</p>
+          <p id="product-image-upload-status" role="status" class="text-caption {{uploadClasses}}">{{uploadStatus}}</p>
         </div>
+        <!-- Un sélecteur par emplacement de la galerie (image-field.html). -->
+        <slot name="image-fields"></slot>
+        <p data-error-for="images" hidden class="text-caption text-accent"></p>
       </section>
 
       <section aria-labelledby="product-publication-title" class="flex flex-col gap-4 rounded-xl bg-page p-5 sm:p-6">

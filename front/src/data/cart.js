@@ -18,9 +18,16 @@ import { getRequest } from "../lib/api-request.js";
  * Plusieurs parties de l'application affichent le panier (le compteur de
  * l'en-tête, la page Panier) : subscribe permet d'être prévenu de chaque
  * modification.
+ *
+ * Code promo (US PRO-a) : le code saisi au panier est gardé à part, seul
+ * (« BIENVENUE10 »), pour être repris à la validation de la commande. Sa
+ * réduction est toujours redemandée à l'API (fetchPromoCode), et le serveur
+ * revérifie le code à la commande.
  */
 
 const STORAGE_KEY = "honda-cart";
+
+const PROMO_STORAGE_KEY = "honda-promo-code";
 
 // Quantité maximale d'une ligne, quel que soit le stock. Le stock réel la
 // réduit encore (remainingFor, page Panier : STK-c) ; le serveur revérifie
@@ -48,8 +55,7 @@ let isValidItem = function (item) {
     Number.isInteger(item.variantId) &&
     item.variantId > 0 &&
     Number.isInteger(item.quantity) &&
-    item.quantity >= 1 &&
-    item.quantity <= MAX_QUANTITY
+    item.quantity >= 1
   );
 };
 
@@ -71,7 +77,8 @@ let toOptionIds = function (optionIds) {
 
 /**
  * Les lignes du panier. Une valeur abîmée ou un stockage indisponible donne
- * un panier vide ; une ligne invalide est ignorée.
+ * un panier vide ; une ligne invalide est ignorée, une quantité au-delà de
+ * MAX_QUANTITY y est ramenée (la ligne n'est pas perdue).
  *
  * @returns {Array<{variantId: number, quantity: number, optionIds: number[]}>}
  */
@@ -82,7 +89,7 @@ CartData.read = function () {
 
     return items.filter(isValidItem).map((item) => ({
       variantId: item.variantId,
-      quantity: item.quantity,
+      quantity: Math.min(item.quantity, MAX_QUANTITY),
       optionIds: toOptionIds(item.optionIds),
     }));
   } catch (error) {
@@ -212,12 +219,47 @@ CartData.remove = function (variantIds) {
 };
 
 /**
- * Vide le panier (commande enregistrée, CMD-a).
+ * Vide le panier et oublie le code promo (commande enregistrée, CMD-a).
  *
  * @returns {boolean} false si le panier n'a pas pu être enregistré.
  */
 CartData.clear = function () {
-  return CartData.write([]);
+  let isPromoCleared = CartData.writePromoCode(null);
+  return CartData.write([]) && isPromoCleared;
+};
+
+/**
+ * Code promo saisi au panier (US PRO-a). Un stockage indisponible ou une
+ * valeur abîmée donne null.
+ *
+ * @returns {?string} Le code, par exemple « BIENVENUE10 », ou null.
+ */
+CartData.readPromoCode = function () {
+  try {
+    let code = localStorage.getItem(PROMO_STORAGE_KEY);
+    return typeof code === "string" && code !== "" ? code : null;
+  } catch (error) {
+    return null;
+  }
+};
+
+/**
+ * Enregistre le code promo, ou l'oublie (null).
+ *
+ * @param {?string} code
+ * @returns {boolean} false si le stockage a refusé l'écriture.
+ */
+CartData.writePromoCode = function (code) {
+  try {
+    if (code === null) {
+      localStorage.removeItem(PROMO_STORAGE_KEY);
+    } else {
+      localStorage.setItem(PROMO_STORAGE_KEY, code);
+    }
+    return true;
+  } catch (error) {
+    return false;
+  }
 };
 
 /**
@@ -238,6 +280,22 @@ CartData.quantityOf = function (variantId) {
  */
 CartData.remainingFor = function (variantId, stock) {
   return Math.max(0, Math.min(stock, MAX_QUANTITY) - CartData.quantityOf(variantId));
+};
+
+/**
+ * Message affiché quand plus rien ne peut être ajouté (remainingFor vaut 0) :
+ * le stock est épuisé par le panier, ou c'est la limite MAX_QUANTITY par
+ * article qui est atteinte alors qu'il reste du stock.
+ *
+ * @param {string} productName - Nom du produit, par exemple « Porte-clés Rubber Wing ».
+ * @param {number} stock - Stock de la variante, lu dans l'API.
+ * @returns {string}
+ */
+CartData.limitMessage = function (productName, stock) {
+  if (stock > MAX_QUANTITY) {
+    return `Vous avez déjà ${MAX_QUANTITY} ${productName} dans votre panier : c'est le maximum par article.`;
+  }
+  return `Votre panier contient déjà tout le stock disponible de ${productName}.`;
 };
 
 /**
@@ -285,6 +343,19 @@ CartData.notify = function () {
  */
 CartData.fetchVariants = async function (variantIds) {
   return getRequest(`cart?variants=${encodeURIComponent(variantIds.join(","))}`);
+};
+
+/**
+ * Code promo utilisable aujourd'hui (US PRO-a) : GET /api/promo-code?code=…
+ *
+ * @param {string} code - Code saisi, en majuscules ou non.
+ * @returns {Promise<{promoCode: {code: string, discountRate: number, minAmount: number}}>}
+ *   discountRate : réduction en % ; minAmount : montant minimum du panier, en euros (0 : sans minimum).
+ * @throws {ErreurApi} 404 si le code n'existe pas, 422 s'il est vide ou n'est pas
+ *   actif (programmé, expiré, épuisé) ; le message à afficher est dans champs.promoCode.
+ */
+CartData.fetchPromoCode = async function (code) {
+  return getRequest(`promo-code?code=${encodeURIComponent(code)}`);
 };
 
 export { CartData };

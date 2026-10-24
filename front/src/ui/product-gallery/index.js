@@ -6,13 +6,12 @@ import templateThumbnail from "./thumbnail.html?raw";
 import templateThumbnailPlaceholder from "./thumbnail-placeholder.html?raw";
 
 // Galerie de la fiche produit. Le composant ne décide de rien : il reçoit les
-// photos déjà préparées (laquelle est sélectionnée, combien d'emplacements
-// vides) et signale le clic sur une miniature par actions.onSelect.
+// photos déjà préparées (laquelle est sélectionnée, quelles miniatures) et
+// signale le clic sur une miniature par actions.onSelect.
 let ProductGalleryView = {
   /**
    * @param {{name: string, mainUrl: ?string,
-   *   thumbnails: Array<{index: number, url: string, isSelected: boolean}>,
-   *   emptySlots: number}} data
+   *   thumbnails: Array<{index: number, url: string, isSelected: boolean}>}} data
    * @param {{onSelect: (index: number) => void}} actions
    * @returns {DocumentFragment}
    */
@@ -37,8 +36,9 @@ let ProductGalleryView = {
 
       return item;
     });
-    let placeholders = Array.from({ length: data.emptySlots }, () => htmlToFragment(templateThumbnailPlaceholder));
-    fragment.querySelector('slot[name="thumbnails"]').replaceWith(...thumbnails, ...placeholders);
+    fragment.querySelector('slot[name="thumbnails"]').replaceWith(...thumbnails);
+    // Une seule photo : pas de miniatures, la liste n'est pas annoncée.
+    fragment.querySelector("ul").hidden = thumbnails.length === 0;
 
     // Délégation : un seul écouteur sur la liste pour toutes les miniatures.
     fragment.querySelector("ul").addEventListener("click", (ev) => {

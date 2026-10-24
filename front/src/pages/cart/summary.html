@@ -1,5 +1,6 @@
 <!--
-  Récapitulatif (400 px dès 1024 px). Pas encore de champ « Code promo » (PRO-a).
+  Récapitulatif (400 px dès 1024 px), avec le champ « Code promo » (écran 23,
+  PRO-a) sous le retrait, puis la remise accordée, comme sur la maquette.
 -->
 <section aria-labelledby="cart-summary-title" class="flex flex-col gap-4 rounded-xl bg-page p-6 sm:p-7">
   <h2 id="cart-summary-title" class="font-display text-h3 leading-none text-ink">Récapitulatif</h2>
@@ -27,6 +28,15 @@
       <dd class="font-semibold text-ink">Gratuit</dd>
     </div>
   </dl>
+
+  <slot name="promo-code"></slot>
+
+  <!-- Remise du code promo (PRO-a), déduite du total : retirée sans code
+       appliqué, ou sous le montant minimum du code. -->
+  <p data-summary-discount class="flex justify-between gap-4 text-small">
+    <span class="text-ink-muted">{{discountLabel}}</span>
+    <span class="font-semibold text-accent">{{discount}}</span>
+  </p>
 
   <hr class="border-line-subtle" />
 

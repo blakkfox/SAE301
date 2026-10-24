@@ -31,11 +31,15 @@ final class ProductController
     }
 
     /**
-     * GET /api/product?id=13
+     * GET /api/product?slug=blouson-cuir-maine, ou GET /api/product?id=13
+     *
+     * Le slug est celui de l'adresse de la fiche (US DEC-c) ; l'identifiant
+     * reste accepté pour les anciens liens.
      *
      * Répond { product, related } :
-     * - product : le produit, sa catégorie, ses variantes, ses caractéristiques
-     *   et ses options à cocher (US OPT-c) ;
+     * - product : le produit (avec son slug), sa catégorie, ses photos
+     *   (images, dans l'ordre de la galerie), ses variantes et leur prix, ses
+     *   caractéristiques et ses options à cocher (US OPT-c) ;
      * - related : les cartes du bloc « Vous aimerez aussi ».
      * 400 si l'identifiant est invalide, 404 si le produit n'est pas visible.
      *
@@ -43,8 +47,18 @@ final class ProductController
      */
     public function show(Request $request): void
     {
-        // filter_var refuse « 12abc », « -3 » ou « 0 », que (int) aurait acceptés.
-        $id = filter_var($request->parametre('id'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        $slug = $request->parametre('slug');
+
+        if ($slug !== null) {
+            $id = $this->products->findVisibleIdBySlug($slug);
+
+            if ($id === null) {
+                Response::erreur('Produit introuvable', 404);
+            }
+        } else {
+            // filter_var refuse « 12abc », « -3 » ou « 0 », que (int) aurait acceptés.
+            $id = filter_var($request->parametre('id'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        }
 
         if ($id === false) {
             Response::erreur('Identifiant de produit invalide', 400);
@@ -56,6 +70,7 @@ final class ProductController
             Response::erreur('Produit introuvable', 404);
         }
 
+        $product['images']   = $this->products->findImages($id);
         $product['variants'] = $this->products->findVariants($id);
         $product['features'] = $this->products->findFeatures($id);
         $product['options']  = $this->products->findOptions($id);

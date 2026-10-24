@@ -13,6 +13,7 @@ import { QuantityStepperView } from "../../ui/quantity-stepper/index.js";
 import { StockBadgeView } from "../../ui/stock-badge/index.js";
 import { VariantPickerView } from "../../ui/variant-picker/index.js";
 import template from "./template.html?raw";
+import templatePrice from "./price.html?raw";
 import templateBreadcrumbParent from "./breadcrumb-parent.html?raw";
 import templateDescription from "./description.html?raw";
 import templateRelated from "./related.html?raw";
@@ -21,7 +22,12 @@ import templatePurchase from "./purchase.html?raw";
 import templateFeedback from "./feedback.html?raw";
 
 /**
- * Page « Fiche produit » — US DEC-c (écran Figma n° 2), route /produits/:id.
+ * Page « Fiche produit » — US DEC-c (écran Figma n° 2), route /produits/:slug
+ * (« /produits/blouson-cuir-maine »). Un ancien lien par identifiant
+ * (« /produits/13 ») affiche la même fiche, et l'adresse prend le slug.
+ *
+ * SEO : le titre de l'onglet reprend le nom du produit (<h1>, voir
+ * lib/router.js), et la meta description le début de sa description.
  *
  * Comme les pages du starter, C.init attend la réponse de l'API avant de
  * rendre la page : le routeur l'insère ensuite et complète lui-même ses liens
@@ -56,10 +62,9 @@ import templateFeedback from "./feedback.html?raw";
  *   C — réaction aux actions de l'utilisateur, seul lien entre M et V.
  */
 
-// Nombre d'emplacements de miniatures de la maquette. Les photos
-// supplémentaires n'existent pas encore en base : les emplacements restants
-// affichent « Photo à venir ».
-const GALLERY_SLOTS = 4;
+// Longueur maximale de la meta description, au-delà de laquelle les moteurs
+// de recherche la coupent.
+const META_DESCRIPTION_MAX = 155;
 
 // Classes du prix, écrites en entier : rouge des promotions pour le produit
 // en promotion automatique (PRO-c).
@@ -104,12 +109,13 @@ M.reset = function () {
 /**
  * Charge la fiche d'un produit et range la réponse dans le modèle.
  *
- * @param {string} id - Identifiant lu dans l'adresse (/produits/:id).
+ * @param {string} key - Slug lu dans l'adresse (/produits/:slug), ou
+ *   identifiant d'un ancien lien (/produits/13).
  * @returns {Promise<void>}
  */
-M.loadProduct = async function (id) {
+M.loadProduct = async function (key) {
   try {
-    let response = await ProductData.fetchOne(id);
+    let response = /^\d+$/.test(key) ? await ProductData.fetchOne(key) : await ProductData.fetchBySlug(key);
     M.product = response.product;
     M.related = response.related;
 
@@ -135,14 +141,13 @@ M.loadProduct = async function (id) {
 };
 
 /**
- * Photos du produit. Une seule pour l'instant : la table des photos
- * supplémentaires sera ajoutée plus tard.
+ * Photos du produit, dans l'ordre de la galerie (au plus 4, réglées au
+ * back-office).
  *
  * @returns {string[]} Adresses des photos.
  */
 M.getImageUrls = function () {
-  let url = ProductData.imageUrl(M.product.image);
-  return url === null ? [] : [url];
+  return M.product.images.map((image) => ProductData.imageUrl(image));
 };
 
 /**
@@ -170,11 +175,11 @@ M.getSubtitle = function () {
 };
 
 /**
- * Données de la galerie.
+ * Données de la galerie. Les miniatures ne servent qu'à changer de photo :
+ * un produit à une seule photo n'en a pas.
  *
  * @returns {{name: string, mainUrl: ?string,
- *   thumbnails: Array<{index: number, url: string, isSelected: boolean}>,
- *   emptySlots: number}}
+ *   thumbnails: Array<{index: number, url: string, isSelected: boolean}>}}
  */
 M.getGalleryData = function () {
   let urls = M.getImageUrls();
@@ -182,14 +187,35 @@ M.getGalleryData = function () {
   return {
     name: M.product.name,
     mainUrl: urls[M.selectedImage] ?? null,
-    thumbnails: urls.map((url, index) => ({ index, url, isSelected: index === M.selectedImage })),
-    emptySlots: Math.max(0, GALLERY_SLOTS - urls.length),
+    thumbnails:
+      urls.length > 1 ? urls.map((url, index) => ({ index, url, isSelected: index === M.selectedImage })) : [],
   };
 };
 
 /**
- * @returns {?{id: number, label: string, reference: string, stock: number}} La
- *   variante choisie, ou null.
+ * Prix affiché en tête de fiche : celui de la variante choisie ; tant
+ * qu'aucune ne l'est, celui de la moins chère, précédé de « dès » si les
+ * variantes n'ont pas toutes le même prix. Remisé si le produit est en
+ * promotion (PRO-c).
+ *
+ * @returns {{price: string, isPromo: boolean, originalPrice: string, discountRate: string}}
+ */
+M.getPriceData = function () {
+  let source = M.getSelectedVariant() ?? M.product;
+  let prefix = source === M.product && M.product.priceFrom ? "dès " : "";
+
+  return {
+    price: `${prefix}${formatPrice(source.price)}`,
+    isPromo: source.originalPrice !== null,
+    originalPrice: source.originalPrice === null ? "" : formatPrice(source.originalPrice),
+    discountRate: source.discountRate === null ? "" : String(source.discountRate),
+  };
+};
+
+/**
+ * @returns {?{id: number, label: string, reference: string, price: number,
+ *   originalPrice: ?number, discountRate: ?number, stock: number}} La variante
+ *   choisie, ou null.
  */
 M.getSelectedVariant = function () {
   return M.product.variants.find((variant) => variant.id === M.selectedVariantId) ?? null;
@@ -302,7 +328,8 @@ M.getSelectedOptions = function () {
  * @returns {number}
  */
 M.getUnitPrice = function () {
-  return M.getSelectedOptions().reduce((total, option) => total + option.price, M.product.price);
+  let base = (M.getSelectedVariant() ?? M.product).price;
+  return M.getSelectedOptions().reduce((total, option) => total + option.price, base);
 };
 
 /**
@@ -501,17 +528,19 @@ M.getPurchaseData = function () {
 /**
  * Prépare un produit du bloc « Vous aimerez aussi » pour la carte produit.
  *
- * @param {{id: number, name: string, price: number, originalPrice: ?number,
+ * @param {{id: number, slug: string, name: string, price: number, priceFrom: boolean, originalPrice: ?number,
  *   discountRate: ?number, image: ?string, variantId: ?number, stock: number, lowStockThreshold: number}} product
- * @returns {{id: number, name: string, price: number, originalPrice: ?number,
+ * @returns {{id: number, slug: string, name: string, price: number, priceFrom: boolean, originalPrice: ?number,
  *   discountRate: ?number, imageUrl: ?string, variantId: ?number,
  *   stockStatus: "in"|"low"|"out", isAdded: boolean}}
  */
 M.toCardData = function (product) {
   return {
     id: product.id,
+    slug: product.slug,
     name: product.name,
     price: product.price,
+    priceFrom: product.priceFrom,
     originalPrice: product.originalPrice,
     discountRate: product.discountRate,
     imageUrl: ProductData.imageUrl(product.image),
@@ -534,7 +563,7 @@ M.addRelatedToCart = function (productId) {
 
   if (CartData.remainingFor(product.variantId, product.stock) === 0) {
     M.addedProductId = null;
-    M.cartStatus = `Votre panier contient déjà tout le stock disponible de ${product.name}.`;
+    M.cartStatus = CartData.limitMessage(product.name, product.stock);
     return;
   }
 
@@ -557,11 +586,35 @@ M.getRelatedCard = function (productId) {
 };
 
 /**
+ * @returns {?string} Adresse propre de la fiche (« /produits/blouson-cuir-maine »),
+ *   ou null si le produit n'a pas été trouvé.
+ */
+M.getCanonicalPath = function () {
+  return M.product === null ? null : `/produits/${M.product.slug}`;
+};
+
+/**
+ * Meta description de la fiche : le début de la description du produit,
+ * coupé entre deux mots, ou une phrase construite avec son nom.
+ *
+ * @returns {string}
+ */
+M.getMetaDescription = function () {
+  let text = (M.product.description ?? "").replace(/\s+/g, " ").trim();
+  if (text === "") {
+    return `${M.product.name} : à commander en ligne et à retirer chez Honda Moto Lyon Centre.`;
+  }
+  if (text.length <= META_DESCRIPTION_MAX) return text;
+
+  let cut = text.slice(0, META_DESCRIPTION_MAX - 1);
+  return `${cut.slice(0, cut.lastIndexOf(" ")).replace(/[\s,;:.]+$/, "")}…`;
+};
+
+/**
  * Rassemble tout ce que la Vue doit afficher, déjà préparé.
  *
- * @returns {{error: ?{title: string, text: string}, page: ?{name: string,
- *   subtitle: string, price: string, isPromo: boolean, originalPrice: string,
- *   discountRate: string, stockStatus: "in"|"low"|"out",
+ * @returns {{error: ?{title: string, text: string}, page: ?{name: string, metaDescription: string,
+ *   subtitle: string, price: ReturnType<typeof M.getPriceData>, stockStatus: "in"|"low"|"out",
  *   categoryName: string, categoryUrl: string},
  *   parent: ?{name: string, url: string}, description: ?string, gallery: ?Object,
  *   purchase: ?ReturnType<typeof M.getPurchaseData>,
@@ -588,11 +641,9 @@ M.getViewData = function () {
     error: null,
     page: {
       name: M.product.name,
+      metaDescription: M.getMetaDescription(),
       subtitle: M.getSubtitle(),
-      price: formatPrice(M.product.price),
-      isPromo: M.product.originalPrice !== null,
-      originalPrice: M.product.originalPrice === null ? "" : formatPrice(M.product.originalPrice),
-      discountRate: M.product.discountRate === null ? "" : String(M.product.discountRate),
+      price: M.getPriceData(),
       stockStatus: M.getStockStatus(),
       categoryName: M.product.category.name,
       categoryUrl: `/categories/${M.product.category.slug}`,
@@ -616,12 +667,16 @@ let C = {};
  * Point d'entrée de la page, appelé par le routeur avec les paramètres de
  * l'adresse. Le routeur attend la promesse avant d'afficher la page.
  *
- * @param {{id: string}} params - Paramètres de la route /produits/:id.
+ * @param {{slug: string}} params - Paramètres de la route /produits/:slug.
  * @returns {Promise<DocumentFragment>}
  */
 C.init = async function (params) {
   M.reset();
-  await M.loadProduct(params.id);
+  await M.loadProduct(params.slug);
+
+  let canonicalPath = M.getCanonicalPath();
+  if (canonicalPath !== null) V.replaceUrl(params.slug, canonicalPath);
+
   return V.init(M.getViewData());
 };
 
@@ -642,6 +697,7 @@ C.handler_selectImage = function (index) {
  */
 C.handler_selectVariant = function (variantId) {
   M.selectVariant(variantId);
+  V.renderPrice(M.getPriceData());
   V.renderPurchase(M.getPurchaseData());
   V.renderStock(M.getStockStatus());
   V.renderFeedback(M.feedback);
@@ -706,6 +762,7 @@ let V = {
   purchase: null, // bloc d'achat affiché
   feedback: null, // zone du message d'ajout au panier
   stock: null, // zone de la pastille de stock, à côté du prix
+  price: null, // zone du prix, en tête de fiche
   related: null, // bloc « Vous aimerez aussi » affiché, ou null
 };
 
@@ -720,6 +777,22 @@ V.init = function (data) {
     return htmlToFragment(genericRenderer(templateError, data.error));
   }
   return V.createPageFragment(data);
+};
+
+/**
+ * Remplace l'adresse par l'adresse propre de la fiche, sans nouvelle entrée
+ * d'historique (ancien lien par identifiant). Rien si l'utilisateur est allé
+ * ailleurs pendant le chargement : l'adresse est alors celle d'une autre page.
+ *
+ * @param {string} key - Slug ou identifiant de l'adresse demandée.
+ * @param {string} path - Adresse propre, par exemple « /produits/blouson-cuir-maine ».
+ */
+V.replaceUrl = function (key, path) {
+  let current = decodeURIComponent(window.location.pathname).replace(/\/+$/, "");
+  if (!current.endsWith(`/produits/${key}`)) return;
+
+  let url = import.meta.env.BASE_URL + path.replace(/^\//, "");
+  if (url !== window.location.pathname) window.history.replaceState(window.history.state, "", url);
 };
 
 /**
@@ -751,6 +824,24 @@ V.renderPurchase = function (purchaseData) {
  */
 V.renderStock = function (status) {
   V.stock.replaceChildren(StockBadgeView.dom(status));
+};
+
+/**
+ * Affiche le prix reçu en tête de fiche.
+ *
+ * @param {ReturnType<typeof M.getPriceData>} price
+ */
+V.renderPrice = function (price) {
+  let priceClasses = price.isPromo ? PRICE_CLASSES.promo : PRICE_CLASSES.regular;
+  let fragment = htmlToFragment(genericRenderer(templatePrice, { ...price, priceClasses }));
+
+  // Un template n'a pas de condition : la promotion (PRO-c) se retire ici.
+  if (!price.isPromo) {
+    for (const element of fragment.querySelectorAll("[data-promo]")) {
+      element.remove();
+    }
+  }
+  V.price.replaceChildren(fragment);
 };
 
 /**
@@ -845,15 +936,10 @@ V.createGalleryFragment = function (galleryData) {
  * @returns {DocumentFragment}
  */
 V.createPageFragment = function (data) {
-  let priceClasses = data.page.isPromo ? PRICE_CLASSES.promo : PRICE_CLASSES.regular;
-  let page = htmlToFragment(genericRenderer(template, { ...data.page, priceClasses }));
+  let page = htmlToFragment(genericRenderer(template, data.page));
 
-  // Un template n'a pas de condition : la promotion (PRO-c) se retire ici.
-  if (!data.page.isPromo) {
-    for (const element of page.querySelectorAll("[data-promo]")) {
-      element.remove();
-    }
-  }
+  V.price = page.querySelector("[data-product-price]");
+  V.renderPrice(data.page.price);
 
   let parentSlot = page.querySelector('slot[name="breadcrumb-parent"]');
   if (data.parent === null) {
@@ -903,7 +989,7 @@ V.createPageFragment = function (data) {
 /**
  * Page exportée vers le routeur (voir main.js).
  *
- * @param {{id: string}} params - Paramètres de la route /produits/:id.
+ * @param {{slug: string}} params - Paramètres de la route /produits/:slug.
  * @returns {Promise<DocumentFragment>}
  */
 export function ProductPage(params) {

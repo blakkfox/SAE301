@@ -30,8 +30,9 @@ router.addLayout("/admin", AdminLayout);
 // DEC-b — Catalogue (écran Figma n° 1).
 router.addRoute("/", CataloguePage);
 
-// DEC-c — Détail produit (écran Figma n° 2). params.id dans la page.
-router.addRoute("/produits/:id", ProductPage);
+// DEC-c — Détail produit (écran Figma n° 2). params.slug dans la page
+// (« /produits/blouson-cuir-maine » ; un ancien lien par identifiant marche aussi).
+router.addRoute("/produits/:slug", ProductPage);
 
 // DEC-a — Catégorie (écran Figma n° 3). params.slug dans la page.
 router.addRoute("/categories/:slug", CategoryPage);

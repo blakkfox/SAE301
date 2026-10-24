@@ -185,22 +185,28 @@ final class CustomerModel
     }
 
     /**
-     * Remplace le mot de passe d'un compte CLIENT. Les comptes
-     * d'administration sont exclus : la réinitialisation ne vérifie pas
-     * l'identité du demandeur.
+     * Remplace le mot de passe d'un compte CLIENT dont l'adresse e-mail et le
+     * numéro de téléphone correspondent (mot de passe oublié). Les comptes
+     * d'administration sont exclus.
      *
-     * @param string $email        Adresse e-mail, en minuscules.
-     * @param string $passwordHash Nouvelle empreinte, produite par password_hash().
+     * @param string             $email        Adresse e-mail, en minuscules.
+     * @param array<int, string> $phones       Écritures acceptées du numéro (« 06… », « +336… »).
+     * @param string             $passwordHash Nouvelle empreinte, produite par password_hash().
      *
-     * @return bool false si aucun compte client n'a cette adresse.
+     * @return bool false si aucun compte client n'a cette adresse et ce numéro.
      */
-    public function updateCustomerPassword(string $email, string $passwordHash): bool
+    public function updateCustomerPassword(string $email, array $phones, string $passwordHash): bool
     {
         $statement = $this->pdo->prepare(
             'UPDATE customer SET password_hash = :passwordHash
-             WHERE email = :email AND role = \'customer\''
+             WHERE email = :email AND phone IN (:phone0, :phone1) AND role = \'customer\''
         );
-        $statement->execute(['passwordHash' => $passwordHash, 'email' => $email]);
+        $statement->execute([
+            'passwordHash' => $passwordHash,
+            'email'        => $email,
+            'phone0'       => $phones[0],
+            'phone1'       => $phones[1],
+        ]);
 
         return $statement->rowCount() > 0;
     }

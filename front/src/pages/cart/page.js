@@ -5,6 +5,7 @@ import { getStockStatus } from "../../lib/stock.js";
 import { genericRenderer, htmlToFragment, replaceKeepingFocus } from "../../lib/utils.js";
 import { CartLineView } from "../../ui/cart-line/index.js";
 import { MessageView } from "../../ui/message/index.js";
+import { PromoCodeFieldView } from "../../ui/promo-code-field/index.js";
 import template from "./template.html?raw";
 import templateContent from "./content.html?raw";
 import templateSummary from "./summary.html?raw";
@@ -34,6 +35,14 @@ import templateError from "./error.html?raw";
  * n'en propose qu'une, « + Ajouter une option » la coche directement. Les
  * suppléments sont relus dans l'API, et une option qui n'est plus proposée
  * est retirée du panier. Le serveur les revérifie à la commande (CMD-a).
+ *
+ * Code promo (US PRO-a, écran Figma n° 23) : le récapitulatif a un champ
+ * « Code promo ». Le code saisi est vérifié par l'API (existe, actif), qui
+ * donne sa réduction et son montant minimum ; la remise porte sur toute la
+ * commande (produits, déjà remisés pour la promotion automatique, et
+ * options). Le code est gardé pour la validation (data/cart.js) et revérifié
+ * à chaque affichage ; tant que le montant minimum n'est pas atteint, il
+ * reste saisi sans être appliqué. Le serveur revérifie tout à la commande.
  *
  * Comme les autres pages, C.init attend la réponse de l'API avant de rendre
  * la page. Changer une quantité ou une option ne reconstruit que la ligne et
@@ -66,6 +75,10 @@ let M = {
   variants: [], // variantes renvoyées par l'API (nom, photo, prix, stock, options…)
   adjusted: [], // variantes dont la quantité a été ramenée au stock au chargement
   editingVariantId: null, // ligne dont les options sont en cours de modification, ou null
+  promoCode: null, // code promo vérifié par l'API : { code, discountRate, minAmount }, ou null
+  promoInput: "", // texte du champ « Code promo »
+  promoError: null, // message du dernier code refusé, ou null
+  isPromoPending: false, // vérification d'un code en cours
   error: null, // texte de l'erreur de chargement, ou null
   notice: null, // { type, texte } à afficher au-dessus du panier, ou null
 };
@@ -78,6 +91,10 @@ M.reset = function () {
   M.variants = [];
   M.adjusted = [];
   M.editingVariantId = null;
+  M.promoCode = null;
+  M.promoInput = "";
+  M.promoError = null;
+  M.isPromoPending = false;
   M.error = null;
   M.notice = null;
 };
@@ -122,6 +139,113 @@ M.load = async function () {
 
   M.dropUnofferedOptions();
   M.adjustToStock();
+
+  let storedCode = CartData.readPromoCode();
+  if (storedCode !== null) {
+    await M.applyPromoCode(storedCode);
+  }
+};
+
+/**
+ * Début de la vérification d'un code promo.
+ *
+ * @returns {boolean} false si une vérification est déjà en cours.
+ */
+M.startPromoCode = function () {
+  if (M.isPromoPending) return false;
+
+  M.isPromoPending = true;
+  return true;
+};
+
+/**
+ * Fait vérifier un code par l'API (PRO-a). Accepté, il est appliqué et
+ * gardé pour la commande ; refusé (inconnu, programmé, expiré, épuisé), il
+ * est oublié et le message de l'API s'affiche sous le champ. Si le serveur ne
+ * répond pas, le code déjà appliqué, s'il y en a un, est gardé.
+ *
+ * @param {string} code - Code saisi.
+ * @returns {Promise<void>}
+ */
+M.applyPromoCode = async function (code) {
+  M.promoInput = code.trim().toUpperCase();
+
+  try {
+    if (M.promoInput === "") {
+      M.promoError = "Saisissez un code promo.";
+      return;
+    }
+
+    let response = await CartData.fetchPromoCode(M.promoInput);
+    M.promoCode = response.promoCode;
+    M.promoInput = response.promoCode.code;
+    M.promoError = null;
+    M.save(CartData.writePromoCode(response.promoCode.code));
+  } catch (error) {
+    if (error.statut === undefined) {
+      M.promoError = "Le serveur ne répond pas : le code n'a pas pu être vérifié. Réessayez.";
+    } else {
+      M.promoCode = null;
+      M.promoError = error.champs.promoCode ?? error.message;
+      CartData.writePromoCode(null);
+    }
+  } finally {
+    M.isPromoPending = false;
+  }
+};
+
+/**
+ * Retire le code promo appliqué.
+ */
+M.removePromoCode = function () {
+  M.promoCode = null;
+  M.promoInput = "";
+  M.promoError = null;
+  M.save(CartData.writePromoCode(null));
+};
+
+/**
+ * Remise du code promo sur un montant (PRO-a), arrondie au centime le plus
+ * proche, comme le serveur.
+ *
+ * @param {number} cents - Montant des produits et options, en centimes.
+ * @returns {number} La remise en centimes : 0 sans code, ou si le montant
+ *   minimum du code n'est pas atteint.
+ */
+M.getDiscountCents = function (cents) {
+  if (M.promoCode === null || cents < M.toCents(M.promoCode.minAmount)) return 0;
+  return Math.round((cents * M.promoCode.discountRate) / 100);
+};
+
+/**
+ * Données du champ « Code promo » : le message de l'API pour un code refusé,
+ * la remise accordée (maquette : « Code BIENVENUE10 appliqué : −10 % sur la
+ * commande »), ou ce qu'il manque pour atteindre le montant minimum.
+ *
+ * @param {number} cents - Montant des produits et options, en centimes.
+ * @returns {Parameters<typeof PromoCodeFieldView.dom>[0]}
+ */
+M.getPromoField = function (cents) {
+  let message = null;
+
+  if (M.promoError !== null) {
+    message = { type: "error", text: M.promoError };
+  } else if (M.promoCode !== null && M.getDiscountCents(cents) === 0) {
+    let missing = formatPrice((M.toCents(M.promoCode.minAmount) - cents) / 100);
+    message = {
+      type: "info",
+      text: `Le code ${M.promoCode.code} s'applique dès ${formatPrice(M.promoCode.minAmount)} d'achat : encore ${missing} pour en profiter.`,
+    };
+  } else if (M.promoCode !== null) {
+    message = { type: "success", text: `Code ${M.promoCode.code} appliqué : −${M.promoCode.discountRate} % sur la commande` };
+  }
+
+  return {
+    value: M.promoInput,
+    isApplied: M.promoCode !== null,
+    isPending: M.isPromoPending,
+    message,
+  };
 };
 
 /**
@@ -377,6 +501,7 @@ M.getLine = function (variantId) {
   return {
     variantId: variant.variantId,
     productId: variant.productId,
+    productSlug: variant.slug,
     name: variant.name,
     label: variant.label,
     details: details.join(" · "),
@@ -453,8 +578,9 @@ M.getLines = function () {
 };
 
 /**
- * Totaux du récapitulatif. Sans frais ni code promo pour l'instant (PRO-a) :
- * le total est la somme des produits et des options.
+ * Totaux du récapitulatif. Sans frais : le total est la somme des produits et
+ * des options, moins la remise du code promo (PRO-a), donnée par la ligne
+ * « Remise BIENVENUE10 (−10 %) », retirée sans remise.
  *
  * Promotion automatique (PRO-c) : les produits sont comptés à leur prix
  * remisé ; la ligne « Dont promotion −20 % » donne, à titre d'information,
@@ -470,7 +596,8 @@ M.getLines = function () {
  *
  * @returns {{countLabel: string, subtotalTitle: string, subtotalLabel: string, subtotal: string,
  *   options: string, hasOptions: boolean, promoLabel: string, promo: string, hasPromo: boolean,
- *   total: string, canCheckout: boolean, note: string, optionsNote: string}}
+ *   promoField: ReturnType<typeof M.getPromoField>, discountLabel: string, discount: string,
+ *   hasDiscount: boolean, total: string, canCheckout: boolean, note: string, optionsNote: string}}
  */
 M.getSummary = function () {
   let count = 0;
@@ -499,6 +626,7 @@ M.getSummary = function () {
   let soldOut = M.getSoldOutVariants();
   let subtotalLabel = M.formatCount(availableCount);
   let note = CHECKOUT_NOTE;
+  let discountCents = M.getDiscountCents(cents + optionsCents);
 
   if (soldOut.length > 0) {
     subtotalLabel += availableCount > 1 ? " disponibles" : " disponible";
@@ -518,7 +646,11 @@ M.getSummary = function () {
     promoLabel: promoRate === null ? "Dont promotion" : `Dont promotion −${promoRate} %`,
     promo: `−${formatPrice(promoCents / 100)}`,
     hasPromo: promoCents > 0,
-    total: formatPrice((cents + optionsCents) / 100),
+    promoField: M.getPromoField(cents + optionsCents),
+    discountLabel: M.promoCode === null ? "" : `Remise ${M.promoCode.code} (−${M.promoCode.discountRate} %)`,
+    discount: `−${formatPrice(discountCents / 100)}`,
+    hasDiscount: discountCents > 0,
+    total: formatPrice((cents + optionsCents - discountCents) / 100),
     canCheckout: soldOut.length === 0,
     note,
     optionsNote: OPTIONS_NOTE,
@@ -622,6 +754,32 @@ C.handler_closeOptions = function (variantId) {
 };
 
 /**
+ * Clic sur « Appliquer » (ou Entrée dans le champ « Code promo ») : le
+ * bouton passe à « Vérification… », puis le récapitulatif affiche la remise
+ * ou le refus.
+ *
+ * @param {string} code - Code saisi.
+ * @returns {Promise<void>}
+ */
+C.handler_applyPromoCode = async function (code) {
+  if (!M.startPromoCode()) return;
+  V.renderSummary(M.getSummary());
+
+  await M.applyPromoCode(code);
+  V.renderSummary(M.getSummary());
+  V.renderNotice(M.notice);
+};
+
+/**
+ * Clic sur « Retirer le code ».
+ */
+C.handler_removePromoCode = function () {
+  M.removePromoCode();
+  V.renderSummary(M.getSummary());
+  V.renderNotice(M.notice);
+};
+
+/**
  * Clic sur « Retirer » : la zone du panier et l'alerte de stock sont
  * reconstruites.
  *
@@ -643,6 +801,17 @@ C.handler_retry = async function () {
   V.renderContent(M.getViewData());
 };
 
+/**
+ * Le panier a changé dans un autre onglet (événement « storage ») : la page
+ * relit le panier et se reconstruit, comme le compteur de l'en-tête.
+ *
+ * @returns {Promise<void>}
+ */
+C.handler_storageChange = async function () {
+  await M.load();
+  V.renderContent(M.getViewData());
+};
+
 // ---------------------------------------------------------------------------
 // V — Vue
 // ---------------------------------------------------------------------------
@@ -653,6 +822,21 @@ let V = {
   countLabel: null, // « 4 articles » à côté du titre
   alert: null, // conteneur de l'alerte de stock
   notice: null, // conteneur des messages
+  hasStorageListener: false, // l'écouteur « storage » est posé
+};
+
+/**
+ * Écouteur « storage », posé une seule fois : la page est reconstruite à
+ * chaque visite, il s'accumulerait. Il n'agit que si la page Panier est
+ * affichée.
+ */
+V.listenStorage = function () {
+  if (V.hasStorageListener) return;
+
+  window.addEventListener("storage", () => {
+    if (V.content?.isConnected) C.handler_storageChange();
+  });
+  V.hasStorageListener = true;
 };
 
 /**
@@ -662,6 +846,7 @@ let V = {
  * @returns {DocumentFragment}
  */
 V.init = function (data) {
+  V.listenStorage();
   let page = htmlToFragment(genericRenderer(template, { countLabel: data.summary.countLabel }));
 
   V.countLabel = page.querySelector("[data-cart-count-label]");
@@ -706,7 +891,8 @@ V.renderLine = function (line) {
 };
 
 /**
- * Reconstruit le récapitulatif et le compteur à côté du titre.
+ * Reconstruit le récapitulatif et le compteur à côté du titre, en gardant le
+ * focus dans le champ « Code promo » ou sur son bouton.
  *
  * @param {ReturnType<typeof M.getSummary>} summary
  */
@@ -714,10 +900,7 @@ V.renderSummary = function (summary) {
   V.countLabel.textContent = summary.countLabel;
 
   if (V.summary === null) return;
-  let fragment = V.createSummaryFragment(summary);
-  let newSummary = fragment.firstElementChild;
-  V.summary.replaceWith(fragment);
-  V.summary = newSummary;
+  V.summary = replaceKeepingFocus(V.summary, V.createSummaryFragment(summary));
 };
 
 /**
@@ -782,15 +965,26 @@ V.createContentFragment = function (data) {
  * @returns {DocumentFragment} Le récapitulatif, avec le lien « Valider la
  *   commande », ou le bouton désactivé si un article épuisé bloque la
  *   validation. La ligne « Options » et sa note n'y sont que si une option
- *   est cochée (OPT-a).
+ *   est cochée (OPT-a), la ligne de remise que si un code promo est
+ *   appliqué (PRO-a).
  */
 V.createSummaryFragment = function (summary) {
   let fragment = htmlToFragment(genericRenderer(templateSummary, summary));
   let unused = summary.canCheckout ? "[data-checkout-blocked]" : "[data-checkout-link]";
   fragment.querySelector(unused).remove();
 
+  fragment.querySelector('slot[name="promo-code"]').replaceWith(
+    PromoCodeFieldView.dom(summary.promoField, {
+      onApply: C.handler_applyPromoCode,
+      onRemove: C.handler_removePromoCode,
+    })
+  );
+
   if (!summary.hasPromo) {
     fragment.querySelector("[data-summary-promo]").remove();
+  }
+  if (!summary.hasDiscount) {
+    fragment.querySelector("[data-summary-discount]").remove();
   }
   if (!summary.hasOptions) {
     fragment.querySelector("[data-summary-options]").remove();

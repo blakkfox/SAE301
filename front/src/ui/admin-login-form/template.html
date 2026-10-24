@@ -7,7 +7,7 @@
   <h2 id="admin-login-title" class="font-display text-h3 leading-none text-ink">Connexion administrateur</h2>
   <p class="text-small text-ink-muted">Les comptes d’administration sont séparés des comptes clients.</p>
 
-  <form novalidate class="grid gap-4 lg:grid-cols-(--grid-admin-login) lg:items-start">
+  <form novalidate class="grid grid-cols-1 gap-4 lg:grid-cols-(--grid-admin-login) lg:items-start">
     <div class="flex flex-col gap-2">
       <label for="admin-login-email" class="text-small font-semibold text-ink">Identifiant</label>
       <input id="admin-login-email" name="email" type="email" autocomplete="username" required value="{{email}}" placeholder="admin@honda-lyon.fr" aria-describedby="admin-login-email-error" class="field" />

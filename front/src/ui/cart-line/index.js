@@ -38,7 +38,7 @@ const PROMO_PRICE_CLASSES = "text-accent";
 // de la ligne et les actions sur les options par les fonctions de actions.
 let CartLineView = {
   /**
-   * @param {{variantId: number, productId: number, name: string, label: string,
+   * @param {{variantId: number, productId: number, productSlug: string, name: string, label: string,
    *   details: string, imageUrl: ?string, quantity: number, maxQuantity: number,
    *   total: string, originalTotal: ?string, stockStatus: "in"|"low"|"out", isSoldOut: boolean,
    *   stockNote: ?string, options: ?{isEditing: boolean,

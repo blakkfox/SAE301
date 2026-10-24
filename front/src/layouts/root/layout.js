@@ -2,7 +2,7 @@ import { AuthData } from "../../data/auth.js";
 import { CartData } from "../../data/cart.js";
 import { CategoryData } from "../../data/category.js";
 import { ProductData } from "../../data/product.js";
-import { htmlToFragment, replaceKeepingFocus } from "../../lib/utils.js";
+import { bindSkipLink, htmlToFragment, replaceKeepingFocus } from "../../lib/utils.js";
 import { HeaderView } from "../../ui/header/index.js";
 import { FooterView } from "../../ui/footer/index.js";
 import { PromoBannerView } from "../../ui/promo-banner/index.js";
@@ -34,17 +34,26 @@ import template from "./template.html?raw";
  * Le bandeau de la promotion automatique (PRO-c), sous l'en-tête, est
  * redemandé à chaque navigation : la promotion suit les stocks, une commande
  * peut la faire changer. La dernière promotion connue s'affiche tout de
- * suite, puis le bandeau est mis à jour dès que l'API répond.
+ * suite, puis le bandeau est mis à jour dès que l'API répond. Le lien
+ * « Promotions » de l'en-tête mène à la même fiche, et disparaît avec le
+ * bandeau quand il n'y a pas de promotion.
+ *
+ * La recherche de l'en-tête mène au catalogue filtré (« /?q=casque ») ; le
+ * champ reprend la recherche de l'adresse affichée.
  *
  * Découpage MVC strict, comme une page :
  *   M — catégories du menu, état ouvert / fermé des deux menus, nombre
- *       d'articles du panier, compte connecté, déconnexion, promotion ;
+ *       d'articles du panier, compte connecté, déconnexion, promotion,
+ *       recherche en cours ;
  *   V — construction du DOM, ouverture du panneau, écouteurs ;
  *   C — réaction aux actions de l'utilisateur, seul lien entre M et V.
  */
 
 // Page affichée après une déconnexion depuis le menu du compte.
 const AFTER_LOGOUT_PATH = "/";
+
+// Page des résultats de la recherche : le catalogue, filtré par ?q=….
+const SEARCH_PATH = "/";
 
 // ---------------------------------------------------------------------------
 // M — Modèle
@@ -64,6 +73,27 @@ let M = {
   isLoggingOut: false, // une déconnexion est en cours
   promotion: null, // produit en promotion automatique ({ id, name, discountRate… }), ou null
   isLoadingPromotion: false, // un chargement de la promotion est en cours
+  search: "", // recherche de l'adresse affichée (?q=…), ou chaîne vide
+};
+
+/**
+ * Retient la recherche de l'adresse affichée, que le champ de l'en-tête reprend.
+ *
+ * @param {string|undefined} search - Paramètre q de l'adresse.
+ */
+M.setSearch = function (search) {
+  M.search = (search ?? "").trim();
+};
+
+/**
+ * Chemin de la page des résultats d'une recherche.
+ *
+ * @param {string} search - Texte saisi dans le champ de l'en-tête.
+ * @returns {string} « /?q=… », ou le catalogue entier si la saisie est vide.
+ */
+M.getSearchPath = function (search) {
+  let query = search.trim();
+  return query === "" ? SEARCH_PATH : `${SEARCH_PATH}?${new URLSearchParams({ q: query })}`;
 };
 
 /**
@@ -102,7 +132,7 @@ M.getPromotionData = function () {
 
   return {
     text: `Promo du moment : −${M.promotion.discountRate} % sur ${M.promotion.name}, notre produit le plus en stock`,
-    url: `/produits/${M.promotion.id}`,
+    url: `/produits/${M.promotion.slug}`,
   };
 };
 
@@ -291,15 +321,17 @@ let C = {};
  * Point d'entrée, appelé par le routeur à chaque navigation. Les menus
  * repartent fermés : la page a changé.
  *
+ * @param {{q?: string}} params - Paramètres de l'adresse (q : recherche en cours).
  * @returns {DocumentFragment} Le layout, dont le slot sans nom reçoit la page.
  */
-C.init = function () {
+C.init = function (params) {
   M.isMenuOpen = false;
   M.isAccountMenuOpen = false;
+  M.setSearch(params.q);
   M.loadCartCount();
   M.watchCart(C.handler_cartChange);
   M.watchAccount(C.handler_accountChange);
-  let fragment = V.init(M.getMenuData(), M.cartCount, M.getAccountData(), M.getPromotionData());
+  let fragment = V.init(M.getMenuData(), M.cartCount, M.getAccountData(), M.getPromotionData(), M.search);
 
   if (M.needsPromotion()) {
     C.loadPromotion();
@@ -401,6 +433,15 @@ C.handler_logout = async function () {
 };
 
 /**
+ * Recherche envoyée depuis l'en-tête : affiche le catalogue filtré.
+ *
+ * @param {string} search - Texte saisi.
+ */
+C.handler_search = function (search) {
+  V.goTo(M.getSearchPath(search));
+};
+
+/**
  * Clic n'importe où dans le document : ferme chaque menu si le clic a eu
  * lieu en dehors de son bouton et de son panneau.
  *
@@ -447,6 +488,7 @@ let V = {
   cartCount: null, // compteur « Panier (n) » de l'en-tête affiché
   account: null, // compte de l'en-tête affiché (lien ou menu déroulant)
   promoBanner: null, // conteneur du bandeau de la promotion affiché
+  promoLink: null, // lien « Promotions » de l'en-tête affiché (dans son <li>)
   hasDocumentListeners: false, // les écouteurs du document sont posés
 };
 
@@ -459,26 +501,33 @@ let V = {
  * @param {number} cartCount - Nombre d'articles du panier.
  * @param {ReturnType<typeof M.getAccountData>} account - Compte de l'en-tête.
  * @param {ReturnType<typeof M.getPromotionData>} promotion - Bandeau de la promotion.
+ * @param {string} search - Recherche en cours, reprise dans le champ de l'en-tête.
  * @returns {DocumentFragment}
  */
-V.init = function (menu, cartCount, account, promotion) {
+V.init = function (menu, cartCount, account, promotion, search) {
   let layout = htmlToFragment(template);
 
-  let header = HeaderView.dom(menu, cartCount, account, {
+  let header = HeaderView.dom(menu, cartCount, account, search, {
     onToggleMenu: C.handler_toggleMenu,
     onToggleAccount: C.handler_toggleAccountMenu,
     onLogout: C.handler_logout,
+    onSearch: C.handler_search,
   });
   V.menuButton = header.querySelector("[data-category-menu-button]");
   V.menuPanel = header.querySelector("[data-category-menu]");
   V.cartCount = header.querySelector("[data-cart-count]");
   V.account = header.querySelector("[data-account-dropdown]");
+  V.promoLink = header.querySelector("[data-promo-link]");
   layout.querySelector('slot[name="header"]').replaceWith(header);
 
   layout.querySelector('slot[name="footer"]').replaceWith(FooterView.dom());
+  bindSkipLink(layout);
 
   V.promoBanner = layout.querySelector("[data-promo-banner]");
   V.renderPromotion(promotion);
+
+  // Nouvelle page : le menu repart fermé, la page défile de nouveau.
+  document.documentElement.classList.remove("max-xl:overflow-hidden");
 
   if (!V.hasDocumentListeners) {
     document.addEventListener("click", C.handler_clickDocument);
@@ -492,15 +541,19 @@ V.init = function (menu, cartCount, account, promotion) {
 };
 
 /**
- * Affiche le bandeau de la promotion, ou le vide s'il n'y en a pas.
+ * Affiche le bandeau de la promotion et le lien « Promotions » de l'en-tête,
+ * qui mène à la même fiche ; les masque s'il n'y a pas de promotion.
  *
  * @param {ReturnType<typeof M.getPromotionData>} promotion
  */
 V.renderPromotion = function (promotion) {
+  V.promoLink.hidden = promotion === null;
+
   if (promotion === null) {
     V.promoBanner.replaceChildren();
     return;
   }
+  V.promoLink.querySelector("a").setAttribute("href", promotion.url);
   V.promoBanner.replaceChildren(PromoBannerView.dom(promotion));
 };
 
@@ -517,13 +570,16 @@ V.renderMenu = function (menu) {
 };
 
 /**
- * Affiche le menu ouvert ou fermé.
+ * Affiche le menu ouvert ou fermé. Sous xl, le menu couvre l'écran : la page
+ * derrière ne défile pas tant qu'il est ouvert (classe sur <html>, qui
+ * survit aux changements de page : V.init la retire).
  *
  * @param {boolean} isOpen
  */
 V.renderMenuState = function (isOpen) {
   V.menuButton.setAttribute("aria-expanded", String(isOpen));
   V.menuPanel.hidden = !isOpen;
+  document.documentElement.classList.toggle("max-xl:overflow-hidden", isOpen);
 };
 
 /**
@@ -575,8 +631,9 @@ V.focusMenuButton = function () {
 /**
  * Layout exporté vers le routeur (voir main.js).
  *
+ * @param {{q?: string}} params - Paramètres de l'adresse.
  * @returns {DocumentFragment}
  */
-export function RootLayout() {
-  return C.init();
+export function RootLayout(params) {
+  return C.init(params);
 }

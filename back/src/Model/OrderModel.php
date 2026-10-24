@@ -17,7 +17,8 @@ use Throwable;
  * (US STK-a, StockModel) se font dans UNE transaction : si un seul article
  * manque, rien n'est enregistré. De même, un changement de statut et sa
  * ligne du journal order_event, et une annulation et son recrédit, sont
- * écrits ensemble ou pas du tout.
+ * écrits ensemble ou pas du tout. Le code promo (US PRO-a) est vérifié et
+ * son utilisation comptée dans la même transaction.
  */
 final class OrderModel
 {
@@ -30,14 +31,19 @@ final class OrderModel
     /** Mouvements de stock, écrits dans la transaction de la commande. */
     private StockModel $stock;
 
+    /** Codes promo (US PRO-a), dont l'utilisation est comptée dans la transaction de la commande. */
+    private PromoCodeModel $promoCodes;
+
     /**
-     * @param PDO        $pdo   Connexion ouverte par Database::connexion().
-     * @param StockModel $stock Mouvements de stock, sur la même connexion.
+     * @param PDO            $pdo        Connexion ouverte par Database::connexion().
+     * @param StockModel     $stock      Mouvements de stock, sur la même connexion.
+     * @param PromoCodeModel $promoCodes Codes promo, sur la même connexion.
      */
-    public function __construct(PDO $pdo, StockModel $stock)
+    public function __construct(PDO $pdo, StockModel $stock, PromoCodeModel $promoCodes)
     {
-        $this->pdo   = $pdo;
-        $this->stock = $stock;
+        $this->pdo        = $pdo;
+        $this->stock      = $stock;
+        $this->promoCodes = $promoCodes;
     }
 
     /**
@@ -58,17 +64,27 @@ final class OrderModel
      * depuis product_option, et une option qui n'appartient pas au produit de
      * sa ligne annule toute la commande.
      *
+     * Code promo (US PRO-a) : sa remise porte sur le montant des lignes
+     * (produits, déjà remisés pour la promotion automatique, et options),
+     * arrondie au centime. Un montant inférieur au minimum du code, ou un
+     * code qui vient d'atteindre son nombre d'utilisations, annule toute la
+     * commande : le client choisit alors de commander sans le code.
+     *
      * @param int                                                                    $customerId   Compte connecté.
      * @param int                                                                    $dealershipId Concession, déjà vérifiée.
      * @param DateTimeImmutable                                                      $pickupStart  Début du créneau.
      * @param DateTimeImmutable                                                      $pickupEnd    Fin du créneau.
      * @param array<int, array{variantId:int, quantity:int, optionIds:array<int, int>}> $items     Lignes déjà validées,
      *                                                                                             sans doublon de variante.
+     * @param array{id:int, code:string, discountRate:int, minAmount:float}|null      $promoCode    Code promo valable
+     *                                                                                             à ce jour, ou null.
      *
-     * @return array{orderId:?int, unavailable:array<int, int>, refusedOptions:array<int, int>}
+     * @return array{orderId:?int, unavailable:array<int, int>, refusedOptions:array<int, int>, refusedPromo:?string}
      *         orderId : la commande créée, ou null si rien n'a été enregistré ;
      *         unavailable : les variantes en rupture dans ce cas ;
-     *         refusedOptions : les variantes dont une option est refusée.
+     *         refusedOptions : les variantes dont une option est refusée ;
+     *         refusedPromo : « minimum » (montant insuffisant) ou « epuise »
+     *         (plus d'utilisation possible) si le code promo est refusé.
      */
     public function create(
         int $customerId,
@@ -76,6 +92,7 @@ final class OrderModel
         DateTimeImmutable $pickupStart,
         DateTimeImmutable $pickupEnd,
         array $items,
+        ?array $promoCode,
     ): array {
         $this->pdo->beginTransaction();
 
@@ -92,7 +109,7 @@ final class OrderModel
             if ($unavailable !== []) {
                 $this->pdo->rollBack();
 
-                return ['orderId' => null, 'unavailable' => $unavailable, 'refusedOptions' => []];
+                return ['orderId' => null, 'unavailable' => $unavailable, 'refusedOptions' => [], 'refusedPromo' => null];
             }
 
             $refusedOptions = $this->insertLines($orderId, $items, $promotedId);
@@ -100,10 +117,17 @@ final class OrderModel
             if ($refusedOptions !== []) {
                 $this->pdo->rollBack();
 
-                return ['orderId' => null, 'unavailable' => [], 'refusedOptions' => $refusedOptions];
+                return ['orderId' => null, 'unavailable' => [], 'refusedOptions' => $refusedOptions, 'refusedPromo' => null];
             }
 
-            $this->updateTotal($orderId);
+            $refusedPromo = $this->updateTotal($orderId, $promoCode);
+
+            if ($refusedPromo !== null) {
+                $this->pdo->rollBack();
+
+                return ['orderId' => null, 'unavailable' => [], 'refusedOptions' => [], 'refusedPromo' => $refusedPromo];
+            }
+
             $this->insertEvent($orderId, 'en_cours', null);
 
             $this->pdo->commit();
@@ -112,25 +136,28 @@ final class OrderModel
             throw $e;
         }
 
-        return ['orderId' => $orderId, 'unavailable' => [], 'refusedOptions' => []];
+        return ['orderId' => $orderId, 'unavailable' => [], 'refusedOptions' => [], 'refusedPromo' => null];
     }
 
     /**
-     * Une commande, avec sa concession et ses lignes.
+     * Une commande, avec sa concession, ses lignes, et le code promo utilisé
+     * avec sa remise (US PRO-a ; null et 0 sans code), déjà déduite du total.
      *
      * @param int $id Identifiant de la commande.
      *
-     * @return array{id:int, status:string, total:float, pickupStart:string, pickupEnd:string,
+     * @return array{id:int, status:string, total:float, promoCode:?string, discount:float,
+     *               pickupStart:string, pickupEnd:string,
      *               createdAt:string, dealership:array{id:int, name:string, shortName:string},
      *               lines:array<int, array{variantId:?int, name:string, label:string,
      *                                      reference:string, unitPrice:float, quantity:int,
-     *                                      options:array<int, array{label:string, price:float}>}>}|null
+     *                                      options:array<int, array{id:?int, label:string, price:float}>}>}|null
      *         null si la commande n'existe pas.
      */
     public function findById(int $id): ?array
     {
         $statement = $this->pdo->prepare(
             'SELECT customer_order.id, customer_order.status, customer_order.total,
+                    customer_order.promo_code, customer_order.discount,
                     customer_order.pickup_start, customer_order.pickup_end, customer_order.created_at,
                     dealership.id AS dealership_id, dealership.name AS dealership_name,
                     dealership.short_name AS dealership_short_name
@@ -151,6 +178,8 @@ final class OrderModel
             'id'          => (int) $row['id'],
             'status'      => $row['status'],
             'total'       => (float) $row['total'],
+            'promoCode'   => $row['promo_code'],
+            'discount'    => (float) $row['discount'],
             'pickupStart' => $row['pickup_start'],
             'pickupEnd'   => $row['pickup_end'],
             'createdAt'   => $row['created_at'],
@@ -169,18 +198,22 @@ final class OrderModel
      * ses statuts (US PIL-b). Le journal ne dit pas quel administrateur a
      * changé le statut : le client n'a pas à le savoir.
      *
-     * Trois requêtes en tout (commandes, lignes, journal), quel que soit le
-     * nombre de commandes, plutôt qu'une paire de requêtes par commande.
+     * Quatre requêtes en tout (commandes, lignes, options des lignes,
+     * journal), quel que soit le nombre de commandes, plutôt que plusieurs
+     * requêtes par commande. Le code promo et sa remise (US PRO-a) et les
+     * options de chaque ligne (US OPT-a) sont renvoyés comme par findById :
+     * sans eux, la somme des lignes ne correspond pas au total payé.
      *
      * @param int                    $customerId Compte connecté.
      * @param DateTimeImmutable|null $since      Commandes passées depuis cette date,
      *                                           ou null pour toutes.
      *
-     * @return array<int, array{id:int, status:string, total:float, pickupStart:string,
-     *                          pickupEnd:string, createdAt:string,
+     * @return array<int, array{id:int, status:string, total:float, promoCode:?string, discount:float,
+     *                          pickupStart:string, pickupEnd:string, createdAt:string,
      *                          dealership:array{id:int, name:string, shortName:string},
      *                          lines:array<int, array{variantId:?int, name:string, label:string,
-     *                                                 reference:string, unitPrice:float, quantity:int}>,
+     *                                                 reference:string, unitPrice:float, quantity:int,
+     *                                                 options:array<int, array{id:?int, label:string, price:float}>}>,
      *                          events:array<int, array{status:string, createdAt:string}>}>
      */
     public function findCustomerHistory(int $customerId, ?DateTimeImmutable $since): array
@@ -189,6 +222,7 @@ final class OrderModel
 
         $statement = $this->pdo->prepare(
             'SELECT customer_order.id, customer_order.status, customer_order.total,
+                    customer_order.promo_code, customer_order.discount,
                     customer_order.pickup_start, customer_order.pickup_end, customer_order.created_at,
                     dealership.id AS dealership_id, dealership.name AS dealership_name,
                     dealership.short_name AS dealership_short_name
@@ -213,6 +247,8 @@ final class OrderModel
                 'id'          => (int) $row['id'],
                 'status'      => $row['status'],
                 'total'       => (float) $row['total'],
+                'promoCode'   => $row['promo_code'],
+                'discount'    => (float) $row['discount'],
                 'pickupStart' => $row['pickup_start'],
                 'pickupEnd'   => $row['pickup_end'],
                 'createdAt'   => $row['created_at'],
@@ -238,7 +274,7 @@ final class OrderModel
      *               createdAt:string, dealership:array{id:int, name:string, shortName:string},
      *               lines:array<int, array{variantId:?int, name:string, label:string,
      *                                      reference:string, unitPrice:float, quantity:int,
-     *                                      options:array<int, array{label:string, price:float}>}>}|null
+     *                                      options:array<int, array{id:?int, label:string, price:float}>}>}|null
      *         null si le client n'a jamais commandé.
      */
     public function findLastByCustomer(int $customerId): ?array
@@ -268,7 +304,7 @@ final class OrderModel
      *               createdAt:string, dealership:array{id:int, name:string, shortName:string},
      *               lines:array<int, array{variantId:?int, name:string, label:string,
      *                                      reference:string, unitPrice:float, quantity:int,
-     *                                      options:array<int, array{label:string, price:float}>}>,
+     *                                      options:array<int, array{id:?int, label:string, price:float}>}>,
      *               events:array<int, array{status:string, createdAt:string}>}|null
      *         null si la commande n'existe pas ou appartient à un autre client.
      */
@@ -426,7 +462,7 @@ final class OrderModel
      *               createdAt:string, dealership:array{id:int, name:string, shortName:string},
      *               lines:array<int, array{variantId:?int, name:string, label:string,
      *                                      reference:string, unitPrice:float, quantity:int,
-     *                                      options:array<int, array{label:string, price:float}>}>,
+     *                                      options:array<int, array{id:?int, label:string, price:float}>}>,
      *               customer:array{firstName:string, lastName:string, phone:string},
      *               events:array<int, array{status:string, createdAt:string,
      *                                       admin:?array{firstName:string, lastName:string}}>}|null
@@ -690,8 +726,8 @@ final class OrderModel
 
     /**
      * Copie, pour chaque ligne, le nom, la variante (libellé complet,
-     * « Taille M », US OPT-b), la référence et le prix tels qu'ils sont en
-     * base, remisé pour le produit en promotion (US PRO-c), puis ses options
+     * « Taille M », US OPT-b), la référence et le prix de la variante tels
+     * qu'ils sont en base, remisé pour le produit en promotion (US PRO-c), puis ses options
      * (US OPT-a) : leur libellé et leur supplément, ajouté au prix unitaire
      * de la ligne. La remise ne porte pas sur les suppléments.
      *
@@ -711,7 +747,7 @@ final class OrderModel
         $line = $this->pdo->prepare(
             'INSERT INTO order_line (order_id, variant_id, product_name, variant_label, reference, unit_price, quantity)
              SELECT :order, variant.id, product.name, ' . ProductModel::VARIANT_LABEL . ',
-                    variant.reference, ' . ProductModel::salePrice(':promoted') . ', :quantity
+                    variant.reference, ' . ProductModel::salePrice(':promoted', 'variant.price') . ', :quantity
                FROM variant
          INNER JOIN product ON product.id = variant.product_id
               WHERE variant.id = :variant'
@@ -769,20 +805,58 @@ final class OrderModel
     }
 
     /**
-     * Fige le total de la commande à partir de ses lignes.
+     * Fige le total de la commande à partir de ses lignes, moins la remise du
+     * code promo (US PRO-a), dont l'utilisation est alors comptée.
      *
-     * @param int $orderId
+     * Les montants sont calculés en centimes entiers : la remise est arrondie
+     * au centime le plus proche, comme dans le panier (front).
+     *
+     * @param int                                                                $orderId
+     * @param array{id:int, code:string, discountRate:int, minAmount:float}|null $promoCode Code promo, ou null.
+     *
+     * @return string|null « minimum » ou « epuise » si le code est refusé (rien
+     *                     n'est alors écrit), null sinon.
      */
-    private function updateTotal(int $orderId): void
+    private function updateTotal(int $orderId, ?array $promoCode): ?string
     {
-        $statement = $this->pdo->prepare(
-            'UPDATE customer_order
-                SET total = (SELECT SUM(unit_price * quantity) FROM order_line WHERE order_id = :lines)
-              WHERE id = :order'
-        );
-        $statement->bindValue(':lines', $orderId, PDO::PARAM_INT);
+        $statement = $this->pdo->prepare('SELECT SUM(unit_price * quantity) FROM order_line WHERE order_id = :order');
         $statement->bindValue(':order', $orderId, PDO::PARAM_INT);
         $statement->execute();
+        $subtotalCents = (int) round((float) $statement->fetchColumn() * 100);
+        $discountCents = 0;
+
+        if ($promoCode !== null) {
+            if ($subtotalCents < (int) round($promoCode['minAmount'] * 100)) {
+                return 'minimum';
+            }
+            if (!$this->promoCodes->consume($promoCode['id'])) {
+                return 'epuise';
+            }
+            $discountCents = intdiv($subtotalCents * $promoCode['discountRate'] + 50, 100);
+        }
+
+        $statement = $this->pdo->prepare(
+            'UPDATE customer_order
+                SET total = :total, promo_code = :code, discount = :discount
+              WHERE id = :order'
+        );
+        $statement->bindValue(':total', self::toDecimal($subtotalCents - $discountCents));
+        $statement->bindValue(':code', $promoCode['code'] ?? null, $promoCode === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
+        $statement->bindValue(':discount', self::toDecimal($discountCents));
+        $statement->bindValue(':order', $orderId, PDO::PARAM_INT);
+        $statement->execute();
+
+        return null;
+    }
+
+    /**
+     * @param int $cents Montant en centimes.
+     *
+     * @return string Montant pour une colonne DECIMAL, par exemple « 425.90 ».
+     */
+    private static function toDecimal(int $cents): string
+    {
+        return number_format($cents / 100, 2, '.', '');
     }
 
     /**
@@ -793,7 +867,7 @@ final class OrderModel
      *
      * @return array<int, array{variantId:?int, name:string, label:string, reference:string,
      *                          unitPrice:float, quantity:int,
-     *                          options:array<int, array{label:string, price:float}>}>
+     *                          options:array<int, array{id:?int, label:string, price:float}>}>
      */
     private function findLines(int $orderId): array
     {
@@ -829,12 +903,13 @@ final class OrderModel
      *
      * @param int $orderId
      *
-     * @return array<int, array<int, array{label:string, price:float}>> Clé : identifiant de la ligne.
+     * @return array<int, array<int, array{id:?int, label:string, price:float}>> Clé : identifiant de la ligne.
      */
     private function findLineOptions(int $orderId): array
     {
         $statement = $this->pdo->prepare(
-            'SELECT order_line_option.order_line_id, order_line_option.label, order_line_option.price
+            'SELECT order_line_option.order_line_id, order_line_option.option_id,
+                    order_line_option.label, order_line_option.price
                FROM order_line_option
          INNER JOIN order_line ON order_line.id = order_line_option.order_line_id
               WHERE order_line.order_id = :order
@@ -848,6 +923,8 @@ final class OrderModel
 
         for ($i = 0; $i < count($rows); $i++) {
             $options[(int) $rows[$i]['order_line_id']][] = [
+                // Option supprimée depuis la commande : null (ON DELETE SET NULL).
+                'id'    => $rows[$i]['option_id'] === null ? null : (int) $rows[$i]['option_id'],
                 'label' => $rows[$i]['label'],
                 'price' => (float) $rows[$i]['price'],
             ];
@@ -910,19 +987,24 @@ final class OrderModel
     }
 
     /**
-     * Lignes des commandes de l'historique, rangées par commande.
+     * Lignes des commandes de l'historique, rangées par commande, avec leurs
+     * options (US OPT-a).
      *
      * @param string                 $filter     Condition de historyFilter.
      * @param int                    $customerId
      * @param DateTimeImmutable|null $since
      *
      * @return array<int, array<int, array{variantId:?int, name:string, label:string, reference:string,
-     *                                     unitPrice:float, quantity:int}>> Clé : identifiant de la commande.
+     *                                     unitPrice:float, quantity:int,
+     *                                     options:array<int, array{id:?int, label:string, price:float}>}>>
+     *         Clé : identifiant de la commande.
      */
     private function findHistoryLines(string $filter, int $customerId, ?DateTimeImmutable $since): array
     {
+        $options = $this->findHistoryLineOptions($filter, $customerId, $since);
+
         $statement = $this->pdo->prepare(
-            'SELECT order_line.order_id, order_line.variant_id, order_line.product_name,
+            'SELECT order_line.id, order_line.order_id, order_line.variant_id, order_line.product_name,
                     order_line.variant_label, order_line.reference, order_line.unit_price, order_line.quantity
                FROM order_line
          INNER JOIN customer_order ON customer_order.id = order_line.order_id
@@ -943,10 +1025,50 @@ final class OrderModel
                 'reference' => $rows[$i]['reference'],
                 'unitPrice' => (float) $rows[$i]['unit_price'],
                 'quantity'  => (int) $rows[$i]['quantity'],
+                'options'   => $options[(int) $rows[$i]['id']] ?? [],
             ];
         }
 
         return $lines;
+    }
+
+    /**
+     * Options des lignes des commandes de l'historique (US OPT-a), dans
+     * l'ordre où elles ont été enregistrées.
+     *
+     * @param string                 $filter     Condition de historyFilter.
+     * @param int                    $customerId
+     * @param DateTimeImmutable|null $since
+     *
+     * @return array<int, array<int, array{id:?int, label:string, price:float}>> Clé : identifiant de la ligne.
+     */
+    private function findHistoryLineOptions(string $filter, int $customerId, ?DateTimeImmutable $since): array
+    {
+        $statement = $this->pdo->prepare(
+            'SELECT order_line_option.order_line_id, order_line_option.option_id,
+                    order_line_option.label, order_line_option.price
+               FROM order_line_option
+         INNER JOIN order_line ON order_line.id = order_line_option.order_line_id
+         INNER JOIN customer_order ON customer_order.id = order_line.order_id
+              WHERE ' . $filter . '
+           ORDER BY order_line_option.id'
+        );
+        self::bindHistory($statement, $customerId, $since);
+        $statement->execute();
+        $rows = $statement->fetchAll();
+
+        $options = [];
+
+        for ($i = 0; $i < count($rows); $i++) {
+            $options[(int) $rows[$i]['order_line_id']][] = [
+                // Option supprimée depuis la commande : null (ON DELETE SET NULL).
+                'id'    => $rows[$i]['option_id'] === null ? null : (int) $rows[$i]['option_id'],
+                'label' => $rows[$i]['label'],
+                'price' => (float) $rows[$i]['price'],
+            ];
+        }
+
+        return $options;
     }
 
     /**

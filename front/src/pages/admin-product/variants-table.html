@@ -1,11 +1,12 @@
-<!-- Variantes du produit : référence et stock (STK-b). Défile horizontalement sur petit écran. -->
-<div class="overflow-x-auto rounded-lg border border-line">
+<!-- Variantes du produit : référence, prix et stock (STK-b). Défile horizontalement sur petit écran. -->
+<div class="relative overflow-x-auto rounded-lg border border-line">
   <table class="w-full min-w-(--size-admin-variants-table-min) text-left text-small text-ink">
     <caption class="sr-only">{{caption}}</caption>
     <thead class="bg-section text-caption font-semibold text-ink-muted">
       <tr>
         <th scope="col" data-live="axis" class="px-4 py-3">{{axisLabel}}</th>
         <th scope="col" class="px-3 py-3">Référence</th>
+        <th scope="col" class="px-3 py-3">Prix (€)</th>
         <th scope="col" class="px-3 py-3">Stock</th>
         <th scope="col" class="px-3 py-3">État</th>
         <th scope="col" class="px-3 py-3"><span class="sr-only">Retirer</span></th>
